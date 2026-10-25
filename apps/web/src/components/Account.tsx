@@ -2,18 +2,21 @@
  * Segue accounts in the app: sign in or create an account, set up and edit
  * the profile, privacy and notifications, sync status, sign out and delete.
  */
-import { useState, type FormEvent } from 'react';
+import { useEffect, useMemo, useState, type FormEvent } from 'react';
 import type { MyProfile, PublicProfile } from '@segue/schemas';
 import { AuthFailure, passwordProblem, sendPasswordReset, signIn, signUp, updatePassword } from '../lib/auth';
-import { ApiError, createProfile, deleteAccount, updateProfile } from '../lib/social';
+import { ApiError, createProfile, deleteAccount, removeAvatar, updateProfile, uploadAvatar } from '../lib/social';
 import type { SyncChoice, SyncPrompt, SyncStatus } from '../lib/useSync';
 import { clock } from '../lib/format';
+import { AvatarCropper, photoProblem } from './AvatarCropper';
 import { Sheet } from './Sheet';
 
 export function Avatar({ person, size = 40 }: { person: Pick<PublicProfile, 'displayName' | 'avatar'> | null | undefined; size?: number }) {
+  const [broken, setBroken] = useState(false);
+  useEffect(() => setBroken(false), [person?.avatar]);
   const initial = (person?.displayName ?? '?').trim().charAt(0).toUpperCase() || '?';
-  return person?.avatar ? (
-    <img className="avatar" src={person.avatar} alt="" width={size} height={size} style={{ width: size, height: size }} />
+  return person?.avatar && !broken ? (
+    <img className="avatar" src={person.avatar} alt="" width={size} height={size} style={{ width: size, height: size }} onError={() => setBroken(true)} />
   ) : (
     <span className="avatar" aria-hidden="true" style={{ width: size, height: size, fontSize: size * 0.42 }}>
       {initial}
@@ -100,10 +103,11 @@ export function AuthSheet({ start = 'signin', onClose, onDone }: { start?: AuthM
           </label>
         )}
         {mode !== 'forgot' && (
-          <label className="field">
-            <span>{mode === 'newPassword' ? 'New password' : 'Password'}</span>
+          <div className="field">
+            <label htmlFor="auth-password">{mode === 'newPassword' ? 'New password' : 'Password'}</label>
             <span className="password-row">
               <input
+                id="auth-password"
                 type={showPassword ? 'text' : 'password'}
                 autoComplete={mode === 'signin' ? 'current-password' : 'new-password'}
                 autoCapitalize="none"
@@ -118,7 +122,7 @@ export function AuthSheet({ start = 'signin', onClose, onDone }: { start?: AuthM
               </button>
             </span>
             {(mode === 'signup' || mode === 'newPassword') && <span className="muted small">At least 8 characters, with a number.</span>}
-          </label>
+          </div>
         )}
         {error && (
           <p className="error" role="alert">
@@ -168,31 +172,6 @@ export const suggestUsername = (from: string) =>
     .slice(0, 24)
     .padEnd(3, '0');
 
-/** A photo resized on the phone to a small square, so only that is ever uploaded. */
-async function squarePhoto(file: File): Promise<string> {
-  const url = URL.createObjectURL(file);
-  try {
-    const img = new Image();
-    await new Promise<void>((ok, fail) => {
-      img.onload = () => ok();
-      img.onerror = () => fail(new Error('bad image'));
-      img.src = url;
-    });
-    const side = Math.min(img.naturalWidth, img.naturalHeight);
-    const canvas = document.createElement('canvas');
-    canvas.width = canvas.height = 160;
-    const ctx = canvas.getContext('2d')!;
-    ctx.drawImage(img, (img.naturalWidth - side) / 2, (img.naturalHeight - side) / 2, side, side, 0, 0, 160, 160);
-    for (const q of [0.82, 0.7, 0.55, 0.4]) {
-      const data = canvas.toDataURL('image/jpeg', q);
-      if (data.length < 58_000) return data;
-    }
-    throw new Error('too big');
-  } finally {
-    URL.revokeObjectURL(url);
-  }
-}
-
 /** First-time setup or editing: name, username, photo, privacy and notifications. */
 export function ProfileSheet({
   profile,
@@ -204,7 +183,8 @@ export function ProfileSheet({
   /** null = first-time setup */
   profile: MyProfile | null;
   email?: string;
-  onSaved: (p: MyProfile) => void;
+  /** `photoProblem` is set when the details saved but the photo didn't */
+  onSaved: (p: MyProfile, photoProblem?: string) => void;
   onClose: () => void;
   onDeleted?: (signInRemoved: boolean) => void;
 }) {
@@ -212,21 +192,33 @@ export function ProfileSheet({
   const [displayName, setDisplayName] = useState(profile?.displayName ?? '');
   const [username, setUsername] = useState(profile?.username ?? (email ? suggestUsername(email.split('@')[0]!) : ''));
   const [bio, setBio] = useState(profile?.bio ?? '');
-  const [avatar, setAvatar] = useState<string | null>(profile?.avatar ?? null);
+  const [pronouns, setPronouns] = useState(profile?.pronouns ?? '');
+  const [interests, setInterests] = useState((profile?.interests ?? []).join(', '));
+  /** the photo as it will be after saving: unchanged, a new cropped one, or none */
+  const [photo, setPhoto] = useState<{ kind: 'same' } | { kind: 'new'; blob: Blob } | { kind: 'none' }>({ kind: 'same' });
+  const [cropFile, setCropFile] = useState<File | null>(null);
+  const preview = useMemo(() => (photo.kind === 'new' ? URL.createObjectURL(photo.blob) : null), [photo]);
+  useEffect(() => () => void (preview && URL.revokeObjectURL(preview)), [preview]);
+  const avatar = photo.kind === 'new' ? preview : photo.kind === 'none' ? null : (profile?.avatar ?? null);
   const [discoverable, setDiscoverable] = useState(profile?.discoverable ?? false);
-  const [notify, setNotify] = useState(profile?.notify ?? { hearts: true, invitations: true, shares: true });
+  const [visibility, setVisibility] = useState(profile?.profileVisibility ?? 'everyone');
+  const [showMutualCount, setShowMutualCount] = useState(profile?.showMutualCount ?? false);
+  const [whoCanInvite, setWhoCanInvite] = useState(profile?.whoCanInvite ?? 'everyone');
+  const [notify, setNotify] = useState(profile?.notify ?? { hearts: true, invitations: true, shares: true, connections: true });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [confirmText, setConfirmText] = useState('');
 
-  async function pickPhoto(file: File | undefined) {
+  function pickPhoto(file: File | undefined) {
     if (!file) return;
-    try {
-      setAvatar(await squarePhoto(file));
-    } catch {
-      setError("Couldn't use that photo. Try another one.");
+    const problem = photoProblem(file);
+    if (problem) {
+      setError(problem);
+      return;
     }
+    setError(null);
+    setCropFile(file);
   }
 
   async function save(e: FormEvent) {
@@ -239,8 +231,28 @@ export function ProfileSheet({
     }
     setBusy(true);
     try {
-      const input = { username: name, displayName: displayName.trim(), bio: bio.trim(), avatar, discoverable, notify, timezone: zone() };
-      const res = setup ? await createProfile(input) : await updateProfile(input);
+      const input = {
+        username: name,
+        displayName: displayName.trim(),
+        bio: bio.trim(),
+        pronouns: pronouns.trim(),
+        interests: interests.split(',').map((x) => x.trim()).filter(Boolean).slice(0, 10),
+        discoverable,
+        profileVisibility: visibility,
+        showMutualCount,
+        whoCanInvite,
+        notify,
+        timezone: zone(),
+      };
+      let res = setup ? await createProfile(input) : await updateProfile(input);
+      // The details are saved first; the photo goes up second, so a photo problem never loses them.
+      try {
+        if (photo.kind === 'new') res = await uploadAvatar(photo.blob);
+        else if (photo.kind === 'none' && profile?.avatar) res = await removeAvatar();
+      } catch (err) {
+        if (res.profile) onSaved(res.profile, err instanceof ApiError ? err.message : "Couldn't upload your photo.");
+        return;
+      }
       if (res.profile) onSaved(res.profile);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Couldn't save just now. Try again.");
@@ -261,18 +273,39 @@ export function ProfileSheet({
     }
   }
 
+  if (cropFile) {
+    return (
+      <AvatarCropper
+        file={cropFile}
+        onCancel={() => setCropFile(null)}
+        onDone={(blob) => {
+          setPhoto({ kind: 'new', blob });
+          setCropFile(null);
+        }}
+      />
+    );
+  }
+
   return (
     <Sheet title={setup ? 'Set up your profile' : 'Your profile'} onClose={onClose}>
       <form className="form" onSubmit={(e) => void save(e)}>
         {setup && <p className="muted small">This is how people see you when you share notes or invite them. You can change it any time.</p>}
         <div className="avatar-row">
-          <Avatar person={{ displayName: displayName || username, avatar }} size={64} />
+          <Avatar person={{ displayName: displayName || username, avatar }} size={72} />
           <label className="ghost file-button">
             {avatar ? 'Change photo' : 'Add a photo'}
-            <input type="file" accept="image/jpeg,image/png,image/webp" className="visually-hidden" onChange={(e) => void pickPhoto(e.target.files?.[0])} />
+            <input
+              type="file"
+              accept="image/jpeg,image/png,image/webp"
+              className="visually-hidden"
+              onChange={(e) => {
+                pickPhoto(e.target.files?.[0]);
+                e.target.value = '';
+              }}
+            />
           </label>
           {avatar && (
-            <button type="button" className="text-button" onClick={() => setAvatar(null)}>
+            <button type="button" className="text-button" onClick={() => setPhoto({ kind: 'none' })}>
               Remove
             </button>
           )}
@@ -298,6 +331,15 @@ export function ProfileSheet({
           <span>About you (optional)</span>
           <textarea rows={2} maxLength={280} value={bio} onChange={(e) => setBio(e.target.value)} />
         </label>
+        <label className="field">
+          <span>Pronouns (optional)</span>
+          <input maxLength={40} value={pronouns} onChange={(e) => setPronouns(e.target.value)} />
+        </label>
+        <label className="field">
+          <span>Interests (optional)</span>
+          <input value={interests} onChange={(e) => setInterests(e.target.value)} placeholder="climbing, coffee, markets" />
+          <span className="muted small">Up to 10, separated by commas.</span>
+        </label>
 
         <fieldset className="field">
           <legend>Who can find you</legend>
@@ -318,6 +360,46 @@ export function ProfileSheet({
         </fieldset>
 
         <fieldset className="field">
+          <legend>Who sees your profile details</legend>
+          {(
+            [
+              ['everyone', 'Everyone who finds you', 'Your about text, pronouns and interests.'],
+              ['mutuals', 'Only my mutuals', 'Everyone else sees just your name and photo.'],
+              ['only_me', 'Only me', 'Everyone else sees just your name and photo.'],
+            ] as const
+          ).map(([value, label, hint]) => (
+            <label key={value} className="check">
+              <input type="radio" name="visibility" checked={visibility === value} onChange={() => setVisibility(value)} />
+              <span>
+                <strong>{label}</strong>
+                <span className="muted small block">{hint}</span>
+              </span>
+            </label>
+          ))}
+          <label className="check">
+            <input type="checkbox" checked={showMutualCount} onChange={(e) => setShowMutualCount(e.target.checked)} />
+            <span>Show how many mutuals I have</span>
+          </label>
+        </fieldset>
+
+        <fieldset className="field">
+          <legend>Who can invite you</legend>
+          {(
+            [
+              ['everyone', 'Anyone who can find me'],
+              ['mutuals', 'Only my mutuals'],
+              ['nobody', 'Nobody'],
+            ] as const
+          ).map(([value, label]) => (
+            <label key={value} className="check">
+              <input type="radio" name="invite" checked={whoCanInvite === value} onChange={() => setWhoCanInvite(value)} />
+              <span>{label}</span>
+            </label>
+          ))}
+          <span className="muted small">If someone hearts your note and you say “invite me”, you can still be invited to that one.</span>
+        </fieldset>
+
+        <fieldset className="field">
           <legend>Tell me when</legend>
           <label className="check">
             <input type="checkbox" checked={notify.hearts} onChange={(e) => setNotify({ ...notify, hearts: e.target.checked })} />
@@ -330,6 +412,10 @@ export function ProfileSheet({
           <label className="check">
             <input type="checkbox" checked={notify.shares} onChange={(e) => setNotify({ ...notify, shares: e.target.checked })} />
             <span>Someone shares a note with me</span>
+          </label>
+          <label className="check">
+            <input type="checkbox" checked={notify.connections} onChange={(e) => setNotify({ ...notify, connections: e.target.checked })} />
+            <span>Someone asks to connect, or accepts my request</span>
           </label>
         </fieldset>
 

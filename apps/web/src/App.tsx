@@ -619,11 +619,11 @@ export function App() {
           profile={me.profile}
           email={me.email}
           onClose={() => setSheet(null)}
-          onSaved={(p) => {
+          onSaved={(p, photoProblem) => {
             const first = !me.profile;
             me.setProfile(p);
             setSheet(null);
-            setToast({ text: first ? `You're all set, ${p.displayName.split(' ')[0]}.` : 'Profile saved.' });
+            setToast({ text: photoProblem ? `Profile saved, but the photo didn't upload: ${photoProblem}` : first ? `You're all set, ${p.displayName.split(' ')[0]}.` : 'Profile saved.' });
           }}
           onDeleted={(signInRemoved) => {
             sync.forget();

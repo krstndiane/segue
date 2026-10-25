@@ -4,6 +4,8 @@
  * the server decides what this person may see or change.
  */
 import type {
+  ConnectionsResponse,
+  ConnectionState,
   InterestView,
   InvitationView,
   MeResponse,
@@ -12,10 +14,13 @@ import type {
   NoteView,
   NotificationView,
   NotifyPrefs,
+  ProfileCard,
+  ProfileVisibility,
   PublicProfile,
   StateItem,
   SyncKey,
   Visibility,
+  WhoCanInvite,
 } from '@segue/schemas';
 import { accessToken } from './auth';
 import { API_URL } from './reroute';
@@ -71,9 +76,15 @@ export interface ProfileInput {
   username?: string;
   displayName?: string;
   bio?: string;
-  avatar?: string | null;
+  /** null clears the photo; new photos go through uploadAvatar */
+  avatar?: null;
+  pronouns?: string;
+  interests?: string[];
   discoverable?: boolean;
-  notify?: NotifyPrefs;
+  profileVisibility?: ProfileVisibility;
+  showMutualCount?: boolean;
+  whoCanInvite?: WhoCanInvite;
+  notify?: Partial<NotifyPrefs>;
   timezone?: string;
 }
 
@@ -81,7 +92,35 @@ export const getMe = () => api<MeResponse>('GET', '/v1/me');
 export const createProfile = (p: ProfileInput & { username: string; displayName: string }) => api<MeResponse>('PUT', '/v1/me', p);
 export const updateProfile = (p: ProfileInput) => api<MeResponse>('PATCH', '/v1/me', p);
 export const deleteAccount = () => api<{ deleted: boolean; signInRemoved: boolean }>('DELETE', '/v1/me', { confirm: 'DELETE' });
-export const searchUsers = (q: string) => api<{ users: PublicProfile[] }>('GET', `/v1/users${qs({ q })}`);
+export const searchUsers = (q: string) => api<{ users: (PublicProfile & { connection?: ConnectionState })[] }>('GET', `/v1/users${qs({ q })}`);
+export const getUser = (id: string) => api<{ user: ProfileCard }>('GET', `/v1/users/${id}`);
+
+/** Sends an already-cropped photo (JPEG, PNG or WebP) and returns the updated profile. */
+export async function uploadAvatar(blob: Blob): Promise<MeResponse> {
+  const token = await accessToken();
+  if (!token) throw new ApiError(401, 'Sign in to use this.', 'signed_out');
+  let res: Response;
+  try {
+    res = await fetch(`${API_URL}/v1/me/avatar`, { method: 'POST', headers: { authorization: `Bearer ${token}`, 'content-type': blob.type }, body: blob });
+  } catch {
+    throw new ApiError(0, "Couldn't reach Segue. Check your connection and try again.", 'offline');
+  }
+  const json = (await res.json().catch(() => ({}))) as MeResponse & { error?: string; code?: string };
+  if (!res.ok) throw new ApiError(res.status, res.status >= 500 && res.status !== 503 ? 'Something went wrong on our side. Try again in a moment.' : (json.error ?? 'That didn’t work. Try again.'), json.code);
+  return json;
+}
+export const removeAvatar = () => api<MeResponse>('DELETE', '/v1/me/avatar');
+
+// ---- connections and blocking ----
+
+export const listConnections = () => api<ConnectionsResponse>('GET', '/v1/connections');
+export const requestConnection = (userId: string) => api<{ connection: { id: string; state: ConnectionState } }>('POST', '/v1/connections/requests', { userId });
+export const acceptConnection = (id: string) => api<ConnectionsResponse>('POST', `/v1/connections/${id}/accept`);
+export const declineConnection = (id: string) => api<ConnectionsResponse>('POST', `/v1/connections/${id}/decline`);
+/** Cancels a request you sent, or removes a mutual. */
+export const removeConnection = (id: string) => api<ConnectionsResponse>('DELETE', `/v1/connections/${id}`);
+export const blockUser = (userId: string) => api<ConnectionsResponse>('POST', '/v1/blocks', { userId });
+export const unblockUser = (userId: string) => api<ConnectionsResponse>('DELETE', `/v1/blocks/${userId}`);
 
 // ---- sync ----
 
@@ -145,7 +184,7 @@ export const listNotifications = () => api<{ notifications: NotificationView[]; 
 export const markRead = (id: string) => api<{ ok: true }>('POST', `/v1/notifications/${id}/read`);
 export const markAllRead = () => api<{ ok: true }>('POST', '/v1/notifications/read-all');
 
-export type { InterestView, InvitationView, MyProfile, NoteView, NotificationView, PublicProfile };
+export type { ConnectionsResponse, ConnectionState, InterestView, InvitationView, MyProfile, NoteView, NotificationView, ProfileCard, PublicProfile };
 
 /** A stable id for one create, so a retry after a dropped connection doesn't make two. */
 export const clientId = () => `c${Date.now().toString(36)}${Math.random().toString(36).slice(2, 10)}`;

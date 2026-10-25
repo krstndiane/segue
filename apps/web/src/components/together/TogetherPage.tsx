@@ -16,8 +16,9 @@ import { Avatar } from '../Account';
 import { Segmented } from '../Sheet';
 import { InvitationsSection, InviteSheet, type InviteDraft } from './Invitations';
 import { NotesSection } from './Notes';
+import { PeopleSection } from './People';
 
-export type TogetherTab = 'notes' | 'invites' | 'updates';
+export type TogetherTab = 'notes' | 'invites' | 'people' | 'updates';
 
 interface Props {
   accountState: AccountState;
@@ -108,6 +109,10 @@ export function TogetherPage(props: Props) {
       t.setUnread((u) => Math.max(0, u - 1));
       void markRead(n.id).catch(() => {});
     }
+    if (n.entityType === 'connection') {
+      props.onTab('people');
+      return;
+    }
     if (!n.available) return;
     if (n.entityType === 'invitation') {
       setHighlight(n.entityId);
@@ -140,6 +145,7 @@ export function TogetherPage(props: Props) {
         options={[
           { value: 'notes', label: 'Notes' },
           { value: 'invites', label: t.waiting.length ? `Invitations (${t.waiting.length})` : 'Invitations' },
+          { value: 'people', label: t.requestCount ? `People (${t.requestCount})` : 'People' },
           { value: 'updates', label: t.unread ? `Updates (${t.unread})` : 'Updates' },
         ]}
       />
@@ -168,10 +174,11 @@ export function TogetherPage(props: Props) {
           highlight={highlight}
         />
       )}
+      {props.tab === 'people' && <PeopleSection connections={t.connections} onChange={t.setConnections} notify={props.notify} />}
       {props.tab === 'updates' && (
         <section className="together-section" aria-label="Updates">
           {t.error && !t.loaded && <p className="error">Couldn't load updates just now.</p>}
-          {t.loaded && t.notifications.length === 0 && <p className="empty muted">Nothing yet. Hearts on your notes and answers to your invitations show up here.</p>}
+          {t.loaded && t.notifications.length === 0 && <p className="empty muted">Nothing yet. Hearts on your notes, connection requests and answers to your invitations show up here.</p>}
           {t.unread > 0 && (
             <button type="button" className="text-button" onClick={() => void readAll()}>
               Mark all as read

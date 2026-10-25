@@ -4,12 +4,13 @@
  * Feeds the Together tab's badge and the "Waiting for you" card on Today.
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { listInvitations, listNotifications, type InvitationView, type NotificationView } from './social';
+import { listConnections, listInvitations, listNotifications, type ConnectionsResponse, type InvitationView, type NotificationView } from './social';
 
 export function useTogether(userId: string | null) {
   const [invitations, setInvitations] = useState<InvitationView[]>([]);
   const [notifications, setNotifications] = useState<NotificationView[]>([]);
   const [unread, setUnread] = useState(0);
+  const [connections, setConnections] = useState<ConnectionsResponse | null>(null);
   const [loaded, setLoaded] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const busy = useRef(false);
@@ -18,7 +19,8 @@ export function useTogether(userId: string | null) {
     if (!userId || busy.current) return;
     busy.current = true;
     try {
-      const [inv, notes] = await Promise.all([listInvitations(), listNotifications()]);
+      const [inv, notes, conns] = await Promise.all([listInvitations(), listNotifications(), listConnections()]);
+      setConnections(conns);
       setInvitations(inv.invitations);
       setNotifications(notes.notifications);
       setUnread(notes.unread);
@@ -36,6 +38,7 @@ export function useTogether(userId: string | null) {
       setInvitations([]);
       setNotifications([]);
       setUnread(0);
+      setConnections(null);
       setLoaded(false);
       return;
     }
@@ -62,7 +65,9 @@ export function useTogether(userId: string | null) {
 
   const waiting = invitations.filter((i) => i.direction === 'received' && i.status === 'pending' && i.activity.status === 'active');
 
-  return { invitations, notifications, unread, setUnread, setNotifications, loaded, error, refresh, upsert, waiting };
+  const requestCount = connections?.incoming.length ?? 0;
+
+  return { invitations, notifications, unread, setUnread, setNotifications, connections, setConnections, requestCount, loaded, error, refresh, upsert, waiting };
 }
 
 export type Together = ReturnType<typeof useTogether>;

@@ -172,7 +172,7 @@ alter table segue.profiles drop constraint if exists profiles_avatar_check;
 alter table segue.profiles add constraint profiles_avatar_check check (
   avatar is null
   or (avatar like 'data:image/%' and char_length(avatar) <= 60000)
-  or (avatar like 'https://%' and char_length(avatar) <= 500)
+  or ((avatar like 'https://%' or avatar like 'http://localhost%' or avatar like 'http://127.0.0.1%') and char_length(avatar) <= 500)
 );
 alter table segue.profiles add column avatar_key text check (avatar_key is null or char_length(avatar_key) <= 200);
 alter table segue.profiles add column pronouns text not null default '' check (char_length(pronouns) <= 40);
@@ -244,7 +244,7 @@ alter table segue.profiles drop column if exists profile_visibility;
 alter table segue.profiles drop column if exists interests;
 alter table segue.profiles drop column if exists pronouns;
 alter table segue.profiles drop column if exists avatar_key;
-update segue.profiles set avatar = null where avatar like 'https://%';
+update segue.profiles set avatar = null where avatar like 'http%';
 alter table segue.profiles drop constraint if exists profiles_avatar_check;
 alter table segue.profiles add constraint profiles_avatar_check check (avatar is null or (avatar like 'data:image/%' and char_length(avatar) <= 60000));
 alter table segue.profiles alter column notify set default '{"hearts": true, "invitations": true, "shares": true}';

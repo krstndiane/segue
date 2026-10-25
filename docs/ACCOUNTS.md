@@ -103,7 +103,14 @@ All routes need `Authorization: Bearer <Supabase access token>`. Everything exce
 | PATCH | `/v1/me` | Change any profile field. |
 | DELETE | `/v1/me` | Body `{ "confirm": "DELETE" }`. Deletes everything, then the sign-in if the server has the service role key. |
 | GET | `/v1/users?q=` | Findable people by name or username. |
-| GET | `/v1/users/:id` | A limited profile, if findable or you already share something. |
+| GET | `/v1/users/:id` | A profile card, if findable, a mutual, or you already share something: `{ user }` with `full` (false when they keep details private), `connection`, `connectionId?`, `mutualCount?`. Blocked people are `404`. |
+| POST | `/v1/me/avatar` | Raw image bytes (`image/jpeg`, `png` or `webp`, ≤ 2 MB, 32–1024 px). Returns the profile. `503 avatars_off` when storage isn't configured. |
+| DELETE | `/v1/me/avatar` | Removes the photo and its stored file. |
+| GET | `/v1/connections` | `{ mutuals, incoming, outgoing, blocked }` |
+| POST | `/v1/connections/requests` | `{ userId }`. If they already asked you, this accepts. `409 already_connected`, `429 request_cooldown`. |
+| POST | `/v1/connections/:id/accept` · `/decline` | Person asked. |
+| DELETE | `/v1/connections/:id` | Cancel a request you sent, or remove a mutual (either person). |
+| POST | `/v1/blocks` · DELETE `/v1/blocks/:userId` | `{ userId }`. Block / unblock. |
 | GET | `/v1/state` | `{ items: { key: { value, version, updatedAt } } }` |
 | PUT | `/v1/state/:key` | `{ value, baseVersion }` → `{ item }`, or `409 version_conflict` with `details.current`. |
 | GET | `/v1/notes?scope=mine\|shared\|discover\|hearted&q=&archived=1&onDate=&author=&limit=&offset=` | `{ notes, more }` |
@@ -153,6 +160,18 @@ docker run -d -p 5432:5432 -e POSTGRES_PASSWORD=postgres postgres:16
 TEST_DATABASE_URL=postgres://postgres:postgres@localhost:5432/postgres pnpm --filter @segue/api test
 ```
 
+## Profiles, photos, mutuals and blocking (Round 1 of the profile and mutuals work)
+
+**Profile photos.** The browser lets you drag and zoom a photo inside a circle, then makes a 512 px square WebP (JPEG where WebP isn't available) and sends only that. The API checks it is really a JPEG, PNG or WebP by its first bytes, reads its size from the header (32–1024 px, ≤ 2 MB), and stores it in the public `avatars` bucket in Supabase Storage at `<your id>/<random>.webp`. The profile keeps only the link and the key; replacing or removing a photo deletes the old file, and so does deleting the account. The server does **not** re-encode images (it has no image library), so it refuses anything it can't positively identify instead of cleaning it. The bucket is public: anyone with a photo's link can open it, so links are long random names and aren't listed. Setup: run the migration (it creates the bucket), set `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` on the API, and allow `https://*.supabase.co` in the web app's `img-src` (done in `vercel.json`). Without the key the Add photo button still crops, but saving says photos aren't switched on yet.
+
+**Profile settings.** Name, username, about, pronouns, up to 10 interests, who can find you (`discoverable`), who sees your details (`everyone`, `mutuals` or `only_me`; others then see just name and photo), whether your mutual count shows, and who can invite you (`everyone`, `mutuals`, `nobody`). The default for invitations is `everyone` so existing behaviour doesn't change; it will move to `mutuals` when the invite picker becomes mutual-first. Someone who hearted your note can always be invited to *that* note.
+
+**Mutuals.** One row per pair in `segue.connections` (unique whichever way round). A request needs a yes; if both ask at once they become mutuals. A declined asker can ask again after 7 days; the person who said no can ask at any time. Cancelling a request or removing a mutual deletes the row. Requests and acceptances create in-app notifications (switchable with *Someone asks to connect*).
+
+**Blocking** wins over everything. Blocking someone removes the connection, deletes notes shared between you, withdraws hearts either way, cancels invitations that are still waiting, deletes notifications between you, and from then on hides each of you from the other (profile, search, notes, hearts, invitations, requests). **Accepted invitations stay as they are** (they are already in both calendars). Unblocking does not restore anything.
+
+**Not done yet (Round 2):** per-block sharing with mutuals, the "Your Mutuals" section on Today, "Can I join?" requests, mutual-first invite picking, and planner integration. The notification, profile and block work above is what they will build on.
+
 ## Data retention and deletion
 
 - Account data stays until you delete it. Deleting a note deletes its hearts and shares at once; invitations already sent stay, without the link.
@@ -164,7 +183,7 @@ TEST_DATABASE_URL=postgres://postgres:postgres@localhost:5432/postgres pnpm --fi
 
 - **Shared daily plans** (selected activities shared with view-only or collaborative access, secure links with expiry and revocation): round two, built on the same tables and checks.
 - **Push and email notifications**: in-app only for now; invitations never depend on them.
-- **Friends / follow**: not built; discovery is search by name or username of people who opt in.
+- **Follow**: not built. Mutual connections (both sides agree) are; discovery is search by name or username of people who opt in.
 - **Offline queue for social actions**: drafting a note or invitation needs a connection to send; the app says so. Planner sync works offline.
 - **Google sign-in for Segue accounts**: the existing Google button still only connects Google Calendar on the device. It can be added later as a Supabase provider.
 - **Audit log** of sharing and permission changes beyond `created_at`/`updated_at` and notifications.
