@@ -124,11 +124,15 @@ export function bearer(header: string | string[] | undefined): string | undefine
   return m?.[1];
 }
 
-/** Removes the sign-in itself (Supabase Auth admin API). Needs the service role key. */
+/**
+ * Removes the sign-in itself (Supabase Auth admin API). Needs the secret key:
+ * either the legacy service_role JWT (also sent as a bearer token) or a newer
+ * "sb_secret_…" key (apikey header only; it isn't a JWT).
+ */
 export async function deleteAuthUser(supabaseUrl: string, serviceRoleKey: string, userId: string, doFetch: typeof fetch = fetch): Promise<boolean> {
   const res = await doFetch(`${supabaseUrl}/auth/v1/admin/users/${encodeURIComponent(userId)}`, {
     method: 'DELETE',
-    headers: { apikey: serviceRoleKey, authorization: `Bearer ${serviceRoleKey}` },
+    headers: serviceRoleKey.startsWith('eyJ') ? { apikey: serviceRoleKey, authorization: `Bearer ${serviceRoleKey}` } : { apikey: serviceRoleKey },
   });
   return res.ok || res.status === 404;
 }
