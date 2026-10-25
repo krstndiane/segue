@@ -2,7 +2,7 @@ import { useEffect } from 'react';
 import '../landing.css';
 
 const CONTACT_EMAIL = 'pdyntechnology@gmail.com';
-const UPDATED = 'October 22, 2026';
+const UPDATED = 'October 25, 2026';
 
 /** The privacy policy, at /privacy. Written to match what the code does; change both together. */
 export function PrivacyPage() {
@@ -35,7 +35,11 @@ export function PrivacyPage() {
         <section aria-labelledby="pp-short">
           <h2 id="pp-short">The short version</h2>
           <ul>
-            <li>Your plans, routines, saved places and Google details are kept on your own device, not in a Segue account.</li>
+            <li>
+              Without an account, your plans, routines, saved places and Google details stay on your own device. A Segue account is optional: it
+              keeps your plans on every device and lets you share notes and invite people.
+            </li>
+            <li>Nothing you write is shared unless you choose to share it, note by note. Google Calendar events and your exact location never go into an account.</li>
             <li>When you re-route, Segue&apos;s server gets what it needs to plan your day, answers, and does not save it.</li>
             <li>We never sell your information, show ads, or use your calendar for anything except planning your day.</li>
           </ul>
@@ -80,6 +84,50 @@ export function PrivacyPage() {
             The companies that host Segue (currently Vercel for the web app and Render for the server) may keep ordinary technical logs, such as your IP
             address and the web address requested, under their own policies. For the sky and place name, that address includes your position rounded to
             about 1 km.
+          </p>
+        </section>
+
+        <section aria-labelledby="pp-account">
+          <h2 id="pp-account">If you create a Segue account</h2>
+          <p>
+            Accounts are optional. Sign-in (your email address and password) is handled by <strong>Supabase</strong>, which stores the password only in
+            hashed form; Segue never sees it. Segue&apos;s database, also run by Supabase in Singapore, then keeps:
+          </p>
+          <ul>
+            <li>
+              <strong>Your profile:</strong> name, username, optional photo and &ldquo;about you&rdquo;, who can find you, which notifications you want,
+              and your time zone.
+            </li>
+            <li>
+              <strong>Your planner, so it&apos;s on every device:</strong> routines and one-offs, settings, saved places, how often you went to places,
+              and past days&apos; plans. Never your current or last position, and never anything from Google Calendar: those stay on the device.
+            </li>
+            <li>
+              <strong>What you write and do with others:</strong> your notes and who each is shared with, your hearts, invitations you send or receive
+              (title, details, time, place, who is invited and their answers), and your notifications.
+            </li>
+          </ul>
+          <p>Who sees what:</p>
+          <ul>
+            <li>Notes are private unless you share them with people you pick, or make them discoverable. You can change or take this back any time.</li>
+            <li>
+              If you let people find you, they can see your name, username, photo, &ldquo;about you&rdquo; and your discoverable notes. Nobody sees your
+              email address, your planner, your location or your calendar.
+            </li>
+            <li>
+              A heart on a note tells its author you would like to be invited. An invitation is seen only by the person who sent it and the people
+              invited. Accepting one never changes your plan; adding it to your day is a separate choice on your device.
+            </li>
+          </ul>
+          <p>
+            We keep this until you delete it. Deleting a note removes it and its hearts at once. <em>Delete my account</em> (Settings, Profile and
+            privacy) deletes your profile, notes, hearts, invitations, notifications and synced planner, and your sign-in. Copies may remain in the
+            database provider&apos;s backups for a short time before they are overwritten. Signing out keeps a copy of your plans on that device until
+            you use <em>Start over</em>.
+          </p>
+          <p>
+            Your sign-in session is stored in your browser, separate from your plans, and is sent only to Supabase and to Segue&apos;s server to prove
+            it&apos;s you.
           </p>
         </section>
 
@@ -131,6 +179,10 @@ export function PrivacyPage() {
               <a href="https://api.met.no/doc/License" target="_blank" rel="noopener noreferrer">MET Norway</a>, licensed CC BY 4.0.
             </li>
             <li>
+              <strong>Supabase</strong>, only if you create an account: your email address and password for sign-in, and the account data listed
+              above.
+            </li>
+            <li>
               <strong>Anthropic</strong>, only for &ldquo;Let Segue read it&rdquo;: your note and local time, to turn it into blocks.
             </li>
             <li>
@@ -147,11 +199,18 @@ export function PrivacyPage() {
               <strong>Delete everything on this device:</strong> Settings, <em>Start over</em>, <em>Yes, clear everything</em>.
             </li>
             <li>
+              <strong>Delete your Segue account and everything in it:</strong> Settings, <em>Profile and privacy</em>, <em>Delete my account</em>.
+            </li>
+            <li>
+              <strong>Stay private:</strong> keep notes on <em>Only me</em> and your profile on <em>Only people I share with</em>. Both are the
+              default.
+            </li>
+            <li>
               <strong>Stop sharing your location:</strong> turn it off for Segue in your browser or phone settings. Segue still works if you add
               places yourself.
             </li>
             <li>
-              <strong>Ask us anything,</strong> or ask what we hold about you (very little, since it lives on your device): email{' '}
+              <strong>Ask us anything,</strong> or ask for a copy of what we hold about you: email{' '}
               <a href={`mailto:${CONTACT_EMAIL}`}>{CONTACT_EMAIL}</a>.
             </li>
           </ul>

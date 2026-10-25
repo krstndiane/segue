@@ -12,6 +12,8 @@ import { gatherCandidates } from './candidates';
 import type { Config } from './config';
 import { DailyCap, RateLimiter } from './rateLimit';
 import type { Understand } from './understand';
+import { HttpError, readJson, send } from './http';
+import type { SocialRoutes } from './social';
 
 export interface AppDeps {
   config: Pick<Config, 'corsOrigins' | 'rerouteRateLimit'> &
@@ -23,42 +25,12 @@ export interface AppDeps {
   /** Short place names for the location pin. */
   geocoder?: ReverseGeocoder;
   log?: (line: string) => void;
+  /** Accounts, notes, hearts, invitations and notifications. Missing = those routes answer 503. */
+  social?: SocialRoutes;
 }
 
-const MAX_BODY_BYTES = 256 * 1024;
-
-class HttpError extends Error {
-  constructor(
-    readonly status: number,
-    message: string,
-    readonly details?: unknown,
-    readonly headers: Record<string, string> = {},
-  ) {
-    super(message);
-  }
-}
-
-function send(res: ServerResponse, status: number, body: unknown, headers: Record<string, string> = {}) {
-  const json = JSON.stringify(body);
-  res.writeHead(status, { 'content-type': 'application/json; charset=utf-8', 'content-length': Buffer.byteLength(json), ...headers });
-  res.end(json);
-}
-
-async function readJson(req: IncomingMessage): Promise<unknown> {
-  const chunks: Buffer[] = [];
-  let size = 0;
-  for await (const chunk of req) {
-    size += (chunk as Buffer).length;
-    if (size > MAX_BODY_BYTES) throw new HttpError(413, 'Request body too large');
-    chunks.push(chunk as Buffer);
-  }
-  if (!size) throw new HttpError(400, 'Expected a JSON body');
-  try {
-    return JSON.parse(Buffer.concat(chunks).toString('utf8'));
-  } catch {
-    throw new HttpError(400, 'Body is not valid JSON');
-  }
-}
+/** Paths that need a signed-in Segue account. */
+const SOCIAL_PATH = /^\/v1\/(me|users|notes|invitations|notifications|state)(\/|$)/;
 
 /** lat/lng from the query string; a missing value must not read as 0. */
 function latLngQuery(url: URL): { lat: number; lng: number } {
@@ -133,8 +105,8 @@ export function createApp(deps: AppDeps) {
     if (!allowAll && !deps.config.corsOrigins.includes(origin)) return {};
     return {
       'access-control-allow-origin': allowAll ? '*' : origin,
-      'access-control-allow-methods': 'GET,POST,OPTIONS',
-      'access-control-allow-headers': 'content-type',
+      'access-control-allow-methods': 'GET,POST,PUT,PATCH,DELETE,OPTIONS',
+      'access-control-allow-headers': 'content-type,authorization',
       'access-control-max-age': '600',
       vary: 'Origin',
     };
@@ -144,7 +116,14 @@ export function createApp(deps: AppDeps) {
     const method = req.method ?? 'GET';
 
     if (method === 'GET' && url.pathname === '/health') {
-      return { status: 200, body: { ok: true, places: deps.places.name, weather: deps.weather.name, smartAdd: !!deps.understand } };
+      return { status: 200, body: { ok: true, places: deps.places.name, weather: deps.weather.name, smartAdd: !!deps.understand, accounts: !!deps.social } };
+    }
+
+    if (SOCIAL_PATH.test(url.pathname)) {
+      if (!deps.social) throw new HttpError(503, "Accounts aren't set up on this server yet", undefined, {}, 'accounts_off');
+      const out = await deps.social.route(req, url);
+      if (out) return out;
+      throw new HttpError(404, `No route for ${method} ${url.pathname}`);
     }
 
     if (method === 'GET' && url.pathname === '/v1/places/nearby') {
@@ -276,7 +255,7 @@ export function createApp(deps: AppDeps) {
     } catch (e) {
       if (e instanceof HttpError) {
         status = e.status;
-        send(res, e.status, { error: e.message, details: e.details }, { ...cors, ...e.headers });
+        send(res, e.status, { error: e.message, details: e.details, code: e.code }, { ...cors, ...e.headers });
       } else {
         status = 500;
         log(`error ${(e as Error).stack ?? e}`);

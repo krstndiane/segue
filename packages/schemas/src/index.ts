@@ -169,4 +169,5 @@ export function formatIssues(error: z.ZodError): string[] {
   return error.issues.map((i) => `${i.path.join('.') || '(root)'}: ${i.message}`);
 }
 
+export * from './social';
 export { z };

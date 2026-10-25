@@ -13,6 +13,8 @@ Calendars assume you stay put. When you're always moving city to city, one misse
 
 `main` is the only branch and the one that is live. Every push to `main` redeploys the site: Vercel builds the web app and Render runs the API.
 
+**Accounts (optional):** sign in to keep your plans on every device, share notes, heart a friend's note to say you'd like to join, and send invitations. See [docs/ACCOUNTS.md](docs/ACCOUNTS.md) for how it works and how to set up Supabase.
+
 ## What's in the box
 
 | Path | What it is |
@@ -20,7 +22,7 @@ Calendars assume you stay put. When you're always moving city to city, one misse
 | `packages/engine` | The re-routing engine. Pure TypeScript, no I/O, so it runs on the server **and** offline on the phone. Greedy insertion + local search, opening hours, travel time, rain, energy, fallbacks, explanations, and plan diffs. |
 | `packages/schemas` | Zod schemas for every request and record. |
 | `packages/providers` | Places (OpenStreetMap, Google Places, mock), weather (Open-Meteo with a MET Norway fallback and a server-side cache), and the Places Gateway cost controls: geohash cache, fallback chain, daily budget. |
-| `apps/api` | HTTP API (`POST /v1/reroute`, `POST /v1/understand`, `GET /v1/places/nearby`, `GET /v1/weather`, `GET /v1/weather/now`, `GET /health`). Zero-framework Node server with validation, CORS and rate limits. |
+| `apps/api` | HTTP API (`POST /v1/reroute`, `POST /v1/understand`, `GET /v1/places/nearby`, `GET /v1/weather`, `GET /v1/weather/now`, `GET /health`, and the account routes under `/v1/me`, `/v1/state`, `/v1/notes`, `/v1/invitations`, `/v1/notifications`). Zero-framework Node server with validation, CORS and rate limits; Postgres for accounts. |
 | `apps/web` | Installable PWA (React + Vite). First-run setup, plain-words adding, a day timeline with swipe gestures, one-tap re-route with reasons, nudges and reminders, My spots, Google Calendar, an animated weather sky, undo, and offline re-route on the device. |
 | `docs/ARCHITECTURE.md` | How it fits together, and the roadmap. |
 

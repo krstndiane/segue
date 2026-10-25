@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { FallbackOption, Place, Plan, PlanItem } from '@segue/engine';
+import { AccountSettings, AuthSheet, ProfileSheet, SyncPromptSheet } from './components/Account';
 import { AddAtSheet } from './components/AddAtSheet';
 import { BlockForm, RoutinesView } from './components/Blocks';
 import { CalendarCard } from './components/CalendarCard';
@@ -16,6 +17,11 @@ import { SettingsSheet } from './components/SettingsSheet';
 import { LocationBanner } from './components/LocationBanner';
 import { SkyHeader, type View } from './components/SkyHeader';
 import { Timeline } from './components/Timeline';
+import { TogetherCard, TogetherPage, type TogetherTab } from './components/together/TogetherPage';
+import { useAccount } from './lib/useAccount';
+import { useSync } from './lib/useSync';
+import { useTogether } from './lib/useTogether';
+import type { Synced } from './lib/syncMerge';
 import { calendarBlockId } from './lib/calendar';
 import { addDays, dayLabel, withArchived, type CalendarDays, type DayArchive } from './lib/days';
 import { clock } from './lib/format';
@@ -29,6 +35,7 @@ import {
   affinityFrom,
   emptyDay,
   localDate,
+  newId,
   plannedToday,
   todayAt,
   utcOffsetMinutes,
@@ -63,6 +70,8 @@ type SheetState =
   | { kind: 'block'; id: string | null; draft?: StoredBlock }
   | { kind: 'settings' }
   | { kind: 'addAt'; at: string }
+  | { kind: 'auth'; start: 'signin' | 'signup' | 'newPassword' }
+  | { kind: 'profile' }
   | null;
 
 interface Toast {
@@ -103,6 +112,23 @@ export function App() {
   const today = localDate(now);
   const notify = useCallback((text: string) => setToast({ text }), []);
   const cal = useCalendar(ready, notify);
+  // Segue account (optional): sync across devices, notes, hearts and invitations.
+  const me = useAccount();
+  const synced: Synced = { blocks, settings, favorites, placeHistory: history, dayArchive: archive };
+  const sync = useSync({
+    userId: me.userId,
+    ready,
+    values: synced,
+    apply: (key, value) => {
+      if (key === 'blocks') setBlocks(value as StoredBlock[]);
+      else if (key === 'settings') setSettings(value as Settings);
+      else if (key === 'favorites') setFavorites(value as FavoritePlace[]);
+      else if (key === 'placeHistory') setHistory(value as PlaceHistory);
+      else if (key === 'dayArchive') setArchive(value as DayArchive);
+    },
+  });
+  const together = useTogether(me.userId);
+  const [togetherTab, setTogetherTab] = useState<TogetherTab>('notes');
   // Segue finds and follows the location on its own. A real fix (now or saved) is the user's own;
   // otherwise the time zone's main city stands in, and the pin says so. The user never picks the sky.
   const where = useWhereabouts(ready, { location: settings.lastLocation, at: settings.lastLocatedAt });
@@ -153,6 +179,24 @@ export function App() {
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Back from an emailed link: confirmed, or here to set a new password.
+  useEffect(() => {
+    if (!me.arrival) return;
+    if (me.arrival.error) setToast({ text: me.arrival.error });
+    else if (me.arrival.kind === 'recovery') setSheet({ kind: 'auth', start: 'newPassword' });
+    else if (me.arrival.kind === 'signup') setToast({ text: "Email confirmed. You're signed in." });
+    me.clearArrival();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [me.arrival]);
+
+  // Signed in for the first time: set up the profile.
+  const askedProfile = useRef(false);
+  useEffect(() => {
+    if (me.state !== 'needs-profile' || askedProfile.current || !ready) return;
+    askedProfile.current = true;
+    setSheet((s) => (s?.kind === 'auth' && s.start === 'newPassword' ? s : { kind: 'profile' }));
+  }, [me.state, ready]);
 
   useEffect(() => {
     if (!toast) return;
@@ -461,6 +505,32 @@ export function App() {
     setToast({ text: 'Signed out of Google. Your plans stay on this device.' });
   }
 
+  async function signOutSegue() {
+    sync.forget();
+    await me.signOut();
+    setSheet(null);
+    setToast({ text: 'Signed out. Your plans stay on this device.' });
+  }
+
+  /** An accepted invitation, added to (or updated in) your own plan. */
+  function addActivity(block: StoredBlock) {
+    const had = blocks.some((b) => b.id === block.id);
+    setBlocks((list) => [...list.filter((b) => b.id !== block.id), block]);
+    const when = block.date === today ? 'today' : dayLabel(block.date!, { weekday: 'short', month: 'short', day: 'numeric' });
+    setToast({ text: `${had ? 'Updated' : 'Added'} ${block.title} ${when === 'today' ? 'today' : `for ${when}`}.${block.date === today ? '' : ' It joins that day’s plan.'}` });
+    // Today: plan around it, as a proposal you accept.
+    if (block.date === today) pendingReplan.current = true;
+  }
+
+  /** No fixed time yet: open the usual form with the title filled in. */
+  function planLater(title: string) {
+    setSheet({
+      kind: 'block',
+      id: null,
+      draft: { id: newId(), title, minMinutes: 60, maxMinutes: 90, priority: 'should', category: 'none', requirements: [], active: true, date: today },
+    });
+  }
+
   async function startOver() {
     await clearAll();
     window.location.reload();
@@ -524,7 +594,51 @@ export function App() {
       onSettings={() => setSheet({ kind: 'settings' })}
       tempUnit={settings.tempUnit ?? 'C'}
       showNav={!!settings.onboarded}
+      together={me.enabled}
+      badge={together.unread + together.waiting.filter((i) => !together.notifications.some((n) => !n.readAt && n.entityId === i.id)).length}
     />
+  );
+
+  const eventsOn = (date: string) => (date === today ? calendarEvents : (cal.days.days[date] ?? []));
+
+  // Sheets that belong to the account, shown over any screen.
+  const accountSheets = (
+    <>
+      {sheet?.kind === 'auth' && (
+        <AuthSheet
+          start={sheet.start}
+          onClose={() => setSheet(null)}
+          onDone={(text) => {
+            setSheet(null);
+            setToast({ text });
+          }}
+        />
+      )}
+      {sheet?.kind === 'profile' && (
+        <ProfileSheet
+          profile={me.profile}
+          email={me.email}
+          onClose={() => setSheet(null)}
+          onSaved={(p) => {
+            const first = !me.profile;
+            me.setProfile(p);
+            setSheet(null);
+            setToast({ text: first ? `You're all set, ${p.displayName.split(' ')[0]}.` : 'Profile saved.' });
+          }}
+          onDeleted={(signInRemoved) => {
+            sync.forget();
+            void me.signOut();
+            setSheet(null);
+            setToast({
+              text: signInRemoved
+                ? 'Your account is deleted. Your plans on this device stay here.'
+                : 'Your Segue data is deleted. Your plans on this device stay here.',
+            });
+          }}
+        />
+      )}
+      {sync.prompt && !sheet && <SyncPromptSheet prompt={sync.prompt} onChoose={(c) => void sync.choose(c)} />}
+    </>
   );
 
   if (!settings.onboarded) {
@@ -549,8 +663,16 @@ export function App() {
               setSettings((s) => ({ ...s, onboarded: true }));
             }}
             onFinish={() => setSettings((s) => ({ ...s, onboarded: true }))}
+            account={
+              me.enabled && me.state === 'signed-out' ? (
+                <button type="button" className="text-button center" onClick={() => setSheet({ kind: 'auth', start: 'signin' })}>
+                  Already have a Segue account? Sign in
+                </button>
+              ) : null
+            }
           />
         </div>
+        {accountSheets}
         {toast && (
           <div className="toast" role="status">
             {toast.text}
@@ -566,6 +688,35 @@ export function App() {
       <div className="app">
         <LocationBanner banner={banner} />
         <main>
+          {route === 'today' && me.state === 'ready' && (
+            <TogetherCard
+              together={together}
+              today={today}
+              blocks={blocks}
+              onOpen={() => {
+                setTogetherTab('invites');
+                navigate('together');
+              }}
+            />
+          )}
+          {route === 'together' && (
+            <TogetherPage
+              accountState={me.state}
+              today={today}
+              blocks={blocks}
+              together={together}
+              tab={togetherTab}
+              onTab={setTogetherTab}
+              eventsOn={eventsOn}
+              onAddToDay={addActivity}
+              onPlanLater={planLater}
+              onSignIn={() => setSheet({ kind: 'auth', start: 'signin' })}
+              onCreate={() => setSheet({ kind: 'auth', start: 'signup' })}
+              onSetupProfile={() => setSheet({ kind: 'profile' })}
+              onRetry={() => void me.reload()}
+              notify={notify}
+            />
+          )}
           {route === 'today' && (
             <Timeline
               day={day}
@@ -780,6 +931,7 @@ export function App() {
             onClose={() => setSheet(null)}
           />
         )}
+        {accountSheets}
         {sheet?.kind === 'settings' && (
           <SettingsSheet
             settings={settings}
@@ -791,9 +943,28 @@ export function App() {
             onRemoveFavorite={(id) => setFavorites((list) => list.filter((f) => f.id !== id))}
             onToggleReminders={(on) => void toggleReminders(on)}
             account={
-              GOOGLE_CLIENT_ID ? (
+              <>
+              {me.enabled && (
+                <AccountSettings
+                  state={me.state}
+                  profile={me.profile}
+                  email={me.email}
+                  sync={{ status: sync.status, lastSynced: sync.lastSynced }}
+                  onSignIn={() => setSheet({ kind: 'auth', start: 'signin' })}
+                  onCreate={() => setSheet({ kind: 'auth', start: 'signup' })}
+                  onProfile={() => setSheet({ kind: 'profile' })}
+                  onChangePassword={() => setSheet({ kind: 'auth', start: 'newPassword' })}
+                  onSignOut={() => void signOutSegue()}
+                  onResumeSync={() => {
+                    setSheet(null);
+                    void sync.resume();
+                  }}
+                  onRetry={() => void me.reload()}
+                />
+              )}
+              {GOOGLE_CLIENT_ID ? (
                 <section className="settings-group">
-                  <h3 className="section-title">Account</h3>
+                  <h3 className="section-title">{me.enabled ? 'Google' : 'Account'}</h3>
                   {account ? (
                     <>
                       <div className="account-row">
@@ -819,7 +990,8 @@ export function App() {
                     </>
                   )}
                 </section>
-              ) : null
+              ) : null}
+              </>
             }
             calendar={
               <section className="settings-group">

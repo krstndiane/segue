@@ -70,6 +70,7 @@ const FEATURES = [
 
 const PRIVACY = [
   'Your plans, routines and history are saved on your phone. Signing up with Google keeps your name and calendar on this device too.',
+  'A Segue account is optional. With one, your plans follow you to every device, but never your location or calendar events, and nothing you write is shared unless you choose to.',
   'Planning works with no signal, using the places from your last connection.',
   "Your location is sent only when Segue plans your day, checks the weather or names where you are. The weather and name use a spot rounded to about 1 km. Segue's server doesn't save it.",
   "Google Calendar is read in your browser, and Segue's server never sees your Google sign-in. When you re-route, your event titles and times go to the server so it can plan around them. They aren't saved.",

@@ -28,3 +28,13 @@ services:
       # How many proxies sit in front of the server. Check it after the first deploy (see README).
       - key: TRUSTED_PROXY_HOPS
         value: 1
+      # Accounts, notes and invitations (Supabase). Leave these empty to keep accounts off.
+      # Supabase → Connect → Session pooler connection string, with your database password in it.
+      - key: DATABASE_URL
+        sync: false
+      # https://<your-project>.supabase.co
+      - key: SUPABASE_URL
+        sync: false
+      # Lets "Delete my account" remove the sign-in too. Keep it server-side only.
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false

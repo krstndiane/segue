@@ -65,7 +65,7 @@ describe('API', () => {
   it('reports health', async () => {
     const res = await fetch(`${base}/health`);
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ ok: true, places: 'mock', weather: 'fake', smartAdd: false });
+    expect(await res.json()).toEqual({ ok: true, places: 'mock', weather: 'fake', smartAdd: false, accounts: false });
   });
 
   it('re-routes a day and returns the plan, alternatives, and candidates', async () => {

@@ -6,7 +6,7 @@ import type { LocationStatus } from '../lib/locationStatus';
 import { skyWords, type SkyView } from '../lib/weather';
 import { Sky, sceneFor } from './Sky';
 
-export type View = 'today' | 'plan' | 'days' | 'routines';
+export type View = 'today' | 'plan' | 'days' | 'routines' | 'together';
 
 interface Props {
   sky: SkyView;
@@ -18,6 +18,10 @@ interface Props {
   tempUnit: 'C' | 'F';
   /** first-run setup hides the tabs */
   showNav?: boolean;
+  /** show the Together tab (accounts are on in this build) */
+  together?: boolean;
+  /** unread updates and invitations waiting, on the Together tab */
+  badge?: number;
 }
 
 function PinIcon() {
@@ -49,7 +53,7 @@ const pinLabel = (l: LocationStatus) =>
 
 const temp = (c: number, unit: 'C' | 'F') => `${Math.round(unit === 'F' ? (c * 9) / 5 + 32 : c)}°`;
 
-export function SkyHeader({ sky, now, view, onView, location, onSettings, tempUnit, showNav = true }: Props) {
+export function SkyHeader({ sky, now, view, onView, location, onSettings, tempUnit, showNav = true, together = false, badge = 0 }: Props) {
   // A new scene object only when something the renderer draws has changed.
   const scene = useMemo(
     () => sceneFor(sky),
@@ -99,6 +103,21 @@ export function SkyHeader({ sky, now, view, onView, location, onSettings, tempUn
                 <button type="button" aria-current={view === 'routines' ? 'page' : undefined} onClick={() => onView('routines')}>
                   Routines
                 </button>
+                {together && (
+                  <button
+                    type="button"
+                    aria-current={view === 'together' ? 'page' : undefined}
+                    aria-label={badge ? `Together, ${badge} new` : undefined}
+                    onClick={() => onView('together')}
+                  >
+                    Together
+                    {badge > 0 && (
+                      <span className="tab-badge" aria-hidden="true">
+                        {badge > 9 ? '9+' : badge}
+                      </span>
+                    )}
+                  </button>
+                )}
               </nav>
               <button type="button" className="gear" aria-label="Settings" onClick={onSettings}>
                 <GearIcon />

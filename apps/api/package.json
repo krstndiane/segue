@@ -7,8 +7,9 @@
   "scripts": {
     "dev": "tsx watch src/server.ts",
     "start": "node dist/server.js",
-    "build": "esbuild src/server.ts --bundle --platform=node --target=node20 --format=esm --outfile=dist/server.js",
+    "build": "esbuild src/server.ts --bundle --platform=node --target=node20 --format=esm --external:pg --outfile=dist/server.js",
     "typecheck": "tsc -p tsconfig.json",
+    "migrate": "tsx src/migrate.ts",
     "test": "vitest run"
   },
   "dependencies": {
@@ -16,10 +17,12 @@
     "@segue/engine": "workspace:*",
     "@segue/providers": "workspace:*",
     "@segue/schemas": "workspace:*",
+    "pg": "^8.23.1",
     "zod": "^3.25.0"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",
+    "@types/pg": "^8.23.1",
     "esbuild": "^0.25.0",
     "tsx": "^4.19.0",
     "typescript": "^5.6.0",

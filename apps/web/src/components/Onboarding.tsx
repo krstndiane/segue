@@ -21,6 +21,8 @@ interface Props {
   calendarConnected: boolean;
   onExampleDay: () => void;
   onFinish: () => void;
+  /** "Already have a Segue account? Sign in" */
+  account?: ReactNode;
 }
 
 const MODES: TravelMode[] = ['walk', 'local', 'transit', 'drive'];
@@ -73,6 +75,7 @@ export function Onboarding(props: Props) {
           <button type="button" className="primary wide" onClick={() => setStep(1)}>
             {location.source === 'here' ? 'Next' : 'Next, without location for now'}
           </button>
+          {props.account}
         </section>
       )}
 

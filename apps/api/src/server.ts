@@ -3,6 +3,9 @@ import { createApp } from './app';
 import { loadConfig } from './config';
 import { buildGeocoder, buildPlacesProvider, buildWeatherProvider } from './providers';
 import { claudeUnderstand } from './understand';
+import { createVerifier, deleteAuthUser } from './auth';
+import { connect, migrate } from './db';
+import { createSocial, type SocialRoutes } from './social';
 
 const config = loadConfig();
 if (process.env.NODE_ENV === 'production' && !config.corsOrigins.some((o) => o === '*' || o.startsWith('https://'))) {
@@ -10,10 +13,38 @@ if (process.env.NODE_ENV === 'production' && !config.corsOrigins.some((o) => o =
 }
 const places = buildPlacesProvider(config);
 const understand = config.smartAdd ? claudeUnderstand() : undefined;
-const server = createServer(createApp({ config, places, weather: buildWeatherProvider(), understand, geocoder: buildGeocoder(config) }));
+
+/** Accounts need both a database and a way to check sign-ins; without them the planner still works. */
+async function buildSocial(): Promise<SocialRoutes | undefined> {
+  if (!config.databaseUrl) return undefined;
+  if (!config.supabaseUrl && !config.supabaseJwtSecret) {
+    console.warn('DATABASE_URL is set but SUPABASE_URL is not, so accounts stay off.');
+    return undefined;
+  }
+  const db = connect({ url: config.databaseUrl, ssl: config.databaseSsl, ca: config.databaseCa });
+  if (config.migrateOnStart) {
+    const applied = await migrate(db);
+    if (applied.length) console.log(`Database migrations applied: ${applied.join(', ')}`);
+  }
+  const { supabaseUrl, supabaseServiceRoleKey } = config;
+  return createSocial({
+    db,
+    verifier: createVerifier({ supabaseUrl, jwtSecret: config.supabaseJwtSecret }),
+    deleteAuthUser: supabaseUrl && supabaseServiceRoleKey ? (id) => deleteAuthUser(supabaseUrl, supabaseServiceRoleKey, id) : undefined,
+    limits: { writesPerHour: config.socialWriteRateLimit, searchesPerHour: config.searchRateLimit },
+    log: (l) => console.log(l),
+  });
+}
+
+const social = await buildSocial().catch((e: Error) => {
+  // A database problem must not take the planner down with it.
+  console.error(`Accounts are off: ${e.message}`);
+  return undefined;
+});
+const server = createServer(createApp({ config, places, weather: buildWeatherProvider(), understand, geocoder: buildGeocoder(config), social }));
 
 server.listen(config.port, () => {
-  console.log(`Segue API on http://localhost:${config.port} · places: ${places.name} · smart add: ${understand ? 'on' : 'off'}`);
+  console.log(`Segue API on http://localhost:${config.port} · places: ${places.name} · smart add: ${understand ? 'on' : 'off'} · accounts: ${social ? 'on' : 'off'}`);
 });
 
 for (const sig of ['SIGINT', 'SIGTERM'] as const) {

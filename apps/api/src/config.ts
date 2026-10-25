@@ -17,6 +17,22 @@ export interface Config {
   clientIpHeader?: string;
   /** Proxies in front of this server that each append to x-forwarded-for. */
   trustedProxyHops: number;
+  /** Postgres for accounts, notes and invitations (Supabase's connection string). Unset = accounts off. */
+  databaseUrl?: string;
+  databaseSsl: 'require' | 'verify' | 'off';
+  /** PEM certificate for DATABASE_SSL=verify (Supabase's CA). */
+  databaseCa?: string;
+  /** Apply new database migrations when the server starts. */
+  migrateOnStart: boolean;
+  /** https://<project>.supabase.co — sign-in tokens are checked against its public keys. */
+  supabaseUrl?: string;
+  /** Legacy Supabase JWT secret, for projects still signing tokens with HS256. */
+  supabaseJwtSecret?: string;
+  /** Lets "Delete my account" remove the sign-in too. Server only, never sent to the browser. */
+  supabaseServiceRoleKey?: string;
+  /** Per signed-in user, per hour. */
+  socialWriteRateLimit: number;
+  searchRateLimit: number;
 }
 
 /** A non-negative whole number from the environment, or the fallback when it is unset. */
@@ -26,6 +42,12 @@ function count(env: NodeJS.ProcessEnv, name: string, fallback: number): number {
   const n = Number(raw);
   if (!Number.isInteger(n) || n < 0) throw new Error(`${name} must be a whole number, 0 or more (got "${raw}")`);
   return n;
+}
+
+function sslMode(raw: string | undefined): Config['databaseSsl'] {
+  const v = (raw ?? 'require').trim().toLowerCase();
+  if (v !== 'require' && v !== 'verify' && v !== 'off') throw new Error(`DATABASE_SSL must be require, verify or off (got "${raw}")`);
+  return v;
 }
 
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
@@ -53,5 +75,14 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     smartAddDailyCap: count(env, 'SMART_ADD_DAILY_CAP', 300),
     clientIpHeader: env.CLIENT_IP_HEADER?.trim().toLowerCase() || undefined,
     trustedProxyHops: count(env, 'TRUSTED_PROXY_HOPS', 1),
+    databaseUrl: env.DATABASE_URL?.trim() || undefined,
+    databaseSsl: sslMode(env.DATABASE_SSL),
+    databaseCa: env.DATABASE_CA?.trim() || undefined,
+    migrateOnStart: env.MIGRATE_ON_START !== 'off',
+    supabaseUrl: env.SUPABASE_URL?.trim().replace(/\/+$/, '') || undefined,
+    supabaseJwtSecret: env.SUPABASE_JWT_SECRET?.trim() || undefined,
+    supabaseServiceRoleKey: env.SUPABASE_SERVICE_ROLE_KEY?.trim() || undefined,
+    socialWriteRateLimit: count(env, 'SOCIAL_WRITE_RATE_LIMIT', 300),
+    searchRateLimit: count(env, 'SEARCH_RATE_LIMIT', 60),
   };
 }

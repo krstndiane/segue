@@ -3,10 +3,13 @@
   "tasks": {
     "build": {
       "dependsOn": ["^build"],
+      "env": ["VITE_*"],
       "outputs": ["dist/**"]
     },
     "typecheck": {},
-    "test": {},
+    "test": {
+      "passThroughEnv": ["TEST_DATABASE_URL"]
+    },
     "dev": {
       "cache": false,
       "persistent": true

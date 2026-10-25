@@ -4,7 +4,7 @@
  */
 import { useEffect, useState } from 'react';
 
-export type Route = 'today' | 'plan' | 'days' | 'routines' | 'calendar';
+export type Route = 'today' | 'plan' | 'days' | 'routines' | 'calendar' | 'together';
 
 const PATHS: Record<Route, string> = {
   today: '/app',
@@ -12,6 +12,7 @@ const PATHS: Record<Route, string> = {
   days: '/app/days',
   routines: '/app/routines',
   calendar: '/app/calendar',
+  together: '/app/together',
 };
 
 export const isAppPath = (path: string) => path === '/app' || path.startsWith('/app/');
