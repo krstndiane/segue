@@ -11,7 +11,7 @@ import { z } from 'zod';
 import type { Db } from '../db';
 import { HttpError } from '../http';
 import { notify, parse, path, type Route } from './core';
-import { canSeeNote, invitationStatus, iso, isoReq, profileCols, publicProfile, type Row } from './views';
+import { blockedBetween, canSeeNote, invitationStatus, iso, isoReq, mutualWith, profileCols, publicProfile, type Row } from './views';
 
 const ListSchema = z.object({
   box: z.enum(['received', 'sent', 'all']).default('all'),
@@ -147,8 +147,22 @@ export const invitationRoutes: Route[] = [
           const note = (await q('select 1 from segue.notes where id = $1 and author_id = $2', [b.sourceNoteId, ctx.user.id]))[0];
           if (!note) throw new HttpError(404, "Couldn't find that note");
         }
-        const found = await q<{ id: string }>('select id from segue.profiles where id = any($1::uuid[])', [recipients]);
+        const found = await q<{ id: string; display_name: string; who_can_invite: string; mutual: boolean }>(
+          `select p.id, p.display_name, p.who_can_invite, ${mutualWith('p.id', '$2')} as mutual from segue.profiles p
+           where p.id = any($1::uuid[]) and not ${blockedBetween('p.id', '$2')}`,
+          [recipients, ctx.user.id],
+        );
         if (found.length !== recipients.length) throw new HttpError(400, "Some of those people couldn't be found");
+        // People choose who may invite them. Someone who already heart-asked for this note may always be invited to it.
+        const closed = found.filter((p) => p.who_can_invite === 'nobody' || (p.who_can_invite === 'mutuals' && !p.mutual));
+        if (b.sourceNoteId && closed.length) {
+          const asked = await q<{ user_id: string }>('select user_id from segue.note_interests where note_id = $1 and withdrawn_at is null and user_id = any($2::uuid[])', [b.sourceNoteId, closed.map((p) => p.id)]);
+          const ok = new Set(asked.map((r) => r.user_id));
+          closed.splice(0, closed.length, ...closed.filter((p) => !ok.has(p.id)));
+        }
+        if (closed.length) {
+          throw new HttpError(403, `${closed.map((p) => p.display_name).join(', ')} ${closed.length > 1 ? "aren't" : "isn't"} taking invitations from you`, undefined, {}, 'invites_closed');
+        }
 
         const inserted = await q<{ id: string }>(
           `insert into segue.activities (created_by, title, description, starts_at, ends_at, timezone, place_name, meeting_notes, source_note_id, client_id)

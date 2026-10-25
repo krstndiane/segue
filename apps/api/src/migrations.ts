@@ -163,4 +163,92 @@ drop table if exists segue.profiles;
 `,
 };
 
-export const MIGRATIONS: Migration[] = [social];
+const profilesConnections: Migration = {
+  id: '002_profile_settings_connections',
+  up: /* sql */ `
+-- Profile settings. Avatars now live in object storage; the column holds the public URL
+-- (older rows may still hold a small data URL, which stays readable).
+alter table segue.profiles drop constraint if exists profiles_avatar_check;
+alter table segue.profiles add constraint profiles_avatar_check check (
+  avatar is null
+  or (avatar like 'data:image/%' and char_length(avatar) <= 60000)
+  or (avatar like 'https://%' and char_length(avatar) <= 500)
+);
+alter table segue.profiles add column avatar_key text check (avatar_key is null or char_length(avatar_key) <= 200);
+alter table segue.profiles add column pronouns text not null default '' check (char_length(pronouns) <= 40);
+alter table segue.profiles add column interests text[] not null default '{}' check (cardinality(interests) <= 10);
+alter table segue.profiles add column profile_visibility text not null default 'everyone' check (profile_visibility in ('everyone', 'mutuals', 'only_me'));
+alter table segue.profiles add column show_mutual_count boolean not null default false;
+alter table segue.profiles add column who_can_invite text not null default 'everyone' check (who_can_invite in ('everyone', 'mutuals', 'nobody'));
+alter table segue.profiles alter column notify set default '{"hearts": true, "invitations": true, "shares": true, "connections": true}';
+
+-- Mutual connections. One row per pair, whichever way the request went.
+create table segue.connections (
+  id uuid primary key default gen_random_uuid(),
+  requester_id uuid not null references segue.profiles (id) on delete cascade,
+  recipient_id uuid not null references segue.profiles (id) on delete cascade,
+  status text not null default 'pending' check (status in ('pending', 'accepted', 'declined')),
+  responded_at timestamptz,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  check (requester_id <> recipient_id)
+);
+create unique index connections_pair_key on segue.connections (least(requester_id, recipient_id), greatest(requester_id, recipient_id));
+create index connections_recipient_idx on segue.connections (recipient_id, status);
+create index connections_requester_idx on segue.connections (requester_id, status);
+
+create table segue.user_blocks (
+  blocker_id uuid not null references segue.profiles (id) on delete cascade,
+  blocked_id uuid not null references segue.profiles (id) on delete cascade,
+  created_at timestamptz not null default now(),
+  primary key (blocker_id, blocked_id),
+  check (blocker_id <> blocked_id)
+);
+create index user_blocks_blocked_idx on segue.user_blocks (blocked_id);
+
+alter table segue.notifications drop constraint if exists notifications_type_check;
+alter table segue.notifications add constraint notifications_type_check check (type in (
+  'note_hearted', 'note_shared', 'invitation_received', 'invitation_accepted', 'invitation_declined',
+  'invitation_cancelled', 'invitation_changed', 'invitation_counter', 'connection_request', 'connection_accepted'
+));
+alter table segue.notifications drop constraint if exists notifications_entity_type_check;
+alter table segue.notifications add constraint notifications_entity_type_check check (entity_type in ('note', 'invitation', 'connection'));
+
+alter table segue.connections enable row level security;
+alter table segue.user_blocks enable row level security;
+
+-- Public bucket for profile pictures. Skipped where Supabase Storage isn't present (plain Postgres in CI).
+do $$
+begin
+  if to_regclass('storage.buckets') is not null then
+    insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+    values ('avatars', 'avatars', true, 2097152, array['image/webp', 'image/jpeg', 'image/png'])
+    on conflict (id) do nothing;
+  end if;
+end $$;
+`,
+  down: /* sql */ `
+delete from segue.notifications where type in ('connection_request', 'connection_accepted');
+alter table segue.notifications drop constraint if exists notifications_entity_type_check;
+alter table segue.notifications add constraint notifications_entity_type_check check (entity_type in ('note', 'invitation'));
+alter table segue.notifications drop constraint if exists notifications_type_check;
+alter table segue.notifications add constraint notifications_type_check check (type in (
+  'note_hearted', 'note_shared', 'invitation_received', 'invitation_accepted', 'invitation_declined',
+  'invitation_cancelled', 'invitation_changed', 'invitation_counter'
+));
+drop table if exists segue.user_blocks;
+drop table if exists segue.connections;
+alter table segue.profiles drop column if exists who_can_invite;
+alter table segue.profiles drop column if exists show_mutual_count;
+alter table segue.profiles drop column if exists profile_visibility;
+alter table segue.profiles drop column if exists interests;
+alter table segue.profiles drop column if exists pronouns;
+alter table segue.profiles drop column if exists avatar_key;
+update segue.profiles set avatar = null where avatar like 'https://%';
+alter table segue.profiles drop constraint if exists profiles_avatar_check;
+alter table segue.profiles add constraint profiles_avatar_check check (avatar is null or (avatar like 'data:image/%' and char_length(avatar) <= 60000));
+alter table segue.profiles alter column notify set default '{"hearts": true, "invitations": true, "shares": true}';
+`,
+};
+
+export const MIGRATIONS: Migration[] = [social, profilesConnections];

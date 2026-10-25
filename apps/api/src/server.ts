@@ -4,6 +4,7 @@ import { loadConfig } from './config';
 import { buildGeocoder, buildPlacesProvider, buildWeatherProvider } from './providers';
 import { claudeUnderstand } from './understand';
 import { createVerifier, deleteAuthUser } from './auth';
+import { supabaseAvatarStorage } from './social/avatars';
 import { connect, migrate } from './db';
 import { createSocial, type SocialRoutes } from './social';
 
@@ -31,6 +32,7 @@ async function buildSocial(): Promise<SocialRoutes | undefined> {
     db,
     verifier: createVerifier({ supabaseUrl, jwtSecret: config.supabaseJwtSecret }),
     deleteAuthUser: supabaseUrl && supabaseServiceRoleKey ? (id) => deleteAuthUser(supabaseUrl, supabaseServiceRoleKey, id) : undefined,
+    avatars: supabaseUrl && supabaseServiceRoleKey ? supabaseAvatarStorage(supabaseUrl, supabaseServiceRoleKey) : undefined,
     limits: { writesPerHour: config.socialWriteRateLimit, searchesPerHour: config.searchRateLimit },
     log: (l) => console.log(l),
   });

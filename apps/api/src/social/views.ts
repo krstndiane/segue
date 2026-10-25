@@ -12,7 +12,7 @@ export const isoReq = (v: unknown): string => iso(v) ?? new Date(0).toISOString(
 
 /** Public profile columns of table alias `a`, prefixed `a_`. */
 export const profileCols = (a: string) =>
-  `${a}.id as ${a}_id, ${a}.username as ${a}_username, ${a}.display_name as ${a}_display_name, ${a}.avatar as ${a}_avatar, ${a}.bio as ${a}_bio`;
+  `${a}.id as ${a}_id, ${a}.username as ${a}_username, ${a}.display_name as ${a}_display_name, ${a}.avatar as ${a}_avatar, '' as ${a}_bio`;
 
 export function publicProfile(row: Row, a: string): PublicProfile {
   return {
@@ -24,7 +24,7 @@ export function publicProfile(row: Row, a: string): PublicProfile {
   };
 }
 
-export const DEFAULT_NOTIFY: NotifyPrefs = { hearts: true, invitations: true, shares: true };
+export const DEFAULT_NOTIFY: NotifyPrefs = { hearts: true, invitations: true, shares: true, connections: true };
 
 export function myProfile(row: Row): MyProfile {
   return {
@@ -33,6 +33,11 @@ export function myProfile(row: Row): MyProfile {
     displayName: String(row.display_name),
     avatar: (row.avatar as string | null) ?? null,
     bio: String(row.bio ?? ''),
+    pronouns: String(row.pronouns ?? ''),
+    interests: (row.interests as string[] | null) ?? [],
+    profileVisibility: (row.profile_visibility as MyProfile['profileVisibility']) ?? 'everyone',
+    showMutualCount: !!row.show_mutual_count,
+    whoCanInvite: (row.who_can_invite as MyProfile['whoCanInvite']) ?? 'everyone',
     discoverable: !!row.discoverable,
     notify: { ...DEFAULT_NOTIFY, ...((row.notify as Partial<NotifyPrefs>) ?? {}) },
     timezone: String(row.timezone ?? 'UTC'),
@@ -40,17 +45,25 @@ export function myProfile(row: Row): MyProfile {
   };
 }
 
+/** SQL: either of a and b has blocked the other. Blocking wins over everything else. */
+export const blockedBetween = (a: string, b: string) =>
+  `exists (select 1 from segue.user_blocks bb where (bb.blocker_id = ${a} and bb.blocked_id = ${b}) or (bb.blocker_id = ${b} and bb.blocked_id = ${a}))`;
+
+/** SQL: a and b are mutual connections. */
+export const mutualWith = (a: string, b: string) =>
+  `exists (select 1 from segue.connections mc where mc.status = 'accepted' and ((mc.requester_id = ${a} and mc.recipient_id = ${b}) or (mc.requester_id = ${b} and mc.recipient_id = ${a})))`;
+
 /**
  * True when viewer `v` (a SQL parameter like $1) may read note alias `n`:
  * the author always; others only while it isn't archived, and only if it's
  * discoverable or shared with them.
  */
 export const canSeeNote = (n: string, v: string) =>
-  `(${n}.author_id = ${v} or (${n}.archived_at is null and (${n}.visibility = 'discoverable' or (${n}.visibility = 'selected' and exists (select 1 from segue.note_shares vs where vs.note_id = ${n}.id and vs.user_id = ${v})))))`;
+  `(${n}.author_id = ${v} or (${n}.archived_at is null and not ${blockedBetween(`${n}.author_id`, v)} and (${n}.visibility = 'discoverable' or (${n}.visibility = 'selected' and exists (select 1 from segue.note_shares vs where vs.note_id = ${n}.id and vs.user_id = ${v})))))`;
 
 /** The person behind interest alias `i` can still see note alias `n` (so the author may see their heart). */
 export const interestStillVisible = (n: string, i: string) =>
-  `(${n}.visibility = 'discoverable' or (${n}.visibility = 'selected' and exists (select 1 from segue.note_shares vs2 where vs2.note_id = ${n}.id and vs2.user_id = ${i}.user_id)))`;
+  `(not ${blockedBetween(`${n}.author_id`, `${i}.user_id`)} and (${n}.visibility = 'discoverable' or (${n}.visibility = 'selected' and exists (select 1 from segue.note_shares vs2 where vs2.note_id = ${n}.id and vs2.user_id = ${i}.user_id))))`;
 
 export function invitationStatus(status: unknown, expiresAt: unknown, now = Date.now()): InvitationStatus {
   const s = String(status) as InvitationStatus;

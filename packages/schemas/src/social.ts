@@ -27,26 +27,32 @@ export const username = z
   .transform((s) => s.trim().toLowerCase().replace(/^@/, ''))
   .pipe(z.string().regex(USERNAME_PATTERN, '3 to 24 letters, numbers or underscores'));
 
-/** A small square photo, resized on the phone and stored as a data URL. */
-const avatar = z
-  .string()
-  .max(60_000, 'Photo is too large')
-  .regex(/^data:image\/(jpeg|png|webp);base64,[A-Za-z0-9+/=]+$/, 'Unsupported photo');
-
 export const NotifyPrefsSchema = z.object({
   hearts: z.boolean(),
   invitations: z.boolean(),
   shares: z.boolean(),
+  connections: z.boolean(),
 });
 export type NotifyPrefs = z.infer<typeof NotifyPrefsSchema>;
+
+export const PROFILE_VISIBILITIES = ['everyone', 'mutuals', 'only_me'] as const;
+export type ProfileVisibility = (typeof PROFILE_VISIBILITIES)[number];
+export const WHO_CAN_INVITE = ['everyone', 'mutuals', 'nobody'] as const;
+export type WhoCanInvite = (typeof WHO_CAN_INVITE)[number];
 
 export const ProfileCreateSchema = z.object({
   username,
   displayName: line(1, 60),
   bio: text(280).optional(),
-  avatar: avatar.nullable().optional(),
+  /** Photos are uploaded to POST /v1/me/avatar; here a profile can only clear its photo. */
+  avatar: z.null().optional(),
+  pronouns: line(0, 40).optional(),
+  interests: z.array(line(1, 30)).max(10).optional(),
   discoverable: z.boolean().optional(),
-  notify: NotifyPrefsSchema.optional(),
+  profileVisibility: z.enum(PROFILE_VISIBILITIES).optional(),
+  showMutualCount: z.boolean().optional(),
+  whoCanInvite: z.enum(WHO_CAN_INVITE).optional(),
+  notify: NotifyPrefsSchema.partial().optional(),
   timezone: timezone.optional(),
 });
 export const ProfileUpdateSchema = ProfileCreateSchema.partial();
@@ -114,11 +120,50 @@ export interface PublicProfile {
 }
 
 export interface MyProfile extends PublicProfile {
+  pronouns: string;
+  interests: string[];
+  profileVisibility: ProfileVisibility;
+  showMutualCount: boolean;
+  whoCanInvite: WhoCanInvite;
   discoverable: boolean;
   notify: NotifyPrefs;
   timezone: string;
   createdAt: string;
 }
+
+/** How the signed-in person relates to someone else. */
+export type ConnectionState = 'none' | 'mutual' | 'request_sent' | 'request_received' | 'blocked';
+
+/** What a profile page shows: the full card, or only the name and photo when the person keeps it private. */
+export interface ProfileCard extends PublicProfile {
+  pronouns: string;
+  interests: string[];
+  /** false when the profile is limited to name and photo for this viewer */
+  full: boolean;
+  connection: ConnectionState;
+  connectionId?: string;
+  mutualCount?: number;
+}
+
+export interface ConnectionView {
+  id: string;
+  person: PublicProfile;
+  since: string;
+}
+export interface ConnectionRequestView {
+  id: string;
+  person: PublicProfile;
+  createdAt: string;
+}
+export interface ConnectionsResponse {
+  mutuals: ConnectionView[];
+  incoming: ConnectionRequestView[];
+  outgoing: ConnectionRequestView[];
+  blocked: { person: PublicProfile; since: string }[];
+}
+
+export const ConnectionRequestSchema = z.object({ userId: uuid });
+export const UserBlockSchema = z.object({ userId: uuid });
 
 export interface MeResponse {
   /** null until the profile is set up */
@@ -204,13 +249,15 @@ export type NotificationType =
   | 'invitation_declined'
   | 'invitation_cancelled'
   | 'invitation_changed'
-  | 'invitation_counter';
+  | 'invitation_counter'
+  | 'connection_request'
+  | 'connection_accepted';
 
 export interface NotificationView {
   id: string;
   type: NotificationType;
   actor: PublicProfile | null;
-  entityType: 'note' | 'invitation';
+  entityType: 'note' | 'invitation' | 'connection';
   entityId: string;
   /** Plain words, only naming things the reader may still see */
   text: string;

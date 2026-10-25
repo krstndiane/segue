@@ -9,6 +9,8 @@ import { AuthError, bearer, type AuthUser } from '../auth';
 import { HttpError, readJson } from '../http';
 import { RateLimiter } from '../rateLimit';
 import type { Ctx, Route, SocialDeps, SocialRoutes } from './core';
+import { avatarRoutes } from './avatars';
+import { connectionRoutes } from './connections';
 import { invitationRoutes } from './invitations';
 import { noteRoutes } from './notes';
 import { notificationRoutes } from './notifications';
@@ -22,7 +24,7 @@ export function createSocial(deps: SocialDeps): SocialRoutes {
   const writes = new RateLimiter(deps.limits?.writesPerHour ?? 300, 60 * 60 * 1000, deps.now);
   const searches = new RateLimiter(deps.limits?.searchesPerHour ?? 60, 60 * 60 * 1000, deps.now);
   const syncs = new RateLimiter(deps.limits?.syncWritesPerHour ?? 900, 60 * 60 * 1000, deps.now);
-  const routes: Route[] = [...profileRoutes, ...stateRoutes, ...noteRoutes, ...invitationRoutes, ...notificationRoutes];
+  const routes: Route[] = [...profileRoutes, ...avatarRoutes, ...connectionRoutes, ...stateRoutes, ...noteRoutes, ...invitationRoutes, ...notificationRoutes];
 
   return {
     async route(req, url) {

@@ -14,6 +14,8 @@ const ListSchema = z.object({ limit: z.coerce.number().int().min(1).max(50).defa
 const quote = (s: string) => `“${s.length > 60 ? `${s.slice(0, 57)}…` : s}”`;
 
 function words(type: NotificationType, who: string, title: string | null): string {
+  if (type === 'connection_request') return `${who} wants to connect with you.`;
+  if (type === 'connection_accepted') return `${who} accepted your request. You're mutuals now.`;
   if (title === null) {
     return type.startsWith('invitation') ? `${who} updated an invitation that's no longer available.` : `${who} shared something that's no longer available.`;
   }
@@ -35,6 +37,8 @@ function words(type: NotificationType, who: string, title: string | null): strin
       return `${who} changed ${t}. Take a look.`;
     case 'invitation_counter':
       return `${who} suggested another time for ${t}.`;
+    default:
+      return `${who} sent you an update.`;
   }
 }
 
@@ -48,6 +52,7 @@ export const notificationRoutes: Route[] = [
       const rows = await ctx.db.query(
         `select x.*, ${profileCols('p')},
            case when x.entity_type = 'note' then (select n.title from segue.notes n where n.id = x.entity_id and ${canSeeNote('n', '$1')})
+                when x.entity_type = 'connection' then (select 'connection' from segue.connections c where c.id = x.entity_id and (c.requester_id = $1 or c.recipient_id = $1))
                 else (select a.title from segue.invitations v join segue.activities a on a.id = v.activity_id
                       where v.id = x.entity_id and (v.sender_id = $1 or v.recipient_id = $1)) end as title
          from segue.notifications x left join segue.profiles p on p.id = x.actor_id
@@ -62,7 +67,7 @@ export const notificationRoutes: Route[] = [
           id: String(r.id),
           type: r.type as NotificationType,
           actor,
-          entityType: r.entity_type as 'note' | 'invitation',
+          entityType: r.entity_type as 'note' | 'invitation' | 'connection',
           entityId: String(r.entity_id),
           text: words(r.type as NotificationType, actor?.displayName ?? 'Someone', title),
           available: title !== null,

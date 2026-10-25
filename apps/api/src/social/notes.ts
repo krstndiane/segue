@@ -11,7 +11,7 @@ import { z } from 'zod';
 import type { Db } from '../db';
 import { HttpError } from '../http';
 import { notify, parse, path, type Ctx, type Route } from './core';
-import { canSeeNote, interestStatus, interestStillVisible, isoReq, likeEscape, profileCols, publicProfile, type Row } from './views';
+import { blockedBetween, canSeeNote, interestStatus, interestStillVisible, isoReq, likeEscape, profileCols, publicProfile, type Row } from './views';
 
 const ListSchema = z.object({
   scope: z.enum(NOTE_SCOPES).default('mine'),
@@ -89,7 +89,10 @@ export async function loadNote(q: Db['query'], viewer: string, id: string): Prom
 /** Replaces who a note is shared with; new people get a notification if the note is "selected". */
 async function setShares(q: Db['query'], ctx: Ctx, noteId: string, ids: string[], visibility: string) {
   const wanted = [...new Set(ids.map((x) => x.toLowerCase()))].filter((x) => x !== ctx.user.id);
-  const found = wanted.length ? (await q<{ id: string }>('select id from segue.profiles where id = any($1::uuid[])', [wanted])).map((r) => r.id) : [];
+  // A blocked person (either way round) is reported like someone who can't be found.
+  const found = wanted.length
+    ? (await q<{ id: string }>(`select p.id from segue.profiles p where p.id = any($1::uuid[]) and not ${blockedBetween('p.id', '$2')}`, [wanted, ctx.user.id])).map((r) => r.id)
+    : [];
   if (found.length !== wanted.length) throw new HttpError(400, "Some of those people couldn't be found");
   await q('delete from segue.note_shares where note_id = $1 and not (user_id = any($2::uuid[]))', [noteId, found]);
   const added = found.length
@@ -128,7 +131,7 @@ export const noteRoutes: Route[] = [
           break;
         case 'discover':
           // Only from people who chose to be findable.
-          where.push(`n.author_id <> $1 and n.archived_at is null and n.visibility = 'discoverable' and a.discoverable`);
+          where.push(`n.author_id <> $1 and n.archived_at is null and n.visibility = 'discoverable' and a.discoverable`, `not ${blockedBetween('n.author_id', '$1')}`);
           break;
         case 'hearted':
           where.push('mi.id is not null and mi.withdrawn_at is null', canSeeNote('n', '$1'));

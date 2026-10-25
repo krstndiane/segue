@@ -3,6 +3,7 @@ import type { IncomingMessage } from 'node:http';
 import type { AuthUser, Verifier } from '../auth';
 import type { Db } from '../db';
 import { HttpError } from '../http';
+import type { AvatarStorage } from './avatars';
 import type { Row } from './views';
 
 export interface SocialDeps {
@@ -10,6 +11,8 @@ export interface SocialDeps {
   verifier: Verifier;
   /** Removes the sign-in when someone deletes their account; false if it couldn't. */
   deleteAuthUser?: (userId: string) => Promise<boolean>;
+  /** Where profile pictures are kept; without it, photo upload answers 503 "avatars_off". */
+  avatars?: AvatarStorage;
   limits?: { writesPerHour?: number; searchesPerHour?: number; syncWritesPerHour?: number };
   log?: (line: string) => void;
   now?: () => number;
@@ -53,10 +56,10 @@ export async function notify(
     recipient: string;
     actor: string;
     type: string;
-    entityType: 'note' | 'invitation';
+    entityType: 'note' | 'invitation' | 'connection';
     entityId: string;
     dedupe: string;
-    pref: 'hearts' | 'invitations' | 'shares';
+    pref: 'hearts' | 'invitations' | 'shares' | 'connections';
   },
 ): Promise<void> {
   if (n.recipient === n.actor) return;
@@ -64,6 +67,7 @@ export async function notify(
     `insert into segue.notifications (recipient_id, actor_id, type, entity_type, entity_id, dedupe_key)
      select $1, $2, $3, $4, $5, $6
      from segue.profiles p where p.id = $1 and coalesce((p.notify ->> $7)::boolean, true)
+       and not exists (select 1 from segue.user_blocks bb where (bb.blocker_id = $1 and bb.blocked_id = $2) or (bb.blocker_id = $2 and bb.blocked_id = $1))
      on conflict (recipient_id, dedupe_key) do nothing`,
     [n.recipient, n.actor, n.type, n.entityType, n.entityId, n.dedupe, n.pref],
   );

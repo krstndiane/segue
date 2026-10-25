@@ -60,7 +60,7 @@ describe.skipIf(!DB_URL)('accounts and social (Postgres)', () => {
   beforeAll(async () => {
     db = connect({ url: DB_URL!, ssl: 'off', max: 4 });
     await db.query('drop schema if exists segue cascade');
-    expect(await migrate(db)).toEqual(['001_accounts_notes_invitations']);
+    expect(await migrate(db)).toEqual(['001_accounts_notes_invitations', '002_profile_settings_connections']);
     expect(await migrate(db)).toEqual([]);
     server = createServer(
       createApp({
@@ -107,9 +107,11 @@ describe.skipIf(!DB_URL)('accounts and social (Postgres)', () => {
       const b = await person('ben');
       expect((await b.as('PATCH', '/v1/me', { username: a.username })).status).toBe(409);
       expect((await b.as('PATCH', '/v1/me', { username: 'No Spaces!' })).status).toBe(400);
-      const patched = await b.as('PATCH', '/v1/me', { displayName: 'Ben C', discoverable: true, avatar: 'data:image/png;base64,AAAA' });
-      expect(patched.body.profile).toMatchObject({ displayName: 'Ben C', discoverable: true, avatar: 'data:image/png;base64,AAAA' });
+      const patched = await b.as('PATCH', '/v1/me', { displayName: 'Ben C', discoverable: true });
+      expect(patched.body.profile).toMatchObject({ displayName: 'Ben C', discoverable: true, avatar: null });
+      // Photos only arrive through the upload route: no links, no inline data.
       expect((await b.as('PATCH', '/v1/me', { avatar: 'https://tracker.example/pixel.png' })).status).toBe(400);
+      expect((await b.as('PATCH', '/v1/me', { avatar: 'data:image/png;base64,AAAA' })).status).toBe(400);
     });
   });
 
@@ -412,8 +414,8 @@ describe.skipIf(!DB_URL)('accounts and social (Postgres)', () => {
   });
 
   it('rolls back and re-applies the migration', async () => {
-    expect(await rollback(db)).toBe('001_accounts_notes_invitations');
-    expect(await migrate(db)).toEqual(['001_accounts_notes_invitations']);
+    expect(await rollback(db)).toBe('002_profile_settings_connections');
+    expect(await migrate(db)).toEqual(['002_profile_settings_connections']);
   });
 });
 
