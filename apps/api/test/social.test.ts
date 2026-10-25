@@ -60,7 +60,7 @@ describe.skipIf(!DB_URL)('accounts and social (Postgres)', () => {
   beforeAll(async () => {
     db = connect({ url: DB_URL!, ssl: 'off', max: 4 });
     await db.query('drop schema if exists segue cascade');
-    expect(await migrate(db)).toEqual(['001_accounts_notes_invitations', '002_profile_settings_connections', '003_username_rules']);
+    expect(await migrate(db)).toEqual(['001_accounts_notes_invitations', '002_profile_settings_connections', '003_username_rules', '004_google_calendar_sync']);
     expect(await migrate(db)).toEqual([]);
     server = createServer(
       createApp({
@@ -414,8 +414,8 @@ describe.skipIf(!DB_URL)('accounts and social (Postgres)', () => {
   });
 
   it('rolls back and re-applies the migration', async () => {
-    expect(await rollback(db)).toBe('003_username_rules');
-    expect(await migrate(db)).toEqual(['003_username_rules']);
+    expect(await rollback(db)).toBe('004_google_calendar_sync');
+    expect(await migrate(db)).toEqual(['004_google_calendar_sync']);
   });
 });
 

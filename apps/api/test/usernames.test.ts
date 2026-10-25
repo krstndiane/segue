@@ -292,6 +292,7 @@ describe.skipIf(!DB_URL)('usernames (Postgres)', () => {
   describe('older accounts', () => {
     it('keeps names that predate the rules, flags them, and clears the flag when they choose a new one', async () => {
       // Go back to before the rules, add accounts the way they used to be allowed, then upgrade.
+      expect(await rollback(db)).toBe('004_google_calendar_sync');
       expect(await rollback(db)).toBe('003_username_rules');
       const old = { short: randomUUID(), under: randomUUID(), long: randomUUID(), reserved: randomUUID(), fine: randomUUID() };
       const rows: [string, string][] = [
@@ -302,7 +303,7 @@ describe.skipIf(!DB_URL)('usernames (Postgres)', () => {
         [old.fine, 'fine_name'],
       ];
       for (const [id, name] of rows) await db.query(`insert into segue.profiles (id, username, display_name) values ($1, $2, 'Old')`, [id, name]);
-      expect(await migrate(db)).toEqual(['003_username_rules']);
+      expect(await migrate(db)).toEqual(['003_username_rules', '004_google_calendar_sync']);
 
       const flags = Object.fromEntries((await db.query<{ username: string; username_review: boolean }>('select username, username_review from segue.profiles where id = any($1::uuid[])', [rows.map((r) => r[0])])).map((r) => [r.username, r.username_review]));
       expect(flags).toEqual({ '1ab': true, ana__cruz: true, ['a'.repeat(23)]: true, support: true, fine_name: false });

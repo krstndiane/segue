@@ -285,4 +285,145 @@ alter table segue.profiles drop column if exists username_review;
 `,
 };
 
-export const MIGRATIONS: Migration[] = [social, profilesConnections, usernameRules];
+const calendarSync: Migration = {
+  id: '004_google_calendar_sync',
+  up: /* sql */ `
+-- One connected Google account per Segue account. Tokens are encrypted by the API (AES-256-GCM) before they get here.
+create table segue.google_accounts (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null unique references segue.profiles (id) on delete cascade,
+  google_sub text not null,
+  email text not null check (char_length(email) <= 320),
+  scopes text not null default '',
+  refresh_token_enc text,
+  access_token_enc text,
+  access_expires_at timestamptz,
+  status text not null default 'active' check (status in ('active', 'needs_reauth')),
+  default_calendar_id uuid,
+  last_error text check (char_length(last_error) <= 300),
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create table segue.google_calendars (
+  id uuid primary key default gen_random_uuid(),
+  account_id uuid not null references segue.google_accounts (id) on delete cascade,
+  google_calendar_id text not null check (char_length(google_calendar_id) <= 300),
+  summary text not null default '' check (char_length(summary) <= 300),
+  is_primary boolean not null default false,
+  access_role text not null default 'reader' check (access_role in ('freeBusyReader', 'reader', 'writer', 'owner')),
+  time_zone text check (char_length(time_zone) <= 64),
+  color text check (char_length(color) <= 16),
+  sync_enabled boolean not null default false,
+  -- Google's incremental-sync cursor, and the window the first full sync covered.
+  sync_token text,
+  window_start timestamptz,
+  window_end timestamptz,
+  synced_at timestamptz,
+  lease_until timestamptz,
+  last_error text check (char_length(last_error) <= 300),
+  -- Push notification channel (renewed before it expires).
+  channel_id text,
+  channel_token_hash text,
+  channel_resource_id text,
+  channel_expires_at timestamptz,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  unique (account_id, google_calendar_id)
+);
+create unique index google_calendars_channel_key on segue.google_calendars (channel_id) where channel_id is not null;
+alter table segue.google_accounts add constraint google_accounts_default_calendar_fk
+  foreign key (default_calendar_id) references segue.google_calendars (id) on delete set null;
+
+-- Sign-in handshakes in progress (state + PKCE verifier), single use.
+create table segue.google_oauth_states (
+  state_hash text primary key,
+  user_id uuid not null references segue.profiles (id) on delete cascade,
+  verifier_enc text not null,
+  expires_at timestamptz not null,
+  created_at timestamptz not null default now()
+);
+
+-- Segue's copy of each event in a synced calendar, linked to Google by (calendar, Google event id).
+create table segue.calendar_events (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references segue.profiles (id) on delete cascade,
+  calendar_id uuid not null references segue.google_calendars (id) on delete cascade,
+  google_event_id text check (char_length(google_event_id) <= 1024),
+  ical_uid text,
+  recurring_event_id text,
+  original_start jsonb,
+  etag text,
+  origin text not null default 'google' check (origin in ('google', 'segue')),
+  title text not null default '' check (char_length(title) <= 300),
+  description text not null default '' check (char_length(description) <= 8000),
+  location text not null default '' check (char_length(location) <= 500),
+  all_day boolean not null default false,
+  starts_at timestamptz,
+  ends_at timestamptz,
+  start_date date,
+  end_date date,
+  time_zone text check (char_length(time_zone) <= 64),
+  status text not null default 'confirmed' check (status in ('confirmed', 'tentative', 'cancelled')),
+  transparency text not null default 'opaque' check (transparency in ('opaque', 'transparent')),
+  meeting_url text check (char_length(meeting_url) <= 500),
+  html_link text check (char_length(html_link) <= 500),
+  can_edit boolean not null default false,
+  -- What Google had when we last synced, field by field, so a later edit on either side can be merged.
+  base jsonb not null default '{}',
+  -- Local edits not yet confirmed by Google (field -> new value), and any conflict waiting for a choice.
+  local_changes jsonb not null default '{}',
+  conflict jsonb,
+  sync_state text not null default 'synced' check (sync_state in ('synced', 'pending', 'failed', 'conflict')),
+  sync_error text check (char_length(sync_error) <= 300),
+  -- The person removed it from Segue's view; stays hidden through later syncs.
+  hidden boolean not null default false,
+  -- Deleted in Segue, waiting to be deleted in Google.
+  delete_requested boolean not null default false,
+  client_id text check (char_length(client_id) <= 80),
+  last_synced_at timestamptz,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  check ((all_day and start_date is not null and end_date is not null) or (not all_day and starts_at is not null and ends_at is not null))
+);
+create unique index calendar_events_google_key on segue.calendar_events (calendar_id, google_event_id) where google_event_id is not null;
+create unique index calendar_events_client_key on segue.calendar_events (user_id, client_id) where client_id is not null;
+create index calendar_events_time_idx on segue.calendar_events (user_id, starts_at);
+create index calendar_events_date_idx on segue.calendar_events (user_id, start_date) where all_day;
+create index calendar_events_state_idx on segue.calendar_events (user_id, sync_state) where sync_state <> 'synced';
+
+-- Writes waiting to go to Google. Created in the same transaction as the local change, so one can't exist without the other.
+create table segue.calendar_outbox (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references segue.profiles (id) on delete cascade,
+  event_id uuid not null references segue.calendar_events (id) on delete cascade,
+  op text not null check (op in ('create', 'update', 'delete')),
+  idempotency_key text not null unique,
+  status text not null default 'queued' check (status in ('queued', 'running', 'done', 'dead')),
+  attempts integer not null default 0,
+  next_attempt_at timestamptz not null default now(),
+  lease_until timestamptz,
+  last_error text check (char_length(last_error) <= 300),
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+create unique index calendar_outbox_open_key on segue.calendar_outbox (event_id) where status in ('queued', 'running');
+create index calendar_outbox_due_idx on segue.calendar_outbox (next_attempt_at) where status = 'queued';
+
+alter table segue.google_accounts enable row level security;
+alter table segue.google_calendars enable row level security;
+alter table segue.google_oauth_states enable row level security;
+alter table segue.calendar_events enable row level security;
+alter table segue.calendar_outbox enable row level security;
+`,
+  down: /* sql */ `
+drop table if exists segue.calendar_outbox;
+drop table if exists segue.calendar_events;
+drop table if exists segue.google_oauth_states;
+alter table segue.google_accounts drop constraint if exists google_accounts_default_calendar_fk;
+drop table if exists segue.google_calendars;
+drop table if exists segue.google_accounts;
+`,
+};
+
+export const MIGRATIONS: Migration[] = [social, profilesConnections, usernameRules, calendarSync];
