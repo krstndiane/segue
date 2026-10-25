@@ -28,6 +28,7 @@ export function AuthSheet({ start = 'signin', onClose, onDone }: { start?: AuthM
   const [mode, setMode] = useState<AuthMode>(start);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -101,14 +102,21 @@ export function AuthSheet({ start = 'signin', onClose, onDone }: { start?: AuthM
         {mode !== 'forgot' && (
           <label className="field">
             <span>{mode === 'newPassword' ? 'New password' : 'Password'}</span>
-            <input
-              type="password"
-              autoComplete={mode === 'signin' ? 'current-password' : 'new-password'}
-              required
-              minLength={mode === 'signin' ? 1 : 8}
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-            />
+            <span className="password-row">
+              <input
+                type={showPassword ? 'text' : 'password'}
+                autoComplete={mode === 'signin' ? 'current-password' : 'new-password'}
+                autoCapitalize="none"
+                spellCheck={false}
+                required
+                minLength={mode === 'signin' ? 1 : 8}
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+              />
+              <button type="button" className="text-button" aria-pressed={showPassword} onClick={() => setShowPassword((v) => !v)}>
+                {showPassword ? 'Hide' : 'Show'}
+              </button>
+            </span>
             {(mode === 'signup' || mode === 'newPassword') && <span className="muted small">At least 8 characters, with a number.</span>}
           </label>
         )}

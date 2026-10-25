@@ -2826,3 +2826,18 @@ details.more[open] {
   flex: none;
   white-space: nowrap;
 }
+
+/* Password field with a Show/Hide button beside it. */
+.password-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+.password-row input {
+  flex: 1;
+  min-width: 0;
+}
+.password-row .text-button {
+  flex: none;
+  white-space: nowrap;
+}
