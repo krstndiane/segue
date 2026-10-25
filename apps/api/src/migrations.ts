@@ -9,6 +9,8 @@
  * Only the Segue API (connected with the database URL) can, and it checks
  * who may see what on every request.
  */
+import { RESERVED_USERNAMES } from '@segue/schemas';
+
 export interface Migration {
   id: string;
   up: string;
@@ -251,4 +253,36 @@ alter table segue.profiles alter column notify set default '{"hearts": true, "in
 `,
 };
 
-export const MIGRATIONS: Migration[] = [social, profilesConnections];
+const usernameRules: Migration = {
+  id: '003_username_rules',
+  up: /* sql */ `
+-- Usernames were already stored lowercase with a unique index, so "Dia" and "dia" can't both exist.
+-- New rule set: 3-20 characters, starts with a letter, ends with a letter or number, no doubled underscores.
+-- Existing names that break the rules are kept as they are (nobody is renamed) and flagged, so the app can ask the owner to choose a new one.
+alter table segue.profiles add column username_review boolean not null default false;
+update segue.profiles set username_review = true
+where not (username ~ '^[a-z][a-z0-9_]{1,18}[a-z0-9]$' and position('__' in username) = 0)
+   or username = any (array[${RESERVED_USERNAMES.map((n) => `'${n}'`).join(', ')}]);
+
+-- The database enforces the format whenever a username is set or changed, whatever code does it.
+create function segue.enforce_username_rules() returns trigger language plpgsql as $$
+begin
+  if tg_op = 'INSERT' or new.username is distinct from old.username then
+    if new.username !~ '^[a-z][a-z0-9_]{1,18}[a-z0-9]$' or position('__' in new.username) > 0 then
+      raise exception 'username does not meet the rules' using errcode = '23514', constraint = 'profiles_username_rules';
+    end if;
+    new.username_review := false;
+  end if;
+  return new;
+end $$;
+create trigger profiles_username_rules before insert or update of username on segue.profiles
+  for each row execute function segue.enforce_username_rules();
+`,
+  down: /* sql */ `
+drop trigger if exists profiles_username_rules on segue.profiles;
+drop function if exists segue.enforce_username_rules();
+alter table segue.profiles drop column if exists username_review;
+`,
+};
+
+export const MIGRATIONS: Migration[] = [social, profilesConnections, usernameRules];

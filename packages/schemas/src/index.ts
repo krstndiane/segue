@@ -171,3 +171,4 @@ export function formatIssues(error: z.ZodError): string[] {
 
 export * from './social';
 export { z };
+export * from './username';

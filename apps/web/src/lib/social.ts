@@ -19,6 +19,7 @@ import type {
   PublicProfile,
   StateItem,
   SyncKey,
+  UsernameAvailability,
   Visibility,
   WhoCanInvite,
 } from '@segue/schemas';
@@ -39,7 +40,7 @@ export class ApiError extends Error {
 /** True when the request never reached the server (offline, or the server is asleep). */
 export const isOffline = (e: unknown) => e instanceof ApiError && e.status === 0;
 
-async function api<T>(method: string, path: string, body?: unknown): Promise<T> {
+async function api<T>(method: string, path: string, body?: unknown, signal?: AbortSignal): Promise<T> {
   const token = await accessToken();
   if (!token) throw new ApiError(401, 'Sign in to use this.', 'signed_out');
   let res: Response;
@@ -48,8 +49,10 @@ async function api<T>(method: string, path: string, body?: unknown): Promise<T> 
       method,
       headers: { authorization: `Bearer ${token}`, ...(body !== undefined ? { 'content-type': 'application/json' } : {}) },
       body: body === undefined ? undefined : JSON.stringify(body),
+      signal,
     });
-  } catch {
+  } catch (e) {
+    if ((e as Error).name === 'AbortError') throw e;
     throw new ApiError(0, "Couldn't reach Segue. Check your connection and try again.", 'offline');
   }
   const json = (await res.json().catch(() => ({}))) as { error?: string; code?: string; details?: unknown };
@@ -93,6 +96,8 @@ export const createProfile = (p: ProfileInput & { username: string; displayName:
 export const updateProfile = (p: ProfileInput) => api<MeResponse>('PATCH', '/v1/me', p);
 export const deleteAccount = () => api<{ deleted: boolean; signInRemoved: boolean }>('DELETE', '/v1/me', { confirm: 'DELETE' });
 export const searchUsers = (q: string) => api<{ users: (PublicProfile & { connection?: ConnectionState })[] }>('GET', `/v1/users${qs({ q })}`);
+export const usernameAvailability = (username: string, signal?: AbortSignal) =>
+  api<UsernameAvailability>('GET', `/v1/usernames/availability${qs({ username })}`, undefined, signal);
 export const getUser = (id: string) => api<{ user: ProfileCard }>('GET', `/v1/users/${id}`);
 
 /** Sends an already-cropped photo (JPEG, PNG or WebP) and returns the updated profile. */

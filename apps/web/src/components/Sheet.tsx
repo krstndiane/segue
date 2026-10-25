@@ -3,13 +3,17 @@ import { useEffect, useRef, type ReactNode } from 'react';
 /** Bottom sheet on phones, centred panel on wide screens. Esc and backdrop close it. */
 export function Sheet({ title, onClose, children }: { title: string; onClose: () => void; children: ReactNode }) {
   const ref = useRef<HTMLDivElement>(null);
+  // The latest onClose, without re-running the effect below: callers often pass a new function on every
+  // render, and re-running it would pull focus back to the top of the sheet while someone is typing.
+  const close = useRef(onClose);
+  close.current = onClose;
 
   useEffect(() => {
     const prev = document.activeElement as HTMLElement | null;
     const first = ref.current?.querySelector<HTMLElement>('input, select, button, textarea');
     first?.focus();
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
+      if (e.key === 'Escape') close.current();
     };
     document.addEventListener('keydown', onKey);
     document.body.style.overflow = 'hidden';
@@ -18,7 +22,7 @@ export function Sheet({ title, onClose, children }: { title: string; onClose: ()
       document.body.style.overflow = '';
       prev?.focus();
     };
-  }, [onClose]);
+  }, []);
 
   return (
     <div className="sheet-backdrop" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>

@@ -30,7 +30,7 @@ export interface AppDeps {
 }
 
 /** Paths that need a signed-in Segue account. */
-const SOCIAL_PATH = /^\/v1\/(me|users|notes|invitations|notifications|state|connections|blocks)(\/|$)/;
+const SOCIAL_PATH = /^\/v1\/(me|users|notes|invitations|notifications|state|connections|blocks|usernames)(\/|$)/;
 
 /** lat/lng from the query string; a missing value must not read as 0. */
 function latLngQuery(url: URL): { lat: number; lng: number } {

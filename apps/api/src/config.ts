@@ -32,6 +32,7 @@ export interface Config {
   supabaseServiceRoleKey?: string;
   /** Per signed-in user, per hour. */
   socialWriteRateLimit: number;
+  reservedUsernames: string[];
   searchRateLimit: number;
 }
 
@@ -83,6 +84,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     supabaseJwtSecret: env.SUPABASE_JWT_SECRET?.trim() || undefined,
     supabaseServiceRoleKey: env.SUPABASE_SERVICE_ROLE_KEY?.trim() || undefined,
     socialWriteRateLimit: count(env, 'SOCIAL_WRITE_RATE_LIMIT', 300),
+    reservedUsernames: (env.RESERVED_USERNAMES ?? '').split(',').map((x) => x.trim().toLowerCase()).filter(Boolean),
     searchRateLimit: count(env, 'SEARCH_RATE_LIMIT', 60),
   };
 }

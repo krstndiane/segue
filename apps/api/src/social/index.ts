@@ -15,6 +15,7 @@ import { invitationRoutes } from './invitations';
 import { noteRoutes } from './notes';
 import { notificationRoutes } from './notifications';
 import { profileRoutes } from './profiles';
+import { usernameRoutes } from './usernames';
 import { stateRoutes } from './state';
 import type { Row } from './views';
 
@@ -23,8 +24,9 @@ export type { SocialDeps, SocialRoutes } from './core';
 export function createSocial(deps: SocialDeps): SocialRoutes {
   const writes = new RateLimiter(deps.limits?.writesPerHour ?? 300, 60 * 60 * 1000, deps.now);
   const searches = new RateLimiter(deps.limits?.searchesPerHour ?? 60, 60 * 60 * 1000, deps.now);
+  const usernames = new RateLimiter(deps.limits?.usernameChecksPerHour ?? 240, 60 * 60 * 1000, deps.now);
   const syncs = new RateLimiter(deps.limits?.syncWritesPerHour ?? 900, 60 * 60 * 1000, deps.now);
-  const routes: Route[] = [...profileRoutes, ...avatarRoutes, ...connectionRoutes, ...stateRoutes, ...noteRoutes, ...invitationRoutes, ...notificationRoutes];
+  const routes: Route[] = [...profileRoutes, ...usernameRoutes, ...avatarRoutes, ...connectionRoutes, ...stateRoutes, ...noteRoutes, ...invitationRoutes, ...notificationRoutes];
 
   return {
     async route(req, url) {
@@ -58,7 +60,7 @@ export function createSocial(deps: SocialDeps): SocialRoutes {
           return profileRow;
         },
         limit(kind) {
-          const limiter = kind === 'search' ? searches : kind === 'sync' ? syncs : writes;
+          const limiter = kind === 'search' ? searches : kind === 'sync' ? syncs : kind === 'username' ? usernames : writes;
           const retryAfter = limiter.hit(`u:${user.id}`);
           if (retryAfter) throw new HttpError(429, 'Slow down a little and try again soon', undefined, { 'retry-after': String(retryAfter) }, 'rate_limited');
         },
@@ -76,7 +78,8 @@ export function createSocial(deps: SocialDeps): SocialRoutes {
 function translate(e: unknown): unknown {
   const err = e as { code?: string; constraint?: string };
   if (e instanceof HttpError || typeof err?.code !== 'string') return e;
-  if (err.code === '23505' && err.constraint === 'profiles_username_key') return new HttpError(409, 'That username is taken', undefined, {}, 'username_taken');
+  if (err.code === '23505' && err.constraint === 'profiles_username_key') return new HttpError(409, 'That username was just taken. Pick another one.', undefined, {}, 'username_taken');
+  if (err.code === '23514' && err.constraint === 'profiles_username_rules') return new HttpError(400, 'That username doesn’t meet the rules.', undefined, {}, 'username_invalid');
   if (err.code === '23505') return new HttpError(409, 'That already exists', undefined, {}, 'conflict');
   if (err.code === '23514' || err.code === '22P02' || err.code === '22007' || err.code === '22008') return new HttpError(400, 'Some of those details are not valid');
   if (err.code === '23503') return new HttpError(404, "Couldn't find that");

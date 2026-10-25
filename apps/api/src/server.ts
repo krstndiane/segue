@@ -33,6 +33,7 @@ async function buildSocial(): Promise<SocialRoutes | undefined> {
     verifier: createVerifier({ supabaseUrl, jwtSecret: config.supabaseJwtSecret }),
     deleteAuthUser: supabaseUrl && supabaseServiceRoleKey ? (id) => deleteAuthUser(supabaseUrl, supabaseServiceRoleKey, id) : undefined,
     avatars: supabaseUrl && supabaseServiceRoleKey ? supabaseAvatarStorage(supabaseUrl, supabaseServiceRoleKey) : undefined,
+    reservedUsernames: config.reservedUsernames,
     limits: { writesPerHour: config.socialWriteRateLimit, searchesPerHour: config.searchRateLimit },
     log: (l) => console.log(l),
   });

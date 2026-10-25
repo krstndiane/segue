@@ -33,6 +33,7 @@ export function myProfile(row: Row): MyProfile {
     displayName: String(row.display_name),
     avatar: (row.avatar as string | null) ?? null,
     bio: String(row.bio ?? ''),
+    usernameNeedsChange: !!row.username_review,
     pronouns: String(row.pronouns ?? ''),
     interests: (row.interests as string[] | null) ?? [],
     profileVisibility: (row.profile_visibility as MyProfile['profileVisibility']) ?? 'everyone',

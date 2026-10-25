@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { HttpError } from '../http';
 import { parse, path, type Route } from './core';
 import { removeAvatarObject } from './avatars';
+import { acceptedUsername } from './usernames';
 import { blockedBetween, DEFAULT_NOTIFY, likeEscape, mutualWith, myProfile, profileCols, publicProfile } from './views';
 
 const SearchSchema = z.object({ q: z.string().trim().min(2, 'Type at least 2 letters').max(40) });
@@ -44,6 +45,8 @@ export const profileRoutes: Route[] = [
     async handler(ctx) {
       ctx.limit('write');
       const p = parse(ProfileCreateSchema, await ctx.body());
+      const mine = (await ctx.db.query<{ username: string }>('select username from segue.profiles where id = $1', [ctx.user.id]))[0];
+      p.username = acceptedUsername(ctx, p.username, mine?.username);
       const values = profileValues(p);
       const cols = values.map(([c]) => c);
       const row = (
@@ -63,7 +66,9 @@ export const profileRoutes: Route[] = [
     async handler(ctx) {
       ctx.limit('write');
       const before = await ctx.profile();
-      const values = profileValues(parse(ProfileUpdateSchema, await ctx.body()), before.notify as Record<string, boolean>);
+      const patch = parse(ProfileUpdateSchema, await ctx.body());
+      if (patch.username !== undefined) patch.username = acceptedUsername(ctx, patch.username, String(before.username));
+      const values = profileValues(patch, before.notify as Record<string, boolean>);
       if (!values.length) throw new HttpError(400, 'Nothing to change');
       const row = (
         await ctx.db.query(

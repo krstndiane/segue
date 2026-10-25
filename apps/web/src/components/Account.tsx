@@ -9,6 +9,7 @@ import { ApiError, createProfile, deleteAccount, removeAvatar, updateProfile, up
 import type { SyncChoice, SyncPrompt, SyncStatus } from '../lib/useSync';
 import { clock } from '../lib/format';
 import { AvatarCropper, photoProblem } from './AvatarCropper';
+import { useUsernameCheck } from '../lib/useUsernameCheck';
 import { Sheet } from './Sheet';
 
 export function Avatar({ person, size = 40 }: { person: Pick<PublicProfile, 'displayName' | 'avatar'> | null | undefined; size?: number }) {
@@ -160,17 +161,21 @@ const zone = () => {
   }
 };
 
-/** "Dia Aviles" → "dia_aviles" */
-export const suggestUsername = (from: string) =>
-  from
+/** "Dia Aviles" → "dia_aviles": a starting point that follows the username rules, or '' if nothing usable is left. */
+export const suggestUsername = (from: string) => {
+  const name = from
     .toLowerCase()
     .normalize('NFKD')
     .replace(/[^\w\s]/g, '')
     .trim()
     .replace(/\s+/g, '_')
     .replace(/[^a-z0-9_]/g, '')
-    .slice(0, 24)
-    .padEnd(3, '0');
+    .replace(/_+/g, '_')
+    .replace(/^[^a-z]+/, '')
+    .slice(0, 20)
+    .replace(/_+$/, '');
+  return name.length >= 3 ? name : '';
+};
 
 /** First-time setup or editing: name, username, photo, privacy and notifications. */
 export function ProfileSheet({
@@ -191,6 +196,8 @@ export function ProfileSheet({
   const setup = !profile;
   const [displayName, setDisplayName] = useState(profile?.displayName ?? '');
   const [username, setUsername] = useState(profile?.username ?? (email ? suggestUsername(email.split('@')[0]!) : ''));
+  const check = useUsernameCheck(username, profile?.username);
+  const nameBlocked = ['empty', 'hint', 'invalid', 'taken', 'reserved'].includes(check.state.status);
   const [bio, setBio] = useState(profile?.bio ?? '');
   const [pronouns, setPronouns] = useState(profile?.pronouns ?? '');
   const [interests, setInterests] = useState((profile?.interests ?? []).join(', '));
@@ -224,11 +231,11 @@ export function ProfileSheet({
   async function save(e: FormEvent) {
     e.preventDefault();
     setError(null);
-    const name = username.trim().toLowerCase().replace(/^@/, '');
-    if (!/^[a-z0-9_]{3,24}$/.test(name)) {
-      setError('Usernames are 3 to 24 letters, numbers or underscores.');
+    if (nameBlocked) {
+      setError(check.state.message);
       return;
     }
+    const name = username.trim();
     setBusy(true);
     try {
       const input = {
@@ -255,6 +262,8 @@ export function ProfileSheet({
       }
       if (res.profile) onSaved(res.profile);
     } catch (err) {
+      // Everything else they typed stays in the form; only the username needs another try.
+      if (err instanceof ApiError && err.code === 'username_taken') check.markTaken(name);
       setError(err instanceof ApiError ? err.message : "Couldn't save just now. Try again.");
     } finally {
       setBusy(false);
@@ -314,19 +323,59 @@ export function ProfileSheet({
           <span>Name</span>
           <input required maxLength={60} autoComplete="name" value={displayName} onChange={(e) => setDisplayName(e.target.value)} />
         </label>
-        <label className="field">
-          <span>Username</span>
-          <input
-            required
-            maxLength={25}
-            autoCapitalize="none"
-            autoCorrect="off"
-            spellCheck={false}
-            value={username}
-            onChange={(e) => setUsername(e.target.value)}
-          />
-          <span className="muted small">Letters, numbers and underscores. People can find you by it if you let them.</span>
-        </label>
+        <div className="field">
+          <label htmlFor="profile-username">Username</label>
+          <span className="username-row">
+            <span className="username-at" aria-hidden="true">
+              @
+            </span>
+            <input
+              id="profile-username"
+              required
+              maxLength={24}
+              autoCapitalize="none"
+              autoCorrect="off"
+              autoComplete="username"
+              spellCheck={false}
+              value={username}
+              aria-invalid={['invalid', 'taken', 'reserved'].includes(check.state.status)}
+              aria-describedby="username-status username-help"
+              onChange={(e) => setUsername(e.target.value)}
+            />
+          </span>
+          <p id="username-status" className={`username-status ${check.state.status}`} role="status" aria-live="polite">
+            <span aria-hidden="true">
+              {check.state.status === 'available' || check.state.status === 'yours' ? '✓ ' : check.state.status === 'taken' || check.state.status === 'invalid' || check.state.status === 'reserved' || check.state.status === 'error' ? '⚠ ' : check.state.status === 'checking' ? '… ' : ''}
+            </span>
+            {check.state.message}
+            {check.state.status === 'error' && (
+              <>
+                {' '}
+                <button type="button" className="text-button" onClick={check.retry}>
+                  Try again
+                </button>
+              </>
+            )}
+          </p>
+          {check.state.suggestions.length > 0 && (
+            <p className="small">
+              Try:{' '}
+              {check.state.suggestions.map((s) => (
+                <button key={s} type="button" className="chip username-suggestion" onClick={() => setUsername(s)}>
+                  {s}
+                </button>
+              ))}
+            </p>
+          )}
+          <span id="username-help" className="muted small">
+            3 to 20 letters, numbers or underscores. Starts with a letter. Capitals are the same as lowercase, so Dia and dia are one name.
+          </span>
+          {profile?.usernameNeedsChange && check.state.status === 'yours' && (
+            <span className="small" role="note">
+              Your username is from before Segue's current rules. It still works, but you're welcome to choose a new one.
+            </span>
+          )}
+        </div>
         <label className="field">
           <span>About you (optional)</span>
           <textarea rows={2} maxLength={280} value={bio} onChange={(e) => setBio(e.target.value)} />
@@ -424,7 +473,7 @@ export function ProfileSheet({
             {error}
           </p>
         )}
-        <button type="submit" className="primary wide" disabled={busy}>
+        <button type="submit" className="primary wide" disabled={busy || nameBlocked}>
           {busy ? 'Saving…' : setup ? 'Save and continue' : 'Save'}
         </button>
 

@@ -13,7 +13,9 @@ export interface SocialDeps {
   deleteAuthUser?: (userId: string) => Promise<boolean>;
   /** Where profile pictures are kept; without it, photo upload answers 503 "avatars_off". */
   avatars?: AvatarStorage;
-  limits?: { writesPerHour?: number; searchesPerHour?: number; syncWritesPerHour?: number };
+  limits?: { writesPerHour?: number; searchesPerHour?: number; syncWritesPerHour?: number; usernameChecksPerHour?: number };
+  /** Extra reserved usernames on top of the built-in list (RESERVED_USERNAMES). */
+  reservedUsernames?: string[];
   log?: (line: string) => void;
   now?: () => number;
 }
@@ -29,7 +31,7 @@ export interface Ctx {
   /** The caller's profile row; throws 403 "profile_required" when they haven't set one up. */
   profile(): Promise<Row>;
   /** Counts one action against the caller's hourly allowance. */
-  limit(kind: 'write' | 'search' | 'sync'): void;
+  limit(kind: 'write' | 'search' | 'sync' | 'username'): void;
 }
 
 export type Handler = (ctx: Ctx) => Promise<{ status: number; body: unknown }>;

@@ -102,6 +102,7 @@ All routes need `Authorization: Bearer <Supabase access token>`. Everything exce
 | PUT | `/v1/me` | Create the profile (username, displayName, …). `409 username_taken`. |
 | PATCH | `/v1/me` | Change any profile field. |
 | DELETE | `/v1/me` | Body `{ "confirm": "DELETE" }`. Deletes everything, then the sign-in if the server has the service role key. |
+| GET | `/v1/usernames/availability?username=` | Needs a sign-in, not a profile. `{ username, available, reason, yours?, suggestions? }`; `reason` is `invalid_format`, `too_short`, `too_long`, `reserved` or `taken`. Never says who owns a name. Limited to 240 checks an hour per person (`usernameChecksPerHour`). |
 | GET | `/v1/users?q=` | Findable people by name or username. |
 | GET | `/v1/users/:id` | A profile card, if findable, a mutual, or you already share something: `{ user }` with `full` (false when they keep details private), `connection`, `connectionId?`, `mutualCount?`. Blocked people are `404`. |
 | POST | `/v1/me/avatar` | Raw image bytes (`image/jpeg`, `png` or `webp`, ≤ 2 MB, 32–1024 px). Returns the profile. `503 avatars_off` when storage isn't configured. |
@@ -159,6 +160,22 @@ DATABASE_URL=... pnpm --filter @segue/api migrate down   # undo the latest (dele
 docker run -d -p 5432:5432 -e POSTGRES_PASSWORD=postgres postgres:16
 TEST_DATABASE_URL=postgres://postgres:postgres@localhost:5432/postgres pnpm --filter @segue/api test
 ```
+
+## Usernames
+
+**Rules** (one implementation in `packages/schemas/src/username.ts`, used by the server and the form): 3–20 characters; English letters, numbers and underscores; starts with a letter; doesn't start or end with an underscore; no doubled underscores; not reserved. Segue's earlier limit was 3–24 characters with no other rules; the 3–20 limit and the other rules are new, from the product brief.
+
+**Normalization.** The text is trimmed and checked exactly as typed (a name with a space or an accent is refused, never quietly "fixed"), then lowercased. Segue shows usernames in lowercase everywhere, so there is one column, `profiles.username`, holding the canonical name; `Dia` and `dia` are the same name. Everything that looks someone up or searches by name uses that column. Other tables point at the person's id, never at the username, so changing a username changes nothing else.
+
+**What guarantees uniqueness.** The unique index `profiles_username_key` on `profiles.username` (values are always lowercase, so it is case-insensitive in effect) plus a trigger, `profiles_username_rules`, that rejects a malformed name on any insert or username change, whatever code does it. When two people take the same name at once, one insert wins and the other gets `409 username_taken`, which the form shows as "just taken" without losing anything else they typed. Tested with ten simultaneous registrations.
+
+**Reserved names** (`RESERVED_USERNAMES` in the schemas package: admin, support, system, official, api, root, null, undefined, segue, and names of app pages such as login, settings, together). Add more on the server with the `RESERVED_USERNAMES` environment variable (comma-separated). Compared after lowercasing.
+
+**Older accounts.** Migration `003_username_rules` doesn't rename anyone. Names that break the new rules (over 20 characters, doubled or trailing underscores, starting with a number, reserved) are flagged (`username_review`). They keep working and can save other profile changes; the profile form shows a gentle note, and choosing a new name must meet the new rules and clears the flag. Existing names were already unique in lowercase, so no conflicts needed resolving. The reserved list used by the migration is the one in the code when it was written.
+
+**Changing a username.** Allowed any time, no limit, in one `UPDATE` (so it either happens or doesn't). The old name becomes free at once. There are no username-based profile URLs or links in Segue yet, so there is nothing to redirect; if profile URLs are added later they should look people up by the current username and decide what happens to old ones.
+
+**In the form.** The username box checks as you type: format problems appear immediately; a well-formed name is checked with the server after about 0.4 seconds without typing, a newer keystroke cancels the older request, and an answer for an older name is ignored. The message is text first (✓ or ⚠ marks are extra), announced politely to screen readers. Taken names offer up to three readable alternatives that were checked free. The answer is advisory: saving is checked again by the server and the database. Your own current name always counts as available to you.
 
 ## Profiles, photos, mutuals and blocking (Round 1 of the profile and mutuals work)
 

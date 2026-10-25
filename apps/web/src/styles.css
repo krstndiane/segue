@@ -2917,3 +2917,50 @@ details.more[open] {
   padding: 0;
   list-style: none;
 }
+
+/* Username field */
+.username-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.username-row input {
+  flex: 1;
+  min-width: 0;
+}
+.username-at {
+  color: var(--slate);
+  font-weight: 600;
+}
+.username-status {
+  min-height: 1.4em;
+  margin: 6px 0 2px;
+  font-size: var(--step--1);
+  color: var(--slate);
+}
+.username-status.available,
+.username-status.yours {
+  color: #1d6b3a;
+}
+.username-status.invalid,
+.username-status.taken,
+.username-status.reserved,
+.username-status.error {
+  color: #a3261f;
+}
+.username-suggestion {
+  margin: 0 4px 4px 0;
+  cursor: pointer;
+}
+@media (prefers-color-scheme: dark) {
+  .username-status.available,
+  .username-status.yours {
+    color: #6fd28f;
+  }
+  .username-status.invalid,
+  .username-status.taken,
+  .username-status.reserved,
+  .username-status.error {
+    color: #ff8f86;
+  }
+}

@@ -21,11 +21,12 @@ const text = (max: number) =>
 const line = (min: number, max: number) => text(max).pipe(z.string().min(min, 'Required').max(max).refine((s) => !/[\r\n]/.test(s), 'One line only'));
 const timezone = z.string().min(1).max(64).regex(/^[A-Za-z0-9_+\-/]+$/);
 
-export const USERNAME_PATTERN = /^[a-z0-9_]{3,24}$/;
-export const username = z
-  .string()
-  .transform((s) => s.trim().toLowerCase().replace(/^@/, ''))
-  .pipe(z.string().regex(USERNAME_PATTERN, '3 to 24 letters, numbers or underscores'));
+/**
+ * The name as typed (trimmed). The rules in username.ts are applied by the API when a name
+ * is created or changed, not here, so an older name that predates them can still be saved
+ * unchanged along with other edits, and the person gets a specific message for what's wrong.
+ */
+export const username = z.string().max(64).transform((s) => s.trim());
 
 export const NotifyPrefsSchema = z.object({
   hearts: z.boolean(),
@@ -120,6 +121,8 @@ export interface PublicProfile {
 }
 
 export interface MyProfile extends PublicProfile {
+  /** an older username that doesn't meet today's rules: it still works, but they're asked to pick a new one */
+  usernameNeedsChange: boolean;
   pronouns: string;
   interests: string[];
   profileVisibility: ProfileVisibility;
