@@ -34,19 +34,28 @@ const FALLBACK: Partial<Record<PlaceCategory, string>> = {
   mall: 'Order online',
 };
 
-let available: Promise<boolean> | null = null;
-
-/** Whether this server can read notes. Asked once per session. */
-export function smartAddAvailable(): Promise<boolean> {
-  available ??= fetch(`${API_URL}/health`)
-    .then((r) => (r.ok ? r.json() : {}))
-    .then((b: { smartAdd?: boolean }) => b.smartAdd === true)
-    .catch(() => {
-      available = null; // try again later, e.g. when back online
-      return false;
-    });
-  return available;
+interface Health {
+  smartAdd?: boolean;
+  assistant?: 'ai' | 'basic';
 }
+let health: Promise<Health> | null = null;
+
+/** What this server offers. Asked once per session. */
+function serverHealth(): Promise<Health> {
+  health ??= fetch(`${API_URL}/health`)
+    .then((r) => (r.ok ? r.json() : {}))
+    .catch(() => {
+      health = null; // try again later, e.g. when back online
+      return {};
+    });
+  return health;
+}
+
+/** Whether this server can read notes. */
+export const smartAddAvailable = (): Promise<boolean> => serverHealth().then((b) => b.smartAdd === true);
+
+/** Whether the planning assistant can use AI here (it also needs a Segue account). */
+export const assistantAiAvailable = (): Promise<boolean> => serverHealth().then((b) => b.assistant === 'ai');
 
 export function toStoredBlock(u: UnderstoodBlock, now: Date): StoredBlock {
   const b: StoredBlock = {

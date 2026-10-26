@@ -7,18 +7,20 @@ import type { IncomingMessage, ServerResponse } from 'node:http';
 import { reroute } from '@segue/engine';
 import type { Place } from '@segue/engine';
 import type { PlacesProvider, ReverseGeocoder, WeatherProvider } from '@segue/providers';
-import { AlternativesRequestSchema, CurrentWeatherSchema, NearbyQuerySchema, RerouteRequestSchema, UnderstandRequestSchema, formatIssues } from '@segue/schemas';
+import { AlternativesRequestSchema, AssistantRequestSchema, CurrentWeatherSchema, NearbyQuerySchema, RerouteRequestSchema, UnderstandRequestSchema, formatIssues } from '@segue/schemas';
 import { findAlternatives } from './alternativesRoute';
 import { gatherCandidates } from './candidates';
 import type { Config } from './config';
 import { DailyCap, RateLimiter } from './rateLimit';
 import type { Understand } from './understand';
+import { validAction, type Ask } from './assistant';
+import { AuthError, bearer, type Verifier } from './auth';
 import { HttpError, readJson, send } from './http';
 import type { SocialRoutes } from './social';
 
 export interface AppDeps {
   config: Pick<Config, 'corsOrigins' | 'rerouteRateLimit'> &
-    Partial<Pick<Config, 'smartAddRateLimit' | 'readRateLimit' | 'smartAddDailyCap' | 'clientIpHeader' | 'trustedProxyHops'>>;
+    Partial<Pick<Config, 'smartAddRateLimit' | 'readRateLimit' | 'smartAddDailyCap' | 'clientIpHeader' | 'trustedProxyHops' | 'assistantRateLimit' | 'assistantDailyCap'>>;
   places: PlacesProvider;
   weather: WeatherProvider;
   /** Present when "Ask in your own words" is on. */
@@ -28,6 +30,8 @@ export interface AppDeps {
   log?: (line: string) => void;
   /** Accounts, notes, hearts, invitations and notifications. Missing = those routes answer 503. */
   social?: SocialRoutes;
+  /** The planning assistant's AI mode: a model, and a way to check who's signing in. Missing = the phone's own answers. */
+  assistant?: { ask: Ask; verifier: Verifier };
 }
 
 /** Paths that need a signed-in Segue account. */
@@ -91,6 +95,8 @@ export function createApp(deps: AppDeps) {
   const understandLimiter = new RateLimiter(deps.config.smartAddRateLimit ?? 40, 60 * 60 * 1000);
   const readLimiter = new RateLimiter(deps.config.readRateLimit ?? 300, 60 * 60 * 1000);
   const understandCap = new DailyCap(deps.config.smartAddDailyCap ?? 300);
+  const assistantLimiter = new RateLimiter(deps.config.assistantRateLimit ?? 60, 60 * 60 * 1000);
+  const assistantCap = new DailyCap(deps.config.assistantDailyCap ?? 500);
   const who = (req: IncomingMessage) => clientKey(req, { header: deps.config.clientIpHeader, hops: deps.config.trustedProxyHops });
   /** Places, weather and place names each reach a free service that bans heavy callers. */
   const limitRead = (req: IncomingMessage) => {
@@ -117,7 +123,7 @@ export function createApp(deps: AppDeps) {
     const method = req.method ?? 'GET';
 
     if (method === 'GET' && url.pathname === '/health') {
-      return { status: 200, body: { ok: true, places: deps.places.name, weather: deps.weather.name, smartAdd: !!deps.understand, accounts: !!deps.social } };
+      return { status: 200, body: { ok: true, places: deps.places.name, weather: deps.weather.name, smartAdd: !!deps.understand, accounts: !!deps.social, assistant: deps.assistant ? 'ai' : 'basic' } };
     }
 
     if (SOCIAL_PATH.test(url.pathname)) {
@@ -181,6 +187,32 @@ export function createApp(deps: AppDeps) {
       } catch (e) {
         log(`understand failed: ${(e as Error).message}`);
         throw new HttpError(502, "Couldn't read that right now");
+      }
+    }
+
+    if (method === 'POST' && url.pathname === '/v1/assistant') {
+      if (!deps.assistant) throw new HttpError(404, 'The AI assistant is off on this server', undefined, {}, 'assistant_off');
+      // Each answer costs money, so it needs a Segue account, and each account has an allowance.
+      const token = bearer(req.headers.authorization);
+      if (!token) throw new HttpError(401, 'Sign in to use this', undefined, {}, 'signed_out');
+      let userId: string;
+      try {
+        userId = (await deps.assistant.verifier.verify(token)).id;
+      } catch (e) {
+        if (!(e instanceof AuthError)) log(`assistant token check failed: ${(e as Error).message}`);
+        throw new HttpError(401, 'Your sign-in has expired. Sign in again.', undefined, {}, 'signed_out');
+      }
+      const parsed = AssistantRequestSchema.safeParse(await readJson(req, { limit: 64 * 1024 }));
+      if (!parsed.success) throw new HttpError(400, 'Invalid request', formatIssues(parsed.error));
+      const retryAfter = assistantLimiter.hit(userId);
+      if (retryAfter) throw new HttpError(429, 'Too many questions, try again later', undefined, { 'retry-after': String(retryAfter) }, 'assistant_limited');
+      if (!assistantCap.take()) throw new HttpError(503, 'The AI assistant is resting for today', undefined, {}, 'assistant_limited');
+      try {
+        const out = await deps.assistant.ask(parsed.data);
+        return { status: 200, body: { answer: out.answer, action: validAction(out.action, parsed.data) } };
+      } catch (e) {
+        log(`assistant failed: ${(e as Error).message}`);
+        throw new HttpError(502, "Couldn't get an answer right now", undefined, {}, 'assistant_unavailable');
       }
     }
 

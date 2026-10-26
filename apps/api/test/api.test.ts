@@ -65,7 +65,7 @@ describe('API', () => {
   it('reports health', async () => {
     const res = await fetch(`${base}/health`);
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ ok: true, places: 'mock', weather: 'fake', smartAdd: false, accounts: false });
+    expect(await res.json()).toEqual({ ok: true, places: 'mock', weather: 'fake', smartAdd: false, accounts: false, assistant: 'basic' });
   });
 
   it('re-routes a day and returns the plan, alternatives, and candidates', async () => {
@@ -431,5 +431,116 @@ describe('POST /v1/alternatives', () => {
     } finally {
       s.close();
     }
+  });
+});
+
+describe('POST /v1/assistant (optional AI mode)', () => {
+  const snapshot = {
+    now: '2026-10-19T14:00:00+08:00',
+    endOfDay: '2026-10-19T22:00:00+08:00',
+    items: [
+      { id: 'run', title: 'Run', start: '2026-10-19T17:00:00+08:00', end: '2026-10-19T17:45:00+08:00', fixed: false, calendar: false, status: 'planned' },
+      { id: 'gcal_1', title: 'Standup', start: '2026-10-19T15:00:00+08:00', end: '2026-10-19T15:30:00+08:00', fixed: true, calendar: true, status: 'planned' },
+    ],
+    unscheduled: [],
+    changes: [],
+    options: [{ id: 'opt-a', label: 'Work out at Pulse instead', start: '2026-10-19T17:00:00+08:00', end: '2026-10-19T17:45:00+08:00', why: 'Open until 10 PM', facts: [], tradeoffs: [] }],
+  };
+  const ask = { question: "What's next?", draft: 'Next: 3:00 PM–3:30 PM Standup (set time).', snapshot, history: [] };
+  const GOOD = 'good.token.one';
+  const OTHER = 'other.token.two';
+  const verifier = { verify: async (t: string) => { if (t !== GOOD && t !== OTHER) throw new (await import('../src/auth')).AuthError('bad'); return { id: t === GOOD ? '00000000-0000-4000-8000-000000000001' : '00000000-0000-4000-8000-000000000002', email: 'x@example.com' }; } };
+
+  async function app(answerWith: (req: unknown) => Promise<{ answer: string; action: unknown }>, extra: Record<string, number> = {}) {
+    const s = createServer(createApp({ config: { corsOrigins: [], rerouteRateLimit: 5, ...extra }, places: new MockPlacesProvider(), weather, log: () => {}, assistant: { ask: answerWith as never, verifier: verifier as never } }));
+    await new Promise<void>((r) => s.listen(0, r));
+    const at = `http://127.0.0.1:${(s.address() as AddressInfo).port}`;
+    return { s, at, post: (b: unknown, token?: string) => fetch(`${at}/v1/assistant`, { method: 'POST', headers: { 'content-type': 'application/json', ...(token ? { authorization: `Bearer ${token}` } : {}) }, body: JSON.stringify(b) }) };
+  }
+
+  it('is off unless a model is configured, and the phone answers on its own', async () => {
+    expect((await post('/v1/assistant', ask)).status).toBe(404);
+  });
+
+  it('needs a signed-in Segue account', async () => {
+    const { s, post: p, at } = await app(async () => ({ answer: 'x', action: null }));
+    try {
+      expect((await p(ask)).status).toBe(401);
+      expect((await p(ask, 'aaa.bbb.ccc')).status).toBe(401);
+      expect((await (await fetch(`${at}/health`)).json()).assistant).toBe('ai');
+    } finally {
+      s.close();
+    }
+  });
+
+  it('rejects malformed or oversized requests', async () => {
+    const { s, post: p } = await app(async () => ({ answer: 'x', action: null }));
+    try {
+      expect((await p({ ...ask, question: '' }, GOOD)).status).toBe(400);
+      expect((await p({ ...ask, snapshot: { ...snapshot, items: Array.from({ length: 41 }, () => snapshot.items[0]) } }, GOOD)).status).toBe(400);
+    } finally {
+      s.close();
+    }
+  });
+
+  it('passes the answer through, but only actions about things in the snapshot, never replacing a set-time item', async () => {
+    const actions: unknown[] = [
+      { type: 'use-option', optionId: 'opt-a' },
+      { type: 'use-option', optionId: 'made-up' },
+      { type: 'options', blockId: 'gcal_1' },
+      { type: 'options', blockId: 'someone-elses-item' },
+      { type: 'open-item', blockId: 'run' },
+      { type: 'replan' },
+    ];
+    let i = 0;
+    const { s, post: p } = await app(async () => ({ answer: 'Next is your standup at 3:00 PM.', action: actions[i++] }));
+    try {
+      const got = [];
+      for (let n = 0; n < actions.length; n++) got.push(((await (await p(ask, GOOD)).json()) as { action: unknown }).action);
+      expect(got).toEqual([{ type: 'use-option', optionId: 'opt-a' }, null, null, null, { type: 'open-item', blockId: 'run' }, { type: 'replan' }]);
+    } finally {
+      s.close();
+    }
+  });
+
+  it('says plainly when the model fails, so the phone falls back to its own answer', async () => {
+    const { s, post: p } = await app(async () => {
+      throw new Error('overloaded');
+    });
+    try {
+      const res = await p(ask, GOOD);
+      expect(res.status).toBe(502);
+      expect(await res.json()).toMatchObject({ code: 'assistant_unavailable' });
+    } finally {
+      s.close();
+    }
+  });
+
+  it('limits each account separately', async () => {
+    const { s, post: p } = await app(async () => ({ answer: 'ok', action: null }), { assistantRateLimit: 2 });
+    try {
+      expect([(await p(ask, GOOD)).status, (await p(ask, GOOD)).status, (await p(ask, GOOD)).status]).toEqual([200, 200, 429]);
+      expect((await p(ask, OTHER)).status).toBe(200);
+    } finally {
+      s.close();
+    }
+  });
+});
+
+describe('assistant conversation turns', () => {
+  it('start with the user and alternate', async () => {
+    const { turns } = await import('../src/assistant');
+    expect(
+      turns([
+        { role: 'assistant', text: 'hi' },
+        { role: 'user', text: 'a' },
+        { role: 'user', text: 'b' },
+        { role: 'assistant', text: 'c' },
+        { role: 'user', text: 'd' },
+      ]),
+    ).toEqual([
+      { role: 'user', content: 'a\nb' },
+      { role: 'assistant', content: 'c' },
+    ]);
   });
 });

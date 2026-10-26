@@ -3,6 +3,7 @@ import { createApp } from './app';
 import { loadConfig } from './config';
 import { buildGeocoder, buildPlacesProvider, buildWeatherProvider } from './providers';
 import { claudeUnderstand } from './understand';
+import { claudeAssistant } from './assistant';
 import { createVerifier, deleteAuthUser } from './auth';
 import { supabaseAvatarStorage } from './social/avatars';
 import { connect, migrate } from './db';
@@ -14,6 +15,10 @@ if (process.env.NODE_ENV === 'production' && !config.corsOrigins.some((o) => o =
 }
 const places = buildPlacesProvider(config);
 const understand = config.smartAdd ? claudeUnderstand() : undefined;
+/** Checks Segue sign-ins (accounts and the AI assistant both need it). */
+const verifier = config.supabaseUrl || config.supabaseJwtSecret ? createVerifier({ supabaseUrl: config.supabaseUrl, jwtSecret: config.supabaseJwtSecret }) : undefined;
+// The AI assistant uses the same Anthropic key as smart add, and needs sign-ins. Without either, the phone answers on its own.
+const assistant = config.smartAdd && verifier ? { ask: claudeAssistant(), verifier } : undefined;
 
 /** Accounts need both a database and a way to check sign-ins; without them the planner still works. */
 async function buildSocial(): Promise<SocialRoutes | undefined> {
@@ -30,7 +35,7 @@ async function buildSocial(): Promise<SocialRoutes | undefined> {
   const { supabaseUrl, supabaseServiceRoleKey } = config;
   return createSocial({
     db,
-    verifier: createVerifier({ supabaseUrl, jwtSecret: config.supabaseJwtSecret }),
+    verifier: verifier!,
     deleteAuthUser: supabaseUrl && supabaseServiceRoleKey ? (id) => deleteAuthUser(supabaseUrl, supabaseServiceRoleKey, id) : undefined,
     avatars: supabaseUrl && supabaseServiceRoleKey ? supabaseAvatarStorage(supabaseUrl, supabaseServiceRoleKey) : undefined,
     reservedUsernames: config.reservedUsernames,
@@ -44,10 +49,10 @@ const social = await buildSocial().catch((e: Error) => {
   console.error(`Accounts are off: ${e.message}`);
   return undefined;
 });
-const server = createServer(createApp({ config, places, weather: buildWeatherProvider(), understand, geocoder: buildGeocoder(config), social }));
+const server = createServer(createApp({ config, places, weather: buildWeatherProvider(), understand, geocoder: buildGeocoder(config), social, assistant }));
 
 server.listen(config.port, () => {
-  console.log(`Segue API on http://localhost:${config.port} · places: ${places.name} · smart add: ${understand ? 'on' : 'off'} · accounts: ${social ? 'on' : 'off'}`);
+  console.log(`Segue API on http://localhost:${config.port} · places: ${places.name} · smart add: ${understand ? 'on' : 'off'} · accounts: ${social ? 'on' : 'off'} · assistant: ${assistant ? 'ai' : 'basic'}`);
 });
 
 for (const sig of ['SIGINT', 'SIGTERM'] as const) {

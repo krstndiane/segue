@@ -15,6 +15,8 @@ interface Props {
   onView: (v: View) => void;
   location: LocationStatus;
   onSettings: () => void;
+  /** opens the planning assistant; no button when missing */
+  onAssistant?: () => void;
   tempUnit: 'C' | 'F';
   /** first-run setup hides the tabs */
   showNav?: boolean;
@@ -53,7 +55,7 @@ const pinLabel = (l: LocationStatus) =>
 
 const temp = (c: number, unit: 'C' | 'F') => `${Math.round(unit === 'F' ? (c * 9) / 5 + 32 : c)}°`;
 
-export function SkyHeader({ sky, now, view, onView, location, onSettings, tempUnit, showNav = true, together = false, badge = 0 }: Props) {
+export function SkyHeader({ sky, now, view, onView, location, onSettings, onAssistant, tempUnit, showNav = true, together = false, badge = 0 }: Props) {
   // A new scene object only when something the renderer draws has changed.
   const scene = useMemo(
     () => sceneFor(sky),
@@ -119,6 +121,14 @@ export function SkyHeader({ sky, now, view, onView, location, onSettings, tempUn
                   </button>
                 )}
               </nav>
+              {onAssistant && (
+                <button type="button" className="gear ask" aria-label="Ask about your day" onClick={onAssistant}>
+                  <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true">
+                    <path d="M5 5.5h14a1.5 1.5 0 0 1 1.5 1.5v8a1.5 1.5 0 0 1-1.5 1.5h-7l-4 3.5v-3.5H5A1.5 1.5 0 0 1 3.5 15V7A1.5 1.5 0 0 1 5 5.5Z" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round" />
+                    <path d="M8 10.5h.01M12 10.5h.01M16 10.5h.01" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" />
+                  </svg>
+                </button>
+              )}
               <button type="button" className="gear" aria-label="Settings" onClick={onSettings}>
                 <GearIcon />
               </button>

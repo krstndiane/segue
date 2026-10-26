@@ -15,6 +15,9 @@ export interface Config {
   readRateLimit: number;
   /** All clients together: paid smart-add calls per UTC day. 0 turns the cap off. */
   smartAddDailyCap: number;
+  /** AI assistant answers per account per hour, and per day for everyone (it shares the Anthropic key with smart add). */
+  assistantRateLimit: number;
+  assistantDailyCap: number;
   /** A header the host sets to the real client IP (for example x-real-ip). Wins over x-forwarded-for. */
   clientIpHeader?: string;
   /** Proxies in front of this server that each append to x-forwarded-for. */
@@ -77,6 +80,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     smartAddRateLimit: Number(env.SMART_ADD_RATE_LIMIT ?? 40),
     readRateLimit: count(env, 'READ_RATE_LIMIT', 300),
     smartAddDailyCap: count(env, 'SMART_ADD_DAILY_CAP', 300),
+    assistantRateLimit: count(env, 'ASSISTANT_RATE_LIMIT', 60),
+    assistantDailyCap: count(env, 'ASSISTANT_DAILY_CAP', 500),
     clientIpHeader: env.CLIENT_IP_HEADER?.trim().toLowerCase() || undefined,
     trustedProxyHops: count(env, 'TRUSTED_PROXY_HOPS', 1),
     databaseUrl: env.DATABASE_URL?.trim() || undefined,
