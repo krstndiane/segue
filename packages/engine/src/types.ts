@@ -59,6 +59,10 @@ export interface Place {
   reviewCount?: number;
   address?: string;
   source: string;
+  /** ISO time the provider was asked (cached results keep the original time). */
+  fetchedAt?: string;
+  /** The provider says it's temporarily closed. */
+  temporarilyClosed?: boolean;
 }
 
 export interface FixedTime {

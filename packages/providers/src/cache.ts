@@ -62,6 +62,8 @@ export class CachedPlacesProvider implements PlacesProvider {
     private readonly inner: PlacesProvider,
     private readonly store: KeyValueStore<Place[]> = new MemoryStore(),
     private readonly ttlMs = 24 * 60 * 60 * 1000,
+    private readonly emptyTtlMs = 60 * 60 * 1000,
+    private readonly clock: () => number = Date.now,
   ) {
     this.name = `cached(${inner.name})`;
   }
@@ -74,8 +76,10 @@ export class CachedPlacesProvider implements PlacesProvider {
       return cached;
     }
     this.misses++;
-    const places = await this.inner.nearby({ ...req, radiusM: radiusBucket(req.radiusM) });
-    await this.store.set(key, places, this.ttlMs);
+    const fetchedAt = new Date(this.clock()).toISOString();
+    const places = (await this.inner.nearby({ ...req, radiusM: radiusBucket(req.radiusM) })).map((p) => (p.fetchedAt ? p : { ...p, fetchedAt }));
+    // An empty answer may just be a quiet moment for the map server; ask again sooner.
+    await this.store.set(key, places, places.length ? this.ttlMs : Math.min(this.ttlMs, this.emptyTtlMs));
     return places;
   }
 }
@@ -84,7 +88,10 @@ export class CachedPlacesProvider implements PlacesProvider {
 export class FallbackPlacesProvider implements PlacesProvider {
   readonly name: string;
   lastErrors: string[] = [];
-  constructor(private readonly chain: PlacesProvider[]) {
+  constructor(
+    private readonly chain: PlacesProvider[],
+    private readonly log?: (line: string) => void,
+  ) {
     if (!chain.length) throw new Error('FallbackPlacesProvider needs at least one provider');
     this.name = chain.map((p) => p.name).join('→');
   }
@@ -96,6 +103,7 @@ export class FallbackPlacesProvider implements PlacesProvider {
         return await p.nearby(req);
       } catch (e) {
         this.lastErrors.push(`${p.name}: ${(e as Error).message}`);
+        this.log?.(`places: ${p.name} failed for ${req.category}: ${(e as Error).message}`);
       }
     }
     throw new Error(`All place providers failed: ${this.lastErrors.join('; ')}`);

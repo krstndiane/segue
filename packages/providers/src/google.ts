@@ -3,6 +3,7 @@
  * only for the fields it needs (the field mask controls billing tier).
  */
 import type { OpeningHours, Place, Requirement } from '@segue/engine';
+import { dedupePlaces } from './dedupe';
 import { ProviderError, fetchWithTimeout, type FetchFn, type NearbyRequest, type PlacesProvider, type SearchableCategory } from './types';
 
 const BASE = 'https://places.googleapis.com/v1';
@@ -14,6 +15,7 @@ const FIELD_MASK = [
   'places.rating',
   'places.userRatingCount',
   'places.formattedAddress',
+  'places.businessStatus',
 ].join(',');
 
 /** Nearby search by place type; coworking has no type, so it uses text search. */
@@ -41,6 +43,7 @@ interface GooglePlace {
   rating?: number;
   userRatingCount?: number;
   formattedAddress?: string;
+  businessStatus?: 'OPERATIONAL' | 'CLOSED_TEMPORARILY' | 'CLOSED_PERMANENTLY';
 }
 
 const hm = (p: GooglePoint) => `${String(p.hour).padStart(2, '0')}:${String(p.minute).padStart(2, '0')}`;
@@ -57,9 +60,10 @@ export function parseGoogleHours(h: GooglePlace['regularOpeningHours']): Opening
   };
 }
 
-export function parseGooglePlaces(places: GooglePlace[], category: SearchableCategory): Place[] {
-  return places
-    .filter((p) => p.location && p.displayName?.text)
+export function parseGooglePlaces(places: GooglePlace[], category: SearchableCategory, fetchedAt?: string): Place[] {
+  const out = places
+    .filter((p) => p.location && Number.isFinite(p.location.latitude) && Number.isFinite(p.location.longitude) && p.displayName?.text)
+    .filter((p) => p.businessStatus !== 'CLOSED_PERMANENTLY')
     .map((p) => {
       const attributes: Partial<Record<Requirement, boolean>> = category === 'park' ? { outdoor: true } : { indoor: true };
       if (category === 'restaurant' || category === 'cafe') attributes.food = true;
@@ -74,8 +78,11 @@ export function parseGooglePlaces(places: GooglePlace[], category: SearchableCat
         reviewCount: p.userRatingCount,
         address: p.formattedAddress,
         source: 'google',
+        ...(fetchedAt ? { fetchedAt } : {}),
+        ...(p.businessStatus === 'CLOSED_TEMPORARILY' ? { temporarilyClosed: true } : {}),
       };
     });
+  return dedupePlaces(out);
 }
 
 export class GooglePlacesProvider implements PlacesProvider {
@@ -105,6 +112,6 @@ export class GooglePlacesProvider implements PlacesProvider {
     });
     if (!res.ok) throw new ProviderError(this.name, `Places API returned ${res.status}`, res.status);
     const json = (await res.json()) as { places?: GooglePlace[] };
-    return parseGooglePlaces(json.places ?? [], req.category);
+    return parseGooglePlaces(json.places ?? [], req.category, new Date().toISOString());
   }
 }

@@ -79,6 +79,8 @@ export interface PlaceCache {
   location: LatLng;
   /** keyed by category so new blocks can reuse them */
   byCategory: Partial<Record<PlaceCategory, Place[]>>;
+  /** came from a server running with made-up places (development only) */
+  mock?: boolean;
 }
 
 export const CATEGORY_LABEL: Record<PlaceCategory, string> = {

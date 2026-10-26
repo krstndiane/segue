@@ -1,5 +1,5 @@
 import { DAY, MINUTE, localParts, parseHm } from './time';
-import type { OpeningHours } from './types';
+import type { OpeningHours, Place } from './types';
 
 interface Interval {
   start: number;
@@ -86,4 +86,32 @@ export function closingTimeAfter(
   if (hours.always) return null;
   const iv = openIntervals(hours, ms, ms + 1, utcOffsetMinutes).find((i) => i.start <= ms && i.end > ms);
   return iv ? iv.end : null;
+}
+
+/**
+ * What Segue can honestly say about a place at a moment. Listed hours are the
+ * venue's published hours, not live availability, so "open" means "open by
+ * its listed hours".
+ */
+export type OpenStatus = 'open' | 'closed' | 'unknown' | 'temporarily-closed';
+
+export interface OpenStatusInfo {
+  status: OpenStatus;
+  /** when it closes next (open), or null for 24/7 */
+  closesAt?: number | null;
+  /** when it opens next within a week (closed) */
+  opensAt?: number | null;
+}
+
+export function openStatusAt(place: Pick<Place, 'hours' | 'temporarilyClosed'>, ms: number, utcOffsetMinutes: number): OpenStatusInfo {
+  if (place.temporarilyClosed) return { status: 'temporarily-closed' };
+  const hours = place.hours;
+  if (!hours) return { status: 'unknown' };
+  if (hours.always) return { status: 'open', closesAt: null };
+  if (!hours.periods.length) return { status: 'unknown' };
+  const ivs = openIntervals(hours, ms, ms + 7 * DAY, utcOffsetMinutes);
+  const now = ivs.find((iv) => iv.start <= ms && iv.end > ms);
+  if (now) return { status: 'open', closesAt: now.end };
+  const next = ivs.find((iv) => iv.start > ms);
+  return { status: 'closed', opensAt: next?.start ?? null };
 }

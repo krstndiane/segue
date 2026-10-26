@@ -40,6 +40,8 @@ export const PlaceSchema = z.object({
   reviewCount: z.number().int().min(0).optional(),
   address: z.string().optional(),
   source: z.string(),
+  fetchedAt: isoTimestamp.optional(),
+  temporarilyClosed: z.boolean().optional(),
 }) satisfies z.ZodType<Place>;
 
 export const BlockSchema = z

@@ -349,3 +349,12 @@ describe('API protections', () => {
     expect(claudeCalls).toBe(2);
   });
 });
+
+describe('places setup', () => {
+  it('never falls back to made-up places outside mock mode', async () => {
+    const { buildPlacesProvider } = await import('../src/providers');
+    expect(buildPlacesProvider({ placesProvider: 'osm', googleDailyBudget: 1 }, () => {}).name).toBe('cached(osm)');
+    expect(buildPlacesProvider({ placesProvider: 'google', googlePlacesApiKey: 'k', googleDailyBudget: 1 }, () => {}).name).toBe('cached(budget(google)→osm)');
+    expect(buildPlacesProvider({ placesProvider: 'mock', googleDailyBudget: 1 }).name).toBe('mock');
+  });
+});

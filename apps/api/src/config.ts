@@ -2,6 +2,8 @@ export interface Config {
   port: number;
   placesProvider: 'osm' | 'google' | 'mock';
   googlePlacesApiKey?: string;
+  /** Overpass servers to try in order (OVERPASS_URLS, comma-separated); defaults to public ones. */
+  overpassUrls?: string[];
   /** Daily cap on paid Google calls before falling back to OSM. */
   googleDailyBudget: number;
   corsOrigins: string[];
@@ -63,6 +65,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     port: Number(env.PORT ?? 8787),
     placesProvider: provider as Config['placesProvider'],
     googlePlacesApiKey: env.GOOGLE_PLACES_API_KEY || undefined,
+    overpassUrls: env.OVERPASS_URLS ? env.OVERPASS_URLS.split(',').map((u) => u.trim()).filter(Boolean) : undefined,
     googleDailyBudget: Number(env.GOOGLE_DAILY_BUDGET ?? 500),
     corsOrigins: (env.CORS_ORIGINS ?? 'http://localhost:5173')
       .split(',')

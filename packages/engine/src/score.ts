@@ -24,7 +24,7 @@ export function resolveWeights(partial?: Partial<Weights>): Weights {
 
 /** True when the place is known NOT to offer something the block needs. */
 export function failsHardRequirement(block: Block, place: Place): boolean {
-  return block.requirements.some((r) => place.attributes[r] === false);
+  return place.temporarilyClosed === true || block.requirements.some((r) => place.attributes[r] === false);
 }
 
 /** 0–1: share of requirements the place is known to meet (unknown counts half). */

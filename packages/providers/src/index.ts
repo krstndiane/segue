@@ -1,7 +1,8 @@
 export * from './types';
 export { geohash } from './geohash';
 export { parseOsmOpeningHours } from './osmHours';
-export { OsmPlacesProvider, buildOverpassQuery, parseOverpass } from './osm';
+export { OsmPlacesProvider, DEFAULT_OVERPASS_ENDPOINTS, buildOverpassQuery, parseOverpass } from './osm';
+export { dedupePlaces } from './dedupe';
 export { GooglePlacesProvider, parseGoogleHours, parseGooglePlaces } from './google';
 export { MockPlacesProvider } from './mock';
 export { OpenMeteoProvider, NoWeatherProvider, skyFromWmo, withOffset } from './weather';
