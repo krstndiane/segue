@@ -20,6 +20,8 @@ interface Props {
   onDone: (id: string) => void;
   onSkip: (id: string) => void;
   onReplan: () => void;
+  /** other options for one item, e.g. from the rain nudge */
+  onOptions: (item: PlanItem, trigger: 'rain') => void;
   onFillGap: (from: string) => void;
   onDismissNudge: (id: string) => void;
 }
@@ -60,7 +62,7 @@ function StatusLine({ day }: { day: DayState }) {
   );
 }
 
-function NudgeBanner({ nudge, onReplan, onDismiss }: { nudge: Nudge; onReplan: () => void; onDismiss: () => void }) {
+function NudgeBanner({ nudge, onReplan, onOptions, onDismiss }: { nudge: Nudge; onReplan: () => void; onOptions: () => void; onDismiss: () => void }) {
   const directions = nudge.item ? directionsUrl(nudge.item) : null;
   return (
     <div className={`nudge nudge-${nudge.kind}`} role="status">
@@ -76,6 +78,10 @@ function NudgeBanner({ nudge, onReplan, onDismiss }: { nudge: Nudge; onReplan: (
         ) : nudge.action === 'replan' ? (
           <button type="button" className="ghost" onClick={onReplan}>
             Re-route
+          </button>
+        ) : nudge.action === 'options' && nudge.item ? (
+          <button type="button" className="ghost" onClick={onOptions}>
+            See options
           </button>
         ) : null}
         <button type="button" className="icon-button" aria-label="Dismiss" onClick={onDismiss}>
@@ -162,7 +168,7 @@ export function Timeline(props: Props) {
     <>
       <StatusLine day={day} />
       {props.nudges.map((n) => (
-        <NudgeBanner key={n.id} nudge={n} onReplan={props.onReplan} onDismiss={() => props.onDismissNudge(n.id)} />
+        <NudgeBanner key={n.id} nudge={n} onReplan={props.onReplan} onOptions={() => n.item && props.onOptions(n.item, 'rain')} onDismiss={() => props.onDismissNudge(n.id)} />
       ))}
       {props.weather}
       {props.adder}

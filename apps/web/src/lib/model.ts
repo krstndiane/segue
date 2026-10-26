@@ -69,6 +69,10 @@ export interface DayState {
   excludedIds?: string[];
   /** weather precautions already acknowledged today, by kind */
   dismissedPrecautions?: string[];
+  /** places turned down in "other options" today: not offered again today */
+  declinedPlaceIds?: string[];
+  /** items moved indoors (or to no place) today, so the rain nudge leaves them alone */
+  indoorIds?: string[];
   generatedAt?: string;
   source?: 'server' | 'device';
   warnings: string[];

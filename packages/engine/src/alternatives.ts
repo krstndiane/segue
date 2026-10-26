@@ -358,9 +358,22 @@ export function alternatives(input: AlternativesInput): AlternativesResult {
   // Place each variant and keep what fits, as close as possible to when it was meant to be.
   const reference = Math.max(env.nowMs, origStart ?? env.nowMs);
   const placed: Placed[] = [];
+  let sameAsNow = false;
+  const isCurrent = (p: Placed) =>
+    !!planned &&
+    origStart !== undefined &&
+    origStart >= env.nowMs &&
+    (p.variant.option.place?.id ?? null) === (planned.place?.id ?? null) &&
+    Math.abs(p.item.start - origStart) < 10 * MINUTE &&
+    p.item.end - p.item.start === toMs(planned.end) - origStart;
   for (const v of variants) {
     const best = place(seq, v, env, reference);
     if (!best) continue;
+    // The plan as it already is isn't an alternative.
+    if (isCurrent(best)) {
+      sameAsNow = true;
+      continue;
+    }
     if (rainMatters && hazard && v.kind !== 'substitute' && v.kind !== 'no-place' && isOutdoor(v.block) && best.item.start < hazard) continue;
     placed.push(best);
   }
@@ -417,7 +430,9 @@ export function alternatives(input: AlternativesInput): AlternativesResult {
     notes.push({ kind: 'unknown', text: input.rainingUntil ? "No current forecast, so Segue can't say when the rain will stop" : "No current forecast, so rain isn't factored in" });
   if (result.options.some((o) => o.place)) notes.push({ kind: 'unknown', text: 'Opening times are the places\' listed hours, not live availability' });
   if (result.options.some((o) => o.travelMinutes > 0)) notes.push({ kind: 'unknown', text: 'Travel times are estimates (rush hour included), not live traffic' });
-  if (!result.options.length) {
+  if (!result.options.length && sameAsNow) {
+    notes.push({ kind: 'tip', text: 'What you have planned is already the best realistic option' });
+  } else if (!result.options.length) {
     notes.push({
       kind: 'hard',
       text:

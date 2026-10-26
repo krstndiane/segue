@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type { FallbackOption, Place, Plan, PlanItem } from '@segue/engine';
+import { haversineMeters, type AlternativeOption, type AlternativeTrigger, type FallbackOption, type Place, type Plan, type PlanItem } from '@segue/engine';
 import { AccountSettings, AuthSheet, ProfileSheet, SyncPromptSheet } from './components/Account';
 import { AddAtSheet } from './components/AddAtSheet';
+import { AlternativesSheet } from './components/AlternativesSheet';
 import { BlockForm, RoutinesView } from './components/Blocks';
 import { CalendarCard } from './components/CalendarCard';
 import { CalendarPage } from './components/CalendarPage';
@@ -37,6 +38,7 @@ import {
   localDate,
   newId,
   plannedToday,
+  toEngineBlock,
   todayAt,
   utcOffsetMinutes,
   type DayState,
@@ -52,6 +54,7 @@ import { precautionsFor } from './lib/precautions';
 import { toneAt } from './lib/skyRenderer';
 import { BUSY_BLOCK_ID, adjustFor, type ReplanReason } from './lib/replan';
 import { rerouteDay, type RerouteOutcome } from './lib/reroute';
+import { applyAlternative, findAlternatives, forecastFromSky, refine, type AlternativesOutcome } from './lib/alternatives';
 import { navigate, useRoute } from './lib/router';
 import { DEFAULT_LOCATION, DEFAULT_SETTINGS, SEED_BLOCKS } from './lib/seed';
 import { clearAll, getItem } from './lib/store';
@@ -67,6 +70,7 @@ const UNDO_DEPTH = 10;
 type SheetState =
   | { kind: 'replan' }
   | { kind: 'item'; id: string }
+  | { kind: 'alternatives'; id: string; trigger: AlternativeTrigger }
   | { kind: 'block'; id: string | null; draft?: StoredBlock }
   | { kind: 'settings' }
   | { kind: 'addAt'; at: string }
@@ -103,6 +107,7 @@ export function App() {
   const [replanBusy, setReplanBusy] = useState(false);
   const [replanError, setReplanError] = useState<string | null>(null);
   const [outcome, setOutcome] = useState<RerouteOutcome | null>(null);
+  const [alt, setAlt] = useState<{ busy: boolean; error: string | null; outcome: AlternativesOutcome | null }>({ busy: false, error: null, outcome: null });
   const [reason, setReason] = useState<ReplanReason | null>(null);
   const [dismissed, setDismissed] = useState<Set<string>>(new Set());
   const [seed, setSeed] = useState<{ text: string; n: number } | undefined>();
@@ -409,6 +414,65 @@ export function App() {
     setSheet(null);
     setToast({ text: 'Swapped.', undo: true });
   };
+
+  /** Today's blocks as the engine sees them, calendar events included. */
+  async function engineBlocksFor(start: Date) {
+    const excluded = new Set(day.excludedIds ?? []);
+    const planned = blocks.filter((b) => plannedToday(b, localDate(start)) && !excluded.has(b.id));
+    const fromCalendar = await cal.forReroute(start, MAX_BLOCKS - planned.length);
+    return [...planned.map((b) => toEngineBlock(b, start)), ...fromCalendar.extra.filter((b) => !excluded.has(b.id))];
+  }
+
+  /** "What can I do instead?" for one item: checked against the rest of the day, nothing changes until a tap. */
+  async function openAlternatives(id: string, trigger: AlternativeTrigger = 'manual') {
+    if (!day.plan) return;
+    setSheet({ kind: 'alternatives', id, trigger });
+    setAlt({ busy: true, error: null, outcome: null });
+    try {
+      const start = new Date();
+      const endOfDay = todayAt(settings.endOfDay, start);
+      const area = areaForZone(deviceZone());
+      const location = where.fix?.location ?? area?.location ?? DEFAULT_LOCATION;
+      const engineBlocks = await engineBlocksFor(start);
+      const outcome = await findAlternatives(
+        {
+          blocks: engineBlocks.slice(0, MAX_BLOCKS),
+          plan: day.plan,
+          blockId: id,
+          context: { now: start.toISOString(), endOfDay, location, energy: settings.energy, mode: settings.mode, utcOffsetMinutes: utcOffsetMinutes(start) },
+          trigger,
+          avoidPlaceIds: day.declinedPlaceIds,
+          doneBlockIds: [...day.doneIds, ...day.skippedIds],
+          favorites,
+        },
+        {
+          placeCache,
+          cacheNear: !!placeCache && haversineMeters(placeCache.location, location) <= 8000,
+          deviceWeather: forecastFromSky(sky, start.getTime()),
+        },
+      );
+      setAlt({ busy: false, error: null, outcome });
+    } catch {
+      setAlt({ busy: false, error: "Couldn't check other options just now. Try again.", outcome: null });
+    }
+  }
+
+  function chooseAlternative(option: AlternativeOption) {
+    const indoors = option.category !== 'park';
+    changeDay((d) => {
+      const next = applyAlternative(d, option);
+      return indoors ? { ...next, indoorIds: [...new Set([...(d.indoorIds ?? []), option.blockId])] } : next;
+    });
+    setSheet(null);
+    setAlt({ busy: false, error: null, outcome: null });
+    setToast({ text: `Changed: ${option.label}.`, undo: true });
+    navigator.vibrate?.(12);
+  }
+
+  function declinePlace(placeId: string) {
+    setDay((d) => ({ ...d, declinedPlaceIds: [...new Set([...(d.declinedPlaceIds ?? []), placeId])] }));
+    setAlt((a) => (a.outcome ? { ...a, outcome: refine(a.outcome, { avoidPlaceIds: [...new Set([...(a.outcome.request.avoidPlaceIds ?? []), placeId])] }) } : a));
+  }
 
   function toggleSpot(item: PlanItem) {
     const ref = item.place;
@@ -745,6 +809,7 @@ export function App() {
               onDone={(id) => mark('doneIds', id)}
               onSkip={(id) => mark('skippedIds', id)}
               onReplan={() => void replan(null)}
+              onOptions={(item, trigger) => void openAlternatives(item.blockId, trigger)}
               onFillGap={(from) => {
                 setSeed((s) => ({ text: `after ${from}`, n: (s?.n ?? 0) + 1 }));
                 window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -909,6 +974,22 @@ export function App() {
             onUseFallback={(f) => useFallback(openItem.blockId, f)}
             onToggleSpot={() => toggleSpot(openItem)}
             onEdit={blocks.some((b) => b.id === openItem.blockId) ? () => setSheet({ kind: 'block', id: openItem.blockId }) : undefined}
+            onOptions={blocks.some((b) => b.id === openItem.blockId) ? () => void openAlternatives(openItem.blockId) : undefined}
+          />
+        )}
+        {sheet?.kind === 'alternatives' && (
+          <AlternativesSheet
+            title={itemById(sheet.id)?.title ?? 'this'}
+            busy={alt.busy}
+            error={alt.error}
+            outcome={alt.outcome}
+            onUse={chooseAlternative}
+            onNotThis={declinePlace}
+            onMaxMinutes={(m) => setAlt((a) => (a.outcome ? { ...a, outcome: refine(a.outcome, { maxMinutes: m }) } : a))}
+            onClose={() => {
+              setSheet(null);
+              setAlt({ busy: false, error: null, outcome: null });
+            }}
           />
         )}
         {sheet?.kind === 'block' && (

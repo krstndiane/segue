@@ -13,7 +13,7 @@ export interface Nudge {
   kind: 'leave' | 'over' | 'rain' | 'weather';
   title: string;
   body: string;
-  action: 'directions' | 'replan' | 'none';
+  action: 'directions' | 'replan' | 'options' | 'none';
   /** the plan item it's about; weather precautions have none */
   item?: PlanItem;
   /** when it becomes relevant (ms) */
@@ -72,15 +72,15 @@ export function nudgesFor(
     const outdoor = items.find((i) => {
       if (Date.parse(i.end) <= t) return false;
       const b = opts.blocks.find((x) => x.id === i.blockId);
-      return !!b && (b.category === 'park' || b.requirements.includes('outdoor')) && !!i.place;
+      return !!b && (b.category === 'park' || b.requirements.includes('outdoor')) && !!i.place && !(day.indoorIds ?? []).includes(i.blockId);
     });
     if (outdoor) {
       out.push({
         id: `rain:${outdoor.blockId}:${day.date}`,
         kind: 'rain',
         title: `It's raining: ${outdoor.title} is outside`,
-        body: 'Re-route to move it indoors or to later.',
-        action: 'replan',
+        body: 'See what you could do indoors instead, or later.',
+        action: 'options',
         item: outdoor,
         at: t,
       });

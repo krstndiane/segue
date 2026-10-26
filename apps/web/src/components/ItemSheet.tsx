@@ -20,6 +20,8 @@ interface Props {
   onUseFallback: (f: FallbackOption) => void;
   onToggleSpot: () => void;
   onEdit?: () => void;
+  /** realistic other options for this item (flexible items only) */
+  onOptions?: () => void;
 }
 
 const hhmm = (iso: string) => {
@@ -113,6 +115,14 @@ export function ItemSheet(props: Props) {
               ))}
             </ul>
           </section>
+        )}
+
+        {movable && props.onOptions && (
+          <p className="item-options">
+            <button type="button" className="text-button" onClick={props.onOptions}>
+              Closed, raining or short on time? See other options
+            </button>
+          </p>
         )}
 
         <div className="row-actions">
