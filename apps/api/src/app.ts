@@ -7,7 +7,8 @@ import type { IncomingMessage, ServerResponse } from 'node:http';
 import { reroute } from '@segue/engine';
 import type { Place } from '@segue/engine';
 import type { PlacesProvider, ReverseGeocoder, WeatherProvider } from '@segue/providers';
-import { CurrentWeatherSchema, NearbyQuerySchema, RerouteRequestSchema, UnderstandRequestSchema, formatIssues } from '@segue/schemas';
+import { AlternativesRequestSchema, CurrentWeatherSchema, NearbyQuerySchema, RerouteRequestSchema, UnderstandRequestSchema, formatIssues } from '@segue/schemas';
+import { findAlternatives } from './alternativesRoute';
 import { gatherCandidates } from './candidates';
 import type { Config } from './config';
 import { DailyCap, RateLimiter } from './rateLimit';
@@ -181,6 +182,17 @@ export function createApp(deps: AppDeps) {
         log(`understand failed: ${(e as Error).message}`);
         throw new HttpError(502, "Couldn't read that right now");
       }
+    }
+
+    if (method === 'POST' && url.pathname === '/v1/alternatives') {
+      // Shares the re-route allowance: each one can look up a few kinds of place.
+      const retryAfter = limiter.hit(who(req));
+      if (retryAfter) throw new HttpError(429, 'Too many requests, try again later', undefined, { 'retry-after': String(retryAfter) });
+      const parsed = AlternativesRequestSchema.safeParse(await readJson(req));
+      if (!parsed.success) throw new HttpError(400, 'Invalid request', formatIssues(parsed.error));
+      const started = performance.now();
+      const out = await findAlternatives(parsed.data, { places: deps.places, weather: deps.weather, log });
+      return { status: 200, body: { ...out, meta: { ...out.meta, placesProvider: deps.places.name, engineMs: Math.round(performance.now() - started) } } };
     }
 
     if (method === 'POST' && url.pathname === '/v1/reroute') {

@@ -95,7 +95,7 @@ export function makeEnv(
   };
 }
 
-function slotLocation(slot: Slot): LatLng | undefined {
+export function slotLocation(slot: Slot): LatLng | undefined {
   return slot.pinned?.place?.location ?? slot.option.place?.location ?? slot.block.fixed?.location;
 }
 
@@ -266,6 +266,28 @@ export interface SolveResult {
   optionsByBlock: Map<string, Option[]>;
 }
 
+/**
+ * Commitments are never dropped. One that can't be reached in time, or that
+ * overlaps the one before it, keeps its place; the lateness or overlap it
+ * already has is allowed, nothing more.
+ */
+export function pinSequence(pinned: Slot[], env: SolverEnv): Slot[] {
+  const seq: Slot[] = [];
+  let t = env.nowMs;
+  let pos = env.context.location;
+  for (const slot of [...pinned].sort((a, b) => a.pinned!.start - b.pinned!.start || a.pinned!.end - b.pinned!.end || a.block.id.localeCompare(b.block.id))) {
+    const p = slot.pinned!;
+    const dest = slotLocation(slot);
+    const arrive = t + (dest ? env.travel(pos, dest, env.context.mode, t) : 0) * MINUTE;
+    const overlapOk = seq.length > 0 && p.start < t;
+    const lateMin = p.start > env.nowMs && !overlapOk ? Math.max(0, Math.round((arrive - p.start) / MINUTE)) : 0;
+    seq.push({ ...slot, pinned: { ...p, lateOkMin: Math.max(0, lateMin - FIXED_SLACK_MIN), overlapOk } });
+    t = Math.max(t, p.end);
+    if (dest) pos = dest;
+  }
+  return seq;
+}
+
 export function solve(
   pinned: Slot[],
   flexible: Block[],
@@ -277,22 +299,7 @@ export function solve(
   for (const b of flexible) optionsByBlock.set(b.id, optionsFor(b, candidates[b.id], env));
 
   const unscheduled: Block[] = [];
-  // Commitments are never dropped. One that can't be reached in time, or that
-  // overlaps the one before it, keeps its place and is flagged instead.
-  const seq: Slot[] = [];
-  let t = env.nowMs;
-  let pos = env.context.location;
-  for (const slot of [...pinned].sort((a, b) => a.pinned!.start - b.pinned!.start || a.pinned!.end - b.pinned!.end || a.block.id.localeCompare(b.block.id))) {
-    const p = slot.pinned!;
-    const dest = slotLocation(slot);
-    const arrive = t + (dest ? env.travel(pos, dest, env.context.mode, t) : 0) * MINUTE;
-    const overlapOk = seq.length > 0 && p.start < t;
-    const lateMin = p.start > env.nowMs && !overlapOk ? Math.max(0, Math.round((arrive - p.start) / MINUTE)) : 0;
-    const pinnedSlot: Slot = { ...slot, pinned: { ...p, lateOkMin: Math.max(0, lateMin - FIXED_SLACK_MIN), overlapOk } };
-    seq.push(pinnedSlot);
-    t = Math.max(t, p.end);
-    if (dest) pos = dest;
-  }
+  const seq = pinSequence(pinned, env);
 
   // 1. Greedy insertion.
   let plan: Slot[] = seq;

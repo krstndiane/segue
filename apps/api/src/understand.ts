@@ -41,8 +41,8 @@ Fields:
 - title: short, in their own words, sentence case ("Coffee and emails", "Gym").
 - minutes: how long it needs. Use what they said; otherwise a sensible guess (meal 45, gym 60, focused work 90, errand 30, call 20).
 - priority: "must" when they call it important, urgent or due; "nice" when optional ("if I have time"); otherwise "should".
-- category: the kind of place it needs, or "none" when it can happen anywhere. Laptop work with no named place is "cafe".
-- requirements: only what they said or what is obvious (focused laptop work needs "wifi" and "power").
+- category: the kind of place it needs, or "none" when it can happen anywhere. Writing, studying, emails and other work happen anywhere ("none", home is fine) unless they name a café, library or coworking space, or say they need Wi-Fi, outlets or quiet.
+- requirements: only what they said or what is obvious for the place they named.
 - fixedStart / fixedEnd: 24-hour "HH:MM" local time, only for something at a set time (a meeting, class, appointment, reservation). Otherwise null.
 - earliest / latest: 24-hour "HH:MM" for "after 5" or "before 8". Read times without am/pm the way people usually mean them during a day. Otherwise null.
 - timePref: "morning", "afternoon" or "evening" when they say so; otherwise null.
@@ -52,8 +52,16 @@ Fields:
 const HHMM = /^([01]\d|2[0-3]):[0-5]\d$/;
 const time = (v: string | null) => (v && HHMM.test(v) ? v : null);
 
-/** Keep whatever comes back inside what the API and engine accept. */
-export function tidyBlocks(blocks: UnderstoodBlock[]): UnderstoodBlock[] {
+/** Words that mean someone actually needs a place for their work. */
+const NEEDS_A_PLACE = /\b(cafe|café|coffee|cowork\w*|library|wi-?fi|internet|outlets?|power|charg\w*|quiet|silent)/i;
+const STUDY_PLACES = new Set(['cafe', 'cowork', 'library']);
+
+/**
+ * Keep whatever comes back inside what the API and engine accept. Work and
+ * study only need a café, library or coworking space when the note says so;
+ * this is checked here, whatever the model answered.
+ */
+export function tidyBlocks(blocks: UnderstoodBlock[], note = ''): UnderstoodBlock[] {
   return blocks
     .filter((b) => b.title.trim())
     .slice(0, 10)
@@ -71,6 +79,7 @@ export function tidyBlocks(blocks: UnderstoodBlock[]): UnderstoodBlock[] {
         earliest: time(b.earliest),
         latest: time(b.latest),
         place: b.place?.trim().slice(0, 80) || null,
+        ...(note && STUDY_PLACES.has(b.category) && !NEEDS_A_PLACE.test(`${note} ${b.title} ${b.place ?? ''}`) ? { category: 'none' as const, requirements: [] } : {}),
       };
     });
 }
@@ -89,6 +98,6 @@ export function claudeUnderstand(client: Anthropic = new Anthropic()): Understan
       messages: [{ role: 'user', content: `Local time now: ${localTime}\n\n<note>\n${text}\n</note>` }],
     });
     if (response.stop_reason === 'refusal' || !response.parsed_output) throw new NotUnderstoodError('not understood');
-    return tidyBlocks(response.parsed_output.blocks);
+    return tidyBlocks(response.parsed_output.blocks, text);
   };
 }

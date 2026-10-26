@@ -23,6 +23,8 @@ interface Kind {
   fallback?: string;
   window?: [string, string];
   timePref?: TimePref;
+  /** work or study: anywhere unless the note asks for something only a place has */
+  work?: boolean;
 }
 
 // First match wins, so the more specific kinds come first.
@@ -33,7 +35,10 @@ const KINDS: Kind[] = [
   { words: /\b(eat|food|meal|merienda)\b/, category: 'restaurant', minutes: 45, fallback: 'Grab something to go' },
   { words: /\b(cowork(ing)?)\b/, category: 'cowork', minutes: 120, requirements: ['wifi', 'power'], fallback: 'Work wherever you are' },
   { words: /\b(library)\b/, category: 'library', minutes: 90, requirements: ['quiet'], fallback: 'Read wherever you are' },
-  { words: /\b(deep work|work|study|emails?|laptop|focus|review|write|writing|code|coding)\b/, category: 'cafe', minutes: 90, requirements: ['wifi', 'power'], fallback: 'Work wherever you are' },
+  // Working or studying at a café only when the note says so.
+  { words: /^(?=.*\b(deep work|work|study|emails?|laptop|focus|review|write|writing|code|coding)\b)(?=.*\b(cafe|café|coffee shop)(?![a-z]))/, category: 'cafe', minutes: 90, requirements: ['wifi', 'power'], fallback: 'Work wherever you are' },
+  // Otherwise it can happen anywhere (home is fine). Asking for Wi-Fi, outlets or quiet turns it into a place to find.
+  { words: /\b(deep work|work|study|emails?|laptop|focus|review|write|writing|code|coding)\b/, category: 'none', minutes: 90, work: true },
   { words: /\b(coffee|cafe|café)\b/, category: 'cafe', minutes: 45, fallback: 'Coffee wherever you are' },
   { words: /\b(gym|workout|work out|lift|lifting|weights|yoga|pilates|crossfit)\b/, category: 'gym', minutes: 60, fallback: 'Bodyweight workout where you are' },
   { words: /\b(run|jog|walk|picnic|park|bike ride|cycling)\b/, category: 'park', minutes: 45, requirements: ['outdoor'], fallback: 'Walk around the block' },
@@ -208,6 +213,14 @@ export function parseQuickAdd(input: string, now = new Date()): QuickAddResult {
     fallback: kind?.fallback,
     active: true,
   };
+  if (kind?.work) {
+    // "Study 2h" happens wherever you are; "study 2h with wifi" needs a place that has it.
+    const needsNet = requirements.has('wifi') || requirements.has('power');
+    if (needsNet || requirements.has('quiet')) {
+      block.category = needsNet ? 'cafe' : 'library';
+      block.fallback = 'Work wherever you are';
+    } else block.requirements = block.requirements.filter((r) => r !== 'indoor' && r !== 'outdoor');
+  }
   if (!repeat) block.date = localDate(now);
 
   const chips: string[] = [];

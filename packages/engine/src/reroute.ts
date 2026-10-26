@@ -1,3 +1,4 @@
+import { CATEGORY_WORD, DEFAULT_FALLBACK } from './alternatives';
 import { earliestOpenStart, isOpenThroughout } from './hours';
 import { resolveWeights, failsHardRequirement, isOutdoor, rainChanceAt } from './score';
 import { itemValue, makeEnv, simulate, solve, type Option, type SimItem, type Slot, type SolverEnv } from './solver';
@@ -15,28 +16,6 @@ import type {
   Unscheduled,
   Weights,
 } from './types';
-
-const CATEGORY_WORD: Record<string, string> = {
-  cafe: 'café',
-  cowork: 'coworking space',
-  library: 'library',
-  restaurant: 'place to eat',
-  gym: 'gym',
-  park: 'park',
-  grocery: 'grocery',
-  mall: 'mall',
-};
-
-const DEFAULT_FALLBACK: Record<string, string> = {
-  cafe: 'Work from where you are (offline tasks)',
-  cowork: 'Work from where you are (offline tasks)',
-  library: 'Read or study where you are',
-  gym: 'Bodyweight workout where you are',
-  park: 'Walk around the block',
-  restaurant: 'Grab takeout or a quick bite',
-  grocery: 'Order delivery instead',
-  mall: 'Do it online instead',
-};
 
 function toRef(p: Place): PlaceRef {
   return { id: p.id, name: p.name, location: p.location, address: p.address };

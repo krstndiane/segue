@@ -120,6 +120,22 @@ export const RerouteRequestSchema = z.object({
   favorites: z.array(PlaceSchema).max(30).optional(),
 });
 
+export const AlternativesRequestSchema = z.object({
+  blocks: z.array(BlockSchema).min(1).max(30),
+  plan: PlanSchema,
+  blockId: z.string().min(1).max(80),
+  context: ContextSchema,
+  trigger: z.enum(['rain', 'closed', 'late', 'missed', 'manual']).optional(),
+  /** the user said it's raining (until about then) */
+  rainingUntil: isoTimestamp.optional(),
+  avoidPlaceIds: z.array(z.string().max(200)).max(30).optional(),
+  /** "I only have 30 minutes" */
+  maxMinutes: z.number().int().min(5).max(720).optional(),
+  doneBlockIds: z.array(z.string()).max(30).optional(),
+  favorites: z.array(PlaceSchema).max(30).optional(),
+});
+export type AlternativesRequest = z.infer<typeof AlternativesRequestSchema>;
+
 export const UnderstandRequestSchema = z.object({
   text: z.string().trim().min(1).max(500),
   /** the user's local wall-clock time, e.g. "Monday 14:05" */

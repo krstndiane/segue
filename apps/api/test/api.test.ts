@@ -261,6 +261,22 @@ describe('tidyBlocks', () => {
   });
 });
 
+describe('work and study from a note', () => {
+  const b = (title: string, category: 'cafe' | 'library' | 'gym', requirements: ('wifi' | 'power')[] = []) =>
+    ({ title, minutes: 90, priority: 'should', category, requirements, fixedStart: null, fixedEnd: null, place: null, earliest: null, latest: null, timePref: null, repeatsDaily: false }) as const;
+
+  it('stays "anywhere" unless the note names a place or a need, whatever the model said', () => {
+    expect(tidyBlocks([b('Write the report', 'cafe', ['wifi', 'power'])], 'write the report before 7')[0]).toMatchObject({ category: 'none', requirements: [] });
+    expect(tidyBlocks([b('Study', 'library')], 'study for two hours')[0]!.category).toBe('none');
+  });
+
+  it('keeps the place when the note asks for one', () => {
+    expect(tidyBlocks([b('Emails', 'cafe', ['wifi'])], 'emails somewhere with wifi')[0]).toMatchObject({ category: 'cafe', requirements: ['wifi'] });
+    expect(tidyBlocks([b('Study', 'library')], 'study at the library')[0]!.category).toBe('library');
+    expect(tidyBlocks([b('Gym', 'gym')], 'gym after work')[0]!.category).toBe('gym');
+  });
+});
+
 describe('clientKey', () => {
   const req = (headers: Record<string, string>, remote = '203.0.113.7') => ({ headers, socket: { remoteAddress: remote } }) as never;
 
@@ -356,5 +372,64 @@ describe('places setup', () => {
     expect(buildPlacesProvider({ placesProvider: 'osm', googleDailyBudget: 1 }, () => {}).name).toBe('cached(osm)');
     expect(buildPlacesProvider({ placesProvider: 'google', googlePlacesApiKey: 'k', googleDailyBudget: 1 }, () => {}).name).toBe('cached(budget(google)→osm)');
     expect(buildPlacesProvider({ placesProvider: 'mock', googleDailyBudget: 1 }).name).toBe('mock');
+  });
+});
+
+describe('POST /v1/alternatives', () => {
+  const run = { id: 'run', title: 'Run', minMinutes: 45, maxMinutes: 45, priority: 'should', category: 'park', requirements: ['outdoor'] };
+  const plan = (start: string, end: string) => ({
+    label: 'Balanced',
+    items: [{ blockId: 'run', title: 'Run', start, end, travelMinutesBefore: 5, confidence: 'verified', fixed: false, fallbacks: [] }],
+    unscheduled: [],
+    score: 0,
+    totalTravelMinutes: 5,
+  });
+  const body = { blocks: [run], plan: plan('2026-10-19T17:00:00+08:00', '2026-10-19T17:45:00+08:00'), blockId: 'run', context: ctx, trigger: 'rain' };
+
+  async function app(places: import('@segue/providers').PlacesProvider) {
+    const s = createServer(createApp({ config: { corsOrigins: [], rerouteRateLimit: 50 }, places, weather, log: () => {} }));
+    await new Promise<void>((r) => s.listen(0, r));
+    const at = `http://127.0.0.1:${(s.address() as AddressInfo).port}`;
+    return { s, ask: (b: unknown) => fetch(`${at}/v1/alternatives`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(b) }) };
+  }
+
+  it('finds indoor options, and keeps everyone out of a storm', async () => {
+    const { s, ask } = await app(new MockPlacesProvider());
+    try {
+      const res = await ask(body);
+      expect(res.status).toBe(200);
+      const out = (await res.json()) as { result: { options: { kind: string; category: string; label: string }[]; notes: { text: string }[]; problem?: { text: string } }; places: Record<string, unknown[]>; meta: Record<string, unknown> };
+      // The fake weather reports a thunderstorm.
+      expect(out.result.notes[0]!.text).toBe('A thunderstorm is reported nearby, so nothing outdoors for now');
+      expect(out.result.options.length).toBeGreaterThan(0);
+      expect(out.result.options.every((o) => o.category !== 'park')).toBe(true);
+      expect(Object.keys(out.places).sort()).toEqual(['gym', 'mall', 'park']);
+      expect(out.meta).toMatchObject({ placesProvider: 'mock', currentWeather: 'storm', searchedNear: 'here' });
+    } finally {
+      s.close();
+    }
+  });
+
+  it('says when live map data is down and still offers the no-place version', async () => {
+    const { s, ask } = await app({ name: 'down', nearby: async () => { throw new Error('no map server answered'); } });
+    try {
+      const out = (await (await ask(body)).json()) as { result: { options: { kind: string; label: string }[] }; meta: { warnings: string[] } };
+      expect(out.meta.warnings).toContain("Couldn't reach live map data for gyms right now.");
+      expect(out.result.options.map((o) => o.kind)).toEqual(['no-place']);
+      expect(out.result.options[0]!.label).toBe('Indoor workout where you are');
+    } finally {
+      s.close();
+    }
+  });
+
+  it('rejects a malformed request with readable details', async () => {
+    const { s, ask } = await app(new MockPlacesProvider());
+    try {
+      const res = await ask({ ...body, blockId: '' });
+      expect(res.status).toBe(400);
+      expect(((await res.json()) as { details: string[] }).details.join(' ')).toMatch(/blockId/);
+    } finally {
+      s.close();
+    }
   });
 });
