@@ -55,11 +55,12 @@ Severity: P0 critical · P1 high impact · P2 product quality · P3 opportunity.
 | ENG-2 | P2 | Planner | Wrong reasons for things that didn't fit: "Its window ended at 5:00 PM" when it hadn't (only too short), "Not enough time" when every gym was closed | **Fixed** |
 | TEST-1 | P3 | Tests | Landing-page browser test depended on the hour it ran | **Fixed** |
 | ENG-3 | P2 | Planner | Days are packed back to back: 4.5 h of work with no gap, a 6 h evening filled solid. No breaks or transition buffer | Open: needs a product decision (see Next steps) |
-| PROD-1 | P2 | Product | "work, study, write, emails, review, code" become *café with Wi-Fi and power*, so offline or far from cafés the user sees "No café fits right now" for writing a report at home | Open: decision |
+| PROD-1 | P2 | Product | "work, study, write, emails, review, code" become *café with Wi-Fi and power*, so offline or far from cafés the user sees "No café fits right now" for writing a report at home | **Fixed** on `reroute-intelligence` |
+| LIVE-1 | P0 | Data | The live API served made-up places (mock fallback) whenever Overpass refused it | **Fixed** on `reroute-intelligence`, see [REROUTE_INTELLIGENCE.md](REROUTE_INTELLIGENCE.md) |
 | SYNC-1 | P2 | Data | Deleted routines or places can come back after an offline edit on another device (merge by id, no tombstones) | Open |
 | SYNC-2 | P2 | Product | Today's plan doesn't follow you to a second device, though the README says "keep your plans on every device" | Open |
 | CAL-1 | P1 | Integration | Two-way Google Calendar sync not built (read-only works) | In progress on `calendar-sync` |
-| ENG-4 | P3 | Planner | No memory of suggestions you rejected; the same re-plan can be offered again | Open |
+| ENG-4 | P3 | Planner | No memory of suggestions you rejected; the same re-plan can be offered again | Partly: places turned down in *other options* aren't offered again that day; whole re-plans still can be |
 | QA-1 | P3 | Parser | "10pm-1am" isn't read as a time range (it becomes a loose 1 h item), and the form refuses times past midnight | Open |
 
 **Why ENG-1 came first:** it's the one failure that can make someone miss a meeting because of Segue: the meeting vanished from Today, so no *Time to leave* nudge fired, and the "won't fit" reason pointed the wrong way.
@@ -113,7 +114,7 @@ Real Google, Supabase, Anthropic and live places/weather weren't called from thi
 ## 10. Next steps
 
 1. **Decide ENG-3 (breaks).** Proposal: a default 10-minute buffer after anything over 60 min and a protected lunch window, both switchable in Settings; fully explainable ("Kept 10 min free after Deep work"). Low risk in the engine (a minimum gap in `simulate`).
-2. **Decide PROD-1.** Proposal: plain "work/write/study" stays *Anywhere*; only "at a café", "laptop at…", or a saved spot asks for a place.
+2. ~~Decide PROD-1.~~ Done on `reroute-intelligence`: work and study are *Anywhere* unless a café, library, Wi-Fi, outlets or quiet is mentioned.
 3. **Finish CAL-1** on `calendar-sync` (server OAuth, sync engine, webhooks, conflict view), behind the Google verification you'll submit.
 4. **SYNC-1/2:** tombstones for deleted items, and sync today's plan.
 5. **ENG-4:** remember rejected re-plans for the day and don't offer the same one again.

@@ -9,14 +9,12 @@ import { ProviderError, fetchWithTimeout, type FetchFn, type NearbyRequest, type
 
 /**
  * Public Overpass servers, tried in order. The main one often refuses shared
- * hosting addresses (429/504), so one refusal shouldn't mean "no data".
- * Override with OVERPASS_URLS (comma-separated).
+ * hosting addresses (429/504), so one refusal shouldn't mean "no data". Each
+ * server receives the search position, so the list is kept short and named in
+ * the privacy policy. Override with OVERPASS_URLS (comma-separated), and update
+ * the privacy policy if you do.
  */
-export const DEFAULT_OVERPASS_ENDPOINTS = [
-  'https://overpass-api.de/api/interpreter',
-  'https://overpass.private.coffee/api/interpreter',
-  'https://maps.mail.ru/osm/tools/overpass/api/interpreter',
-];
+export const DEFAULT_OVERPASS_ENDPOINTS = ['https://overpass-api.de/api/interpreter', 'https://overpass.private.coffee/api/interpreter'];
 
 const SELECTORS: Record<SearchableCategory, string[]> = {
   cafe: ['["amenity"="cafe"]'],

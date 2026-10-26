@@ -118,3 +118,35 @@ test('something came up right before a meeting: the meeting stays and the clash 
   await expect(page.locator('.timeline')).toContainText('Client meeting');
   await expect(page.locator('.timeline')).toContainText('Overlaps Something came up');
 });
+
+test('ask about your day: answers from the plan, and changes nothing without a yes', async ({ page }) => {
+  await onboard(page, ['Read 1h', 'Dinner with Ana 6:30pm-7:30pm']);
+  await page.getByRole('button', { name: 'Ask about your day' }).click();
+  const panel = page.getByRole('dialog', { name: 'Ask about your day' });
+  const ask = async (q: string) => {
+    await panel.getByLabel('Ask about your day').fill(q);
+    await panel.getByRole('button', { name: 'Ask', exact: true }).click();
+  };
+  await ask("What's my next commitment?");
+  await expect(panel.locator('.assistant-msg.assistant').last()).toContainText('Dinner with Ana (set time)');
+  await ask('Move dinner to 8pm');
+  await expect(panel.locator('.assistant-msg.assistant').last()).toContainText("set-time commitment, so Segue doesn't move it");
+  await ask('Move read to 4pm');
+  await panel.getByRole('button', { name: 'Yes, move to 4 PM' }).click();
+  await expect(panel.locator('.assistant-confirm')).toContainText('Move Read to 4 PM?');
+  await panel.locator('.assistant-confirm').getByRole('button', { name: 'Yes' }).click();
+  await expect(panel.locator('.assistant-msg.assistant').last()).toContainText('Done: Read moved to 4:00 PM and pinned');
+  await page.keyboard.press('Escape');
+  await expect(panel).toHaveCount(0);
+  await expect(page.locator('main')).toContainText(/4:00\s*PM\s*in 7 h\s*Read/);
+});
+
+test('other options for an item: checked offline, and keeping the plan changes nothing', async ({ page }) => {
+  await onboard(page, ['Study at a café 1h after 2pm']);
+  await page.getByRole('button', { name: 'Details' }).first().click();
+  await page.getByRole('button', { name: /See other options/ }).click();
+  const sheet = page.getByRole('dialog', { name: /Other options for/ });
+  await expect(sheet).toContainText('Offline');
+  await sheet.getByRole('button', { name: 'Keep my plan' }).click();
+  await expect(sheet).toHaveCount(0);
+});
