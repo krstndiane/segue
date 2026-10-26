@@ -43,6 +43,7 @@ function addToCalendarUrl(item: PlanItem): string {
 /** Plain reasons for where and when the item landed. */
 function reasons(item: PlanItem, block: StoredBlock | undefined, locked: boolean, mode: TravelMode): string[] {
   const out: string[] = [];
+  if (item.conflict) out.push(`${item.conflict}. Segue won't move or drop a set-time commitment, so decide which one to keep, or let people know you'll be late.`);
   if (isCalendarBlock(item.blockId)) out.push("It's on your Google Calendar, so it stays at this time.");
   else if (item.fixed) out.push('It happens at a set time, so it stays put.');
   else if (locked) out.push('You pinned it to this time.');

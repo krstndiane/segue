@@ -104,7 +104,10 @@ export function HourPlanner({ items, now, endOfDay, lockedIds, preview, onOpen, 
         );
       })}
 
-      {items.map((item) => {
+      {items.map((item, idx) => {
+        // Two commitments at the same time sit side by side instead of on top of each other.
+        const clashLeft = !!item.conflict && items.slice(idx + 1).some((o) => o.conflict && Date.parse(o.start) < Date.parse(item.end));
+        const clashRight = !!item.conflict && items.slice(0, idx).some((o) => o.conflict && Date.parse(item.start) < Date.parse(o.end));
         const y = top(Date.parse(item.start));
         const height = Math.max(30, top(Date.parse(item.end)) - y - 3);
         const travel = (item.travelMinutesBefore / 60) * HOUR_PX;
@@ -117,11 +120,17 @@ export function HourPlanner({ items, now, endOfDay, lockedIds, preview, onOpen, 
           <div key={item.blockId}>
             {travel >= 8 && !dragging && <div className="hour-travel" style={{ top: y - travel, height: travel }} title={`${item.travelMinutesBefore} min travel`} />}
             <div
-              className={`hour-item${calendar ? ' cal' : item.fixed ? ' fixed' : ''}${dragging ? ' dragging' : ''}${past ? ' past' : ''}${preview ? ' preview' : ''}${height < 46 ? ' short' : ''}`}
+              className={`hour-item${calendar ? ' cal' : item.fixed ? ' fixed' : ''}${dragging ? ' dragging' : ''}${past ? ' past' : ''}${preview ? ' preview' : ''}${height < 46 ? ' short' : ''}${clashRight ? ' clash-right' : clashLeft ? ' clash-left' : ''}`}
               style={{ top: y, height, transform: dragging ? `translateY(${drag.dy}px)` : undefined }}
             >
               <button type="button" className="hour-item-body" onClick={() => !preview && onOpen(item)} disabled={preview}>
                 <strong>
+                  {item.conflict && (
+                    <span className="clash-mark" title={item.conflict}>
+                      <span aria-hidden="true">⚠</span>
+                      <span className="visually-hidden">Heads up: {item.conflict}. </span>
+                    </span>
+                  )}
                   {item.title}
                   {lockedIds.has(item.blockId) && <span className="tag">Pinned</span>}
                 </strong>

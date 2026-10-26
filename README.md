@@ -25,6 +25,7 @@ Calendars assume you stay put. When you're always moving city to city, one misse
 | `apps/api` | HTTP API (`POST /v1/reroute`, `POST /v1/understand`, `GET /v1/places/nearby`, `GET /v1/weather`, `GET /v1/weather/now`, `GET /health`, and the account routes under `/v1/me`, `/v1/state`, `/v1/notes`, `/v1/invitations`, `/v1/notifications`). Zero-framework Node server with validation, CORS and rate limits; Postgres for accounts. |
 | `apps/web` | Installable PWA (React + Vite). First-run setup, plain-words adding, a day timeline with swipe gestures, one-tap re-route with reasons, nudges and reminders, My spots, Google Calendar, an animated weather sky, undo, and offline re-route on the device. |
 | `docs/ARCHITECTURE.md` | How it fits together, and the roadmap. |
+| `docs/AUDIT.md` | The October 2026 audit: what works, what was fixed, what is open, and what to do next. |
 
 ## Quick start
 

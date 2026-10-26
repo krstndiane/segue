@@ -95,3 +95,26 @@ test('settings are remembered', async ({ page }) => {
   await page.getByRole('button', { name: 'Settings' }).click();
   await expect(page.getByLabel('Day ends around')).toHaveValue('23:30');
 });
+
+test('something came up right before a meeting: the meeting stays and the clash is shown', async ({ page }) => {
+  await page.clock.setFixedTime(new Date('2026-10-20T14:40:00+08:00'));
+  await page.goto('/app?sky=clear');
+  await page.getByRole('button', { name: /^Next/ }).click();
+  await page.getByRole('button', { name: 'Next', exact: true }).click();
+  for (const t of ['Client meeting 3pm-4pm', 'Read 2h']) {
+    await page.locator('#quick-add').fill(t);
+    await page.keyboard.press('Enter');
+  }
+  await page.getByRole('button', { name: 'Plan my day' }).click();
+  await expect(page.locator('.next-title')).toHaveText('Client meeting');
+
+  await page.getByRole('button', { name: 'Re-route from here' }).click();
+  await page.getByRole('button', { name: 'Something came up' }).click();
+  const sheet = page.getByRole('dialog');
+  await expect(sheet).toContainText('Overlaps Something came up');
+  await expect(sheet).not.toContainText("Won't fit");
+  await expect(sheet).not.toContainText('Dropped');
+  await sheet.getByRole('button', { name: 'Use this plan' }).click();
+  await expect(page.locator('.timeline')).toContainText('Client meeting');
+  await expect(page.locator('.timeline')).toContainText('Overlaps Something came up');
+});

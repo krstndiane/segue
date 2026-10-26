@@ -36,16 +36,16 @@ The engine solves a small Orienteering Problem with Time Windows, using a heuris
 
 **Pipeline**
 
-1. **Pin** fixed blocks (classes, meetings) and items the user pinned. Pinned blocks that clash are reported, never silently dropped.
+1. **Pin** fixed blocks (classes, meetings) and items the user pinned. A commitment is never dropped: one that overlaps another, or that can't be reached in time from where you are, keeps its time and carries a `conflict` ("Overlaps Class (3:00 PM–4:00 PM)", "You can't get there by 2:30 PM: about 25 min late"), and nothing flexible may be put before it to make that worse. The app shows the conflict in words with an icon on Today, in the re-route preview, on the hour grid (clashing items side by side) and in *Why this?*.
 2. **Filter** candidates that lack a hard requirement or are out of reach, and keep the 8 best by fit, rating, affinity and distance.
 3. **Insert greedily**: must → should → nice, by deadline. Every insertion is checked by simulating the whole day, so travel, opening hours (including past-midnight hours), time windows and the end of day are always respected.
 4. **Improve** with a bounded local search: relocate blocks, retry unscheduled ones, and swap a lower-priority block out for a must.
 5. **Fallbacks**: a block runs as its no-place version (e.g. "bodyweight workout") only when no real place fits. Outdoor blocks are the exception, since rain can make the indoor version better.
-6. **Explain**: each changed item gets a reason ("Starts when Night Lift opens at 4:00 PM", "Switched to X (was Y)", "Its window ended at 2:30 PM"). The plan also carries up to two open alternatives per item.
+6. **Explain**: each changed item gets a reason ("Starts when Night Lift opens at 4:00 PM", "Switched to X (was Y)", "Its window ended at 2:30 PM"). Anything that didn't fit says why in words that match what happened: the window ended, how many minutes were missing before a deadline, every nearby place is closed, none stays open long enough, or the day ran out. The plan also carries up to two open alternatives per item.
 
 **Scoring:** block value is priority × requirement fit, minus travel, unconfirmed-hours, rain, energy-mismatch, time-preference and lateness penalties, plus quality and affinity bonuses. Weights live in `DEFAULT_WEIGHTS`. The alternatives are the same solve with different weights: *Less travel* and *Get more done*.
 
-**Guarantees** (checked by property tests over thousands of random days): no overlaps; fixed blocks never move; flexible blocks stay inside now…end of day and their min–max duration; no place is used while it's known to be closed or known to lack a requirement; every block is either scheduled or reported with a reason; the result is deterministic.
+**Guarantees** (checked by property tests over thousands of random days): flexible blocks never overlap anything, and only two commitments that clash with each other may overlap (both flagged); fixed blocks never move and are never dropped while they're still to come; flexible blocks stay inside now…end of day and their min–max duration; no place is used while it's known to be closed or known to lack a requirement; every block is either scheduled or reported with a reason; the result is deterministic.
 
 ## Places Gateway (`packages/providers`)
 

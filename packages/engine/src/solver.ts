@@ -41,7 +41,19 @@ export interface Slot {
   option: Option;
   durationMin: number;
   /** pinned slots keep these exact times */
-  pinned?: { start: number; end: number; place?: PlaceRef };
+  pinned?: {
+    start: number;
+    end: number;
+    place?: PlaceRef;
+    /**
+     * A commitment that can't be met cleanly no matter what else is planned:
+     * minutes of lateness already unavoidable, and whether it overlaps the
+     * commitment before it. It stays in the plan and is flagged; nothing else
+     * may make it worse.
+     */
+    lateOkMin?: number;
+    overlapOk?: boolean;
+  };
 }
 
 export interface SimItem {
@@ -52,6 +64,10 @@ export interface SimItem {
   /** started later than arrival because the place wasn't open yet */
   waitedForOpen: boolean;
   location?: LatLng;
+  /** pinned only: minutes after its start that the user gets there */
+  lateMin?: number;
+  /** pinned only: it starts before the previous item ends */
+  overlapsPrevious?: boolean;
 }
 
 export interface SolverEnv {
@@ -96,13 +112,18 @@ export function simulate(seq: Slot[], env: SolverEnv): SimItem[] | null {
     const arrive = t + travelMin * MINUTE;
 
     if (slot.pinned) {
-      const { start, end } = slot.pinned;
-      // Only check arrival for things that haven't started yet.
-      if (start > nowMs && arrive > start + FIXED_SLACK_MIN * MINUTE) return null;
-      // Something earlier in the sequence would still be running.
-      // (Travel may run a few minutes late; time slots never overlap.)
-      if (out.length > 0 && start < t) return null;
-      out.push({ slot, start, end, travelMin, waitedForOpen: false, location: dest });
+      const { start, end, lateOkMin = 0, overlapOk = false } = slot.pinned;
+      // Only check arrival for things that haven't started yet. A commitment
+      // that's already out of reach may stay as late as it is, never later.
+      // Something earlier in the sequence would still be running. Two
+      // commitments that overlap each other are allowed (and flagged); a
+      // flexible item is never squeezed in before one.
+      const overlaps = out.length > 0 && start < t;
+      if (overlaps && !(overlapOk && out[out.length - 1]!.slot.pinned)) return null;
+      // Lateness from travel; an overlap is reported as an overlap instead.
+      const lateMin = start > nowMs && !overlaps ? Math.max(0, Math.round((arrive - start) / MINUTE)) : 0;
+      if (lateMin > FIXED_SLACK_MIN + lateOkMin) return null;
+      out.push({ slot, start, end, travelMin, waitedForOpen: false, location: dest, lateMin, overlapsPrevious: overlaps });
       t = Math.max(t, end);
     } else {
       const b = slot.block;
@@ -256,21 +277,35 @@ export function solve(
   for (const b of flexible) optionsByBlock.set(b.id, optionsFor(b, candidates[b.id], env));
 
   const unscheduled: Block[] = [];
-  // Pinned items that collide with each other: keep the earlier one, report the rest.
-  let seq: Slot[] = [];
-  for (const slot of [...pinned].sort((a, b) => a.pinned!.start - b.pinned!.start)) {
-    const next = [...seq, slot];
-    if (simulate(next, env)) seq = next;
-    else unscheduled.push(slot.block);
+  // Commitments are never dropped. One that can't be reached in time, or that
+  // overlaps the one before it, keeps its place and is flagged instead.
+  const seq: Slot[] = [];
+  let t = env.nowMs;
+  let pos = env.context.location;
+  for (const slot of [...pinned].sort((a, b) => a.pinned!.start - b.pinned!.start || a.pinned!.end - b.pinned!.end || a.block.id.localeCompare(b.block.id))) {
+    const p = slot.pinned!;
+    const dest = slotLocation(slot);
+    const arrive = t + (dest ? env.travel(pos, dest, env.context.mode, t) : 0) * MINUTE;
+    const overlapOk = seq.length > 0 && p.start < t;
+    const lateMin = p.start > env.nowMs && !overlapOk ? Math.max(0, Math.round((arrive - p.start) / MINUTE)) : 0;
+    const pinnedSlot: Slot = { ...slot, pinned: { ...p, lateOkMin: Math.max(0, lateMin - FIXED_SLACK_MIN), overlapOk } };
+    seq.push(pinnedSlot);
+    t = Math.max(t, p.end);
+    if (dest) pos = dest;
   }
 
   // 1. Greedy insertion.
+  let plan: Slot[] = seq;
   for (const block of insertionOrder(flexible)) {
-    const best = bestInsertion(seq, block, optionsByBlock.get(block.id) ?? [], env);
-    if (best) seq = best.seq;
+    const best = bestInsertion(plan, block, optionsByBlock.get(block.id) ?? [], env);
+    if (best) plan = best.seq;
     else unscheduled.push(block);
   }
+  return improve(plan, unscheduled, optionsByBlock, env, maxIterations);
+}
 
+function improve(start: Slot[], unscheduled: Block[], optionsByBlock: Map<string, Option[]>, env: SolverEnv, maxIterations: number): SolveResult {
+  let seq = start;
   // 2. Local search: relocate, re-place, re-size, and retry the unscheduled.
   let current = sequenceScore(simulate(seq, env)!, env);
   for (let iter = 0; iter < maxIterations; iter++) {

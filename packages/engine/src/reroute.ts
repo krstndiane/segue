@@ -1,4 +1,4 @@
-import { isOpenThroughout } from './hours';
+import { earliestOpenStart, isOpenThroughout } from './hours';
 import { resolveWeights, failsHardRequirement, isOutdoor, rainChanceAt } from './score';
 import { itemValue, makeEnv, simulate, solve, type Option, type SimItem, type Slot, type SolverEnv } from './solver';
 import { MINUTE, formatClock, toIso, toMs } from './time';
@@ -146,15 +146,43 @@ function buildPlan(label: string, items: SimItem[], unscheduledBlocks: Block[], 
     };
   });
 
+  // Commitments that can't be kept cleanly stay in the plan, with a plain reason.
+  const range = (it: SimItem) => `${formatClock(it.start, tz)}–${formatClock(it.end, tz)}`;
+  const flag = (idx: number, text: string) => {
+    const item = planItems[idx]!;
+    item.conflict = item.conflict ? `${item.conflict}. ${text}` : text;
+  };
+  items.forEach((it, idx) => {
+    if (!it.slot.pinned) return;
+    if ((it.lateMin ?? 0) > 5) flag(idx, `You can't get there by ${formatClock(it.start, tz)}: about ${it.lateMin} min late`);
+    if (it.overlapsPrevious) {
+      // Find the commitment it runs into (the latest-ending one before it).
+      let j = idx - 1;
+      for (let k = idx - 2; k >= 0; k--) if (items[k]!.end > items[j]!.end) j = k;
+      const other = items[j]!;
+      flag(idx, `Overlaps ${other.slot.block.title} (${range(other)})`);
+      flag(j, `Overlaps ${it.slot.block.title} (${range(it)})`);
+    }
+  });
+
   const unscheduled: Unscheduled[] = unscheduledBlocks.map((b) => {
     const usable = (candidates[b.id] ?? []).filter((p) => !failsHardRequirement(b, p));
     const latest = b.latest ? toMs(b.latest) : undefined;
+    const word = CATEGORY_WORD[b.category] ?? 'place';
+    const windowEnd = Math.min(env.endMs, latest ?? Infinity);
+    const opensFor = (p: Place, minutes: number) => earliestOpenStart(p.hours!, env.nowMs, minutes, windowEnd, env.context.utcOffsetMinutes) !== null;
     let reason: string;
     if (b.fixed) reason = 'Clashes with another fixed block';
-    else if (latest !== undefined && latest - b.minMinutes * MINUTE < env.nowMs) reason = `Its window ended at ${formatClock(latest, tz)}`;
+    else if (latest !== undefined && latest <= env.nowMs) reason = `Its window ended at ${formatClock(latest, tz)}`;
+    else if (latest !== undefined && latest < env.endMs && latest - b.minMinutes * MINUTE < env.nowMs)
+      reason = `Needs ${b.minMinutes} min, but only ${Math.max(0, Math.round((latest - env.nowMs) / MINUTE))} min left before ${formatClock(latest, tz)}`;
     else if (b.category !== 'none' && usable.length === 0 && !b.fallback)
-      reason = `No ${CATEGORY_WORD[b.category] ?? 'place'} nearby fits${b.requirements.length ? ` (needs ${b.requirements.join(', ')})` : ''}`;
-    else reason = `Not enough time left before ${formatClock(env.endMs, tz)}`;
+      reason = `No ${word} nearby fits${b.requirements.length ? ` (needs ${b.requirements.join(', ')})` : ''}`;
+    else if (b.category !== 'none' && !b.fallback && usable.length > 0 && usable.every((p) => p.hours && !opensFor(p, 5))) {
+      reason = `Every ${word} nearby is closed for the rest of ${latest !== undefined && latest < env.endMs ? 'its window' : 'today'}`;
+    } else if (b.category !== 'none' && !b.fallback && usable.length > 0 && usable.every((p) => p.hours && !opensFor(p, b.minMinutes)))
+      reason = `No ${word} nearby stays open long enough (needs ${b.minMinutes} min)`;
+    else reason = `Not enough time left before ${formatClock(windowEnd, tz)}`;
     return { blockId: b.id, title: b.title, reason };
   });
 

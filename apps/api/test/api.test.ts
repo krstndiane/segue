@@ -92,6 +92,21 @@ describe('API', () => {
     expect(body.meta.placesProvider).toBe('client');
   });
 
+  it('keeps two clashing commitments and says so, instead of dropping one', async () => {
+    const meeting = (id: string, start: string, end: string) => ({
+      id, title: id, minMinutes: 30, maxMinutes: 30, priority: 'must', category: 'none', requirements: [],
+      fixed: { start: `2026-10-19T${start}:00+08:00`, end: `2026-10-19T${end}:00+08:00` },
+    });
+    const res = await post('/v1/reroute', { blocks: [meeting('Class', '15:00', '16:00'), meeting('Dentist', '15:30', '16:30')], context: ctx }, { 'x-forwarded-for': '10.0.0.5' });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { plan: { items: { blockId: string; conflict?: string }[]; unscheduled: unknown[] } };
+    expect(body.plan.unscheduled).toEqual([]);
+    expect(body.plan.items.map((i) => [i.blockId, i.conflict])).toEqual([
+      ['Class', 'Overlaps Dentist (3:30 PM–4:30 PM)'],
+      ['Dentist', 'Overlaps Class (3:00 PM–4:00 PM)'],
+    ]);
+  });
+
   it('rejects invalid requests with readable details', async () => {
     const res = await post('/v1/reroute', { blocks: [{ ...blocks[0], maxMinutes: 10 }], context: ctx }, { 'x-forwarded-for': '10.0.0.3' });
     expect(res.status).toBe(400);

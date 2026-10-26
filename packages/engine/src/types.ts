@@ -140,6 +140,11 @@ export interface PlanItem {
   fallbacks: FallbackOption[];
   /** Human-readable reason this item looks the way it does after a re-route. */
   explanation?: string;
+  /**
+   * A commitment that can't be kept as planned: you can't get there in time,
+   * or it overlaps another commitment. It stays in the plan; the user decides.
+   */
+  conflict?: string;
 }
 
 export interface Unscheduled {

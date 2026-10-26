@@ -62,8 +62,13 @@ describe('reroute', () => {
   });
 
   it('says why a block was dropped when its window has passed', () => {
-    const r = reroute({ blocks: [blocks.dinner], candidates: allCandidates, context: context({ now: at('20:10') }) });
+    const r = reroute({ blocks: [blocks.dinner], candidates: allCandidates, context: context({ now: at('20:40') }) });
     expect(r.plan.unscheduled[0]?.reason).toMatch(/window ended at 8:30 PM/);
+  });
+
+  it('says how much time is missing when the window is still open but too short', () => {
+    const r = reroute({ blocks: [blocks.dinner], candidates: allCandidates, context: context({ now: at('20:10') }) });
+    expect(r.plan.unscheduled[0]?.reason).toBe('Needs 45 min, but only 20 min left before 8:30 PM');
   });
 
   it('keeps fixed blocks exactly where they are and plans around them', () => {
@@ -110,7 +115,7 @@ describe('reroute', () => {
     });
     expect(r.plan.items).toHaveLength(0);
     expect(r.plan.unscheduled[0]?.blockId).toBe('deep-work');
-    expect(r.plan.unscheduled[0]?.reason).toMatch(/Not enough time/);
+    expect(r.plan.unscheduled[0]?.reason).toMatch(/stays open long enough/);
   });
 
   it('explains a place switch when the old place closed', () => {

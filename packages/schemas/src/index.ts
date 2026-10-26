@@ -94,6 +94,7 @@ export const PlanItemSchema = z.object({
   fixed: z.boolean(),
   fallbacks: z.array(z.object({ kind: z.enum(['place', 'no-place']), place: PlaceRefSchema.optional(), label: z.string() })),
   explanation: z.string().optional(),
+  conflict: z.string().optional(),
 });
 
 export const PlanSchema = z.object({

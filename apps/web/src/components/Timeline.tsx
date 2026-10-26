@@ -4,6 +4,7 @@ import { calendarBlockId, isCalendarBlock, type CalendarEvent } from '../lib/cal
 import { clock, clockParts, directionsUrl, duration, minutesBetween, travelLine } from '../lib/format';
 import type { DayState } from '../lib/model';
 import type { Nudge } from '../lib/nudges';
+import { ConflictNote } from './ConflictNote';
 
 interface Props {
   day: DayState;
@@ -196,6 +197,7 @@ export function Timeline(props: Props) {
             {placeLabel(next, events, 'Wherever you are')}
             {next.place && travelLine(next, mode) && <span className="muted"> · {travelLine(next, mode)}</span>}
           </p>
+          <ConflictNote item={next} className="next-conflict" />
           <p className="next-meta">
             <span>{duration(minutesBetween(next.start, next.end))}</span>
             {next.confidence === 'verified' && <span className="conf conf-ok">Open then</span>}
@@ -239,7 +241,7 @@ export function Timeline(props: Props) {
                   )}
                   {travel && <div className="tl-leg">{travel}</div>}
                   <SwipeRow
-                    label={`${clock(item.start)}, ${item.title}. Swipe right for done, left to skip, or tap for details.`}
+                    label={`${clock(item.start)}, ${item.title}.${item.conflict ? ` Heads up: ${item.conflict}.` : ''} Swipe right for done, left to skip, or tap for details.`}
                     onDone={() => props.onDone(item.blockId)}
                     onSkip={() => props.onSkip(item.blockId)}
                     onOpen={() => props.onOpen(item)}
@@ -251,6 +253,7 @@ export function Timeline(props: Props) {
                         {tags(item)}
                       </span>
                       <span className="tl-sub">{placeLabel(item, events, 'Anywhere')}</span>
+                      <ConflictNote item={item} />
                     </span>
                     <span className="tl-dur">{duration(minutesBetween(item.start, item.end))}</span>
                   </SwipeRow>

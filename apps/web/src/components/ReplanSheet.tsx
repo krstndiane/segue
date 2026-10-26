@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import type { Plan } from '@segue/engine';
 import { clock } from '../lib/format';
 import { REASONS, type ReplanReason } from '../lib/replan';
+import { ConflictNote } from './ConflictNote';
 import type { RerouteOutcome } from '../lib/reroute';
 import { RideLoader } from './RideLoader';
 import { Sheet } from './Sheet';
@@ -96,6 +97,7 @@ export function ReplanSheet({ busy, error, outcome, reason, onReason, onAccept, 
                   <span>
                     {i.title}
                     <span className="muted"> · {i.place?.name ?? 'anywhere'}</span>
+                    <ConflictNote item={i} />
                   </span>
                 </li>
               ))}
