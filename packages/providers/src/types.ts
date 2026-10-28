@@ -12,6 +12,13 @@ export interface NearbyRequest {
 export interface PlacesProvider {
   readonly name: string;
   nearby(req: NearbyRequest): Promise<Place[]>;
+  /** Which source answered last and the latest failure, for /health. No secrets. */
+  status?(): PlacesStatus;
+}
+
+export interface PlacesStatus {
+  lastAnswer: { provider: string; at: string } | null;
+  lastFailure: { at: string; message: string } | null;
 }
 
 /** The skies the app can draw. Coarse on purpose: it's a mood, not a forecast. */

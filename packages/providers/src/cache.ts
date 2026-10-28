@@ -5,7 +5,7 @@
  */
 import type { Place } from '@segue/engine';
 import { geohash } from './geohash';
-import type { NearbyRequest, PlacesProvider } from './types';
+import type { NearbyRequest, PlacesProvider, PlacesStatus } from './types';
 
 export interface KeyValueStore<T> {
   get(key: string): T | undefined | Promise<T | undefined>;
@@ -68,6 +68,10 @@ export class CachedPlacesProvider implements PlacesProvider {
     this.name = `cached(${inner.name})`;
   }
 
+  status(): PlacesStatus {
+    return this.inner.status?.() ?? { lastAnswer: null, lastFailure: null };
+  }
+
   async nearby(req: NearbyRequest): Promise<Place[]> {
     const key = cacheKey(req);
     const cached = await this.store.get(key);
@@ -88,21 +92,32 @@ export class CachedPlacesProvider implements PlacesProvider {
 export class FallbackPlacesProvider implements PlacesProvider {
   readonly name: string;
   lastErrors: string[] = [];
+  private answered: PlacesStatus['lastAnswer'] = null;
+  private failed: PlacesStatus['lastFailure'] = null;
   constructor(
     private readonly chain: PlacesProvider[],
     private readonly log?: (line: string) => void,
+    private readonly clock: () => number = Date.now,
   ) {
     if (!chain.length) throw new Error('FallbackPlacesProvider needs at least one provider');
     this.name = chain.map((p) => p.name).join('→');
+  }
+
+  status(): PlacesStatus {
+    return { lastAnswer: this.answered, lastFailure: this.failed };
   }
 
   async nearby(req: NearbyRequest): Promise<Place[]> {
     this.lastErrors = [];
     for (const p of this.chain) {
       try {
-        return await p.nearby(req);
+        const places = await p.nearby(req);
+        this.answered = { provider: p.name, at: new Date(this.clock()).toISOString() };
+        return places;
       } catch (e) {
-        this.lastErrors.push(`${p.name}: ${(e as Error).message}`);
+        const message = `${p.name}: ${(e as Error).message}`.slice(0, 300);
+        this.lastErrors.push(message);
+        this.failed = { at: new Date(this.clock()).toISOString(), message };
         this.log?.(`places: ${p.name} failed for ${req.category}: ${(e as Error).message}`);
       }
     }

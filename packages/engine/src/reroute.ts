@@ -133,7 +133,11 @@ function buildPlan(label: string, items: SimItem[], unscheduledBlocks: Block[], 
   };
   items.forEach((it, idx) => {
     if (!it.slot.pinned) return;
-    if ((it.lateMin ?? 0) > 5) flag(idx, `You can't get there by ${formatClock(it.start, tz)}: about ${it.lateMin} min late`);
+    const late = it.lateMin ?? 0;
+    if (late > 5) {
+      const length = Math.round((it.end - it.start) / MINUTE);
+      flag(idx, late >= length ? `You can't get there before it ends at ${formatClock(it.end, tz)}` : `You can't get there by ${formatClock(it.start, tz)}: about ${late} min late`);
+    }
     if (it.overlapsPrevious) {
       // Find the commitment it runs into (the latest-ending one before it).
       let j = idx - 1;

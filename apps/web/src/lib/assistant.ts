@@ -206,6 +206,13 @@ export function answer(question: string, ctx: AssistantContext, topic: Topic = {
   // Weather.
   if (/\b(weather|forecast|umbrella|will it rain|is it raining|going to rain)\b/.test(q) && !/\binstead\b/.test(q)) return reply(weather(ctx));
 
+  // Find a kind of place ("a gym near me that's open now", "somewhere quiet"): always a search, even if the plan has one.
+  const kindAsked = /\bsomewhere quiet|quiet place|place to study\b/.test(q) ? ('library' as const) : CATEGORY_WORDS.find(([re]) => re.test(q))?.[1];
+  if (kindAsked && /\b(find|search|look for|looking for|show me|any|which|where|somewhere)\b/.test(q) && /\b(open|near|nearby|around|closest|quiet|somewhere)\b/.test(q)) {
+    const word = kindAsked === 'cafe' ? 'cafés' : kindAsked === 'library' ? 'libraries' : `${kindAsked}s`;
+    return reply({ text: `Looking for ${word} near you…`, run: { type: 'find-places', category: kindAsked, openNow: /\bopen\b/.test(q) } });
+  }
+
   if (!plan) {
     return reply({ text: "There's no plan for today yet. Add what's on in plain words (\"Gym 1h after 5pm\"), then tap Plan my day. I can explain it once it's there." });
   }
@@ -238,11 +245,6 @@ export function answer(question: string, ctx: AssistantContext, topic: Topic = {
     return reply({ text: `Checking realistic options for ${it.title}…`, run: { type: 'options', blockId: it.blockId, trigger, maxMinutes: mins ? Number(mins) : undefined }, topic: { blockId: it.blockId } });
   }
 
-  // Find a kind of place.
-  const kind = CATEGORY_WORDS.find(([re]) => re.test(q))?.[1];
-  if (kind && /\b(find|which|any|where|nearby|near me|open now|show)\b/.test(q) && !target.item) {
-    return reply({ text: `Looking for ${kind === 'cafe' ? 'cafés' : kind === 'library' ? 'libraries' : `${kind}s`} near you…`, run: { type: 'find-places', category: kind, openNow: /\bopen\b/.test(q) } });
-  }
 
   // Why something moved, or doesn't fit.
   if (/\bwhy\b/.test(q) || /\b(doesn'?t|does not|won'?t|can'?t|cannot) (fit|make)\b/.test(q)) {
@@ -259,7 +261,7 @@ export function answer(question: string, ctx: AssistantContext, topic: Topic = {
   }
 
   // Can I still make it / finish before …?
-  if (/\bcan i (still )?(make|finish|get|do|fit|go)\b|\bwill i (make|finish)\b|\benough time\b/.test(q)) {
+  if (/\bcan i (still )?(make|finish|get|do|fit|go)\b|\bwill i (make|finish)\b|\benough time\b|\b(need|have|got|want) to (finish|do|get|complete)\b.*\b(before|by)\b/.test(q)) {
     if (target.unscheduled) return reply({ text: `Not as things stand: ${lower(target.unscheduled.reason)}.`, buttons: [{ label: 'Look for a way', action: { type: 'options', blockId: target.unscheduled.blockId, trigger: 'manual' } }], topic: { blockId: target.unscheduled.blockId } });
     if (target.item) {
       const it = target.item;
@@ -281,6 +283,33 @@ export function answer(question: string, ctx: AssistantContext, topic: Topic = {
       }
       return reply({ text: `Yes: ${line(it, ctx)}${it.travelMinutesBefore ? `, about ${it.travelMinutesBefore} min to get there (estimate)` : ''}. ${it.confidence === 'unconfirmed' ? "Its opening hours aren't listed, so check before you go." : it.confidence === 'verified' && it.place ? `${it.place.name} is open then by its listed hours.` : ''}`.trim(), topic: { blockId: it.blockId } });
     }
+  }
+
+  // "I only have 30 minutes before class": what's next, and what fits before it.
+  const onlyMins = /\b(?:only|just)\s+(?:have|got)\s+(\d{1,3})\s*(?:min|mins|minutes)\b/.exec(q) ?? /\b(\d{1,3})\s*(?:min|mins|minutes)\s+(?:before|until|till)\b/.exec(q);
+  if (onlyMins) {
+    const named = rest.find((i) => (i.fixed || isCalendarBlock(i.blockId)) && words(q).some((w) => words(i.title).includes(w)));
+    const nextFixed = named ?? rest.find((i) => i.fixed || isCalendarBlock(i.blockId));
+    const mins = Number(onlyMins[1]);
+    const t = ctx.now.getTime();
+    const until = nextFixed ? Math.round((Date.parse(nextFixed.start) - t) / 60_000) : undefined;
+    const before = rest.filter((i) => !i.fixed && !isCalendarBlock(i.blockId) && (!nextFixed || Date.parse(i.start) < Date.parse(nextFixed.start)));
+    const fits = before.filter((i) => Math.round((Date.parse(i.end) - Date.parse(i.start)) / 60_000) <= mins);
+    const head = nextFixed
+      ? until !== undefined && until <= 0
+        ? `${nextFixed.title} has started (${clock(nextFixed.start)}).`
+        : `${nextFixed.title} is at ${clock(nextFixed.start)}, in ${duration(Math.max(0, until!))}${nextFixed.travelMinutesBefore ? `, and it's about ${nextFixed.travelMinutesBefore} min to get there` : ''}.`
+      : 'Nothing else with a set time is on today.';
+    const body = before.length
+      ? fits.length
+        ? `Planned before it and short enough: ${fits.map((i) => `${i.title} (${duration(Math.round((Date.parse(i.end) - Date.parse(i.start)) / 60_000))})`).join(', ')}.`
+        : `${before.map((i) => i.title).join(', ')} ${before.length === 1 ? 'is' : 'are'} planned before it but take${before.length === 1 ? 's' : ''} longer than ${duration(mins)}.`
+      : `Nothing else is planned before it, so the ${duration(mins)} is free.`;
+    return reply({
+      text: `${head} ${body}`,
+      buttons: before.length && !fits.length ? [{ label: `Options for ${before[0]!.title} in ${duration(mins)}`, action: { type: 'options', blockId: before[0]!.blockId, maxMinutes: mins } }] : undefined,
+      topic: nextFixed ? { blockId: nextFixed.blockId } : undefined,
+    });
   }
 
   // Free time.
@@ -320,6 +349,11 @@ export function answer(question: string, ctx: AssistantContext, topic: Topic = {
     const it = target.item;
     if (it) return reply({ text: `${line(it, ctx)}.${it.explanation ? ` ${it.explanation}.` : ''}`, buttons: [{ label: 'Details', action: { type: 'open-item', blockId: it.blockId } }], topic: { blockId: it.blockId } });
     return reply({ text: `${target.unscheduled!.title} isn't in today's plan: ${lower(target.unscheduled!.reason)}.`, topic: { blockId: target.unscheduled!.blockId } });
+  }
+
+  // "I need to study for two hours": that's something to add, which happens in the Add bar.
+  if (/^(i (need|have|want|got|gotta|should|must) to|i'?ll|add|plan|schedule|remind me to)\b/.test(q) && !/\?$/.test(q)) {
+    return reply({ text: "I can't add things to your day from here yet. Type it into the Add bar on Today (for example \"Study 2h\") and Segue plans it in; then ask me about it." });
   }
 
   return reply({ ...help(), text: "I can only answer from your plan, and I didn't catch what you're asking. Try one of these:" });

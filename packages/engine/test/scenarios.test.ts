@@ -41,9 +41,9 @@ const noFlexibleOverlap = (r: ReturnType<typeof reroute>) => {
 describe('a meeting you can no longer reach in time', () => {
   it('stays in the plan, says how late you will be, and nothing is squeezed in before it', () => {
     const r = reroute({
-      blocks: [commitment('Client meeting', '14:30', '15:30', near(8000, 0)), task('Email', 30)],
+      blocks: [commitment('Client meeting', '14:30', '15:30', near(12000, 0)), task('Email', 30)],
       candidates: {},
-      context: context(),
+      context: context({ mode: 'local' }),
     });
     const meeting = item(r, 'Client meeting')!;
     expect(clock(meeting.start)).toBe('2:30 PM');
@@ -51,6 +51,12 @@ describe('a meeting you can no longer reach in time', () => {
     expect(r.plan.items[0]!.blockId).toBe('Client meeting');
     expect(r.plan.unscheduled).toEqual([]);
     noFlexibleOverlap(r);
+  });
+
+  it('says plainly when you would only get there after it has ended', () => {
+    // On foot, 9 km takes longer than the whole visit.
+    const r = reroute({ blocks: [commitment('Site visit', '14:20', '15:00', near(9000, 0))], candidates: {}, context: context({ mode: 'walk' }) });
+    expect(item(r, 'Site visit')!.conflict).toBe("You can't get there before it ends at 3:00 PM");
   });
 
   it('is not flagged when you can get there on time', () => {

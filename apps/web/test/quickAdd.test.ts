@@ -76,3 +76,16 @@ describe('work and study happen anywhere unless you say otherwise', () => {
     expect(parseQuickAdd('Coffee with Ana', morning).block.category).toBe('cafe');
   });
 });
+
+describe('durations in words, and how people start a sentence', () => {
+  const morning = new Date('2026-10-20T09:00:00+08:00');
+  it('reads "two hours", "an hour and a half", "forty-five minutes"', () => {
+    expect(parseQuickAdd('I need to study for two hours.', morning).block).toMatchObject({ title: 'Study', maxMinutes: 120, category: 'none' });
+    expect(parseQuickAdd('Gym for an hour and a half', morning).block.maxMinutes).toBe(90);
+    expect(parseQuickAdd('Read forty-five minutes', morning).block.maxMinutes).toBe(45);
+    expect(parseQuickAdd('Walk one and a half hours', morning).block.maxMinutes).toBe(90);
+  });
+  it('keeps the deadline and drops the filler', () => {
+    expect(parseQuickAdd('I need to finish this report before 7 PM.', morning).block).toMatchObject({ title: 'Finish this report', latest: '19:00', category: 'none' });
+  });
+});

@@ -369,8 +369,8 @@ describe('API protections', () => {
 describe('places setup', () => {
   it('never falls back to made-up places outside mock mode', async () => {
     const { buildPlacesProvider } = await import('../src/providers');
-    expect(buildPlacesProvider({ placesProvider: 'osm', googleDailyBudget: 1 }, () => {}).name).toBe('cached(osm)');
-    expect(buildPlacesProvider({ placesProvider: 'google', googlePlacesApiKey: 'k', googleDailyBudget: 1 }, () => {}).name).toBe('cached(budget(google)→osm)');
+    expect(buildPlacesProvider({ placesProvider: 'osm', googleDailyBudget: 1 }, () => {}).name).toBe('cached(osm→nominatim)');
+    expect(buildPlacesProvider({ placesProvider: 'google', googlePlacesApiKey: 'k', googleDailyBudget: 1 }, () => {}).name).toBe('cached(budget(google)→osm→nominatim)');
     expect(buildPlacesProvider({ placesProvider: 'mock', googleDailyBudget: 1 }).name).toBe('mock');
   });
 });
@@ -542,5 +542,25 @@ describe('assistant conversation turns', () => {
       { role: 'user', content: 'a\nb' },
       { role: 'assistant', content: 'c' },
     ]);
+  });
+});
+
+describe('when no map source answers', () => {
+  it('says so with a 503 (not a 500, and never made-up places), and /health shows the failure', async () => {
+    const { FallbackPlacesProvider, CachedPlacesProvider } = await import('@segue/providers');
+    const down = new CachedPlacesProvider(new FallbackPlacesProvider([{ name: 'osm', nearby: async () => { throw new Error('at capacity'); } }]));
+    const s = createServer(createApp({ config: { corsOrigins: [], rerouteRateLimit: 5 }, places: down, weather, log: () => {} }));
+    await new Promise<void>((r) => s.listen(0, r));
+    const at = `http://127.0.0.1:${(s.address() as AddressInfo).port}`;
+    try {
+      const res = await fetch(`${at}/v1/places/nearby?lat=14.55&lng=121.02&category=gym`);
+      expect(res.status).toBe(503);
+      expect(await res.json()).toMatchObject({ error: "Live map data isn't available right now", code: 'places_unavailable' });
+      const health = (await (await fetch(`${at}/health`)).json()) as { placesStatus: { lastAnswer: unknown; lastFailure: { message: string } } };
+      expect(health.placesStatus.lastAnswer).toBeNull();
+      expect(health.placesStatus.lastFailure.message).toBe('osm: at capacity');
+    } finally {
+      s.close();
+    }
   });
 });

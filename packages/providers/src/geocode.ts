@@ -53,13 +53,18 @@ export class NominatimGeocoder implements ReverseGeocoder {
     private readonly endpoint = 'https://nominatim.openstreetmap.org/reverse',
     private readonly minGapMs = 1100,
     private readonly sleep: (ms: number) => Promise<void> = (ms) => new Promise((r) => setTimeout(r, ms)),
+    /** shared with place searches, so all calls to Nominatim together stay at one a second */
+    private readonly gate?: { wait(): Promise<void> },
   ) {}
 
   async placeName(location: LatLng): Promise<string | null> {
     // One request a second at most, per Nominatim's usage policy.
-    const wait = this.last + this.minGapMs - Date.now();
-    this.last = Date.now() + Math.max(0, wait);
-    if (wait > 0) await this.sleep(wait);
+    if (this.gate) await this.gate.wait();
+    else {
+      const wait = this.last + this.minGapMs - Date.now();
+      this.last = Date.now() + Math.max(0, wait);
+      if (wait > 0) await this.sleep(wait);
+    }
     const params = new URLSearchParams({
       format: 'jsonv2',
       lat: location.lat.toFixed(4),

@@ -3,6 +3,7 @@ export { geohash } from './geohash';
 export { parseOsmOpeningHours } from './osmHours';
 export { OsmPlacesProvider, DEFAULT_OVERPASS_ENDPOINTS, buildOverpassQuery, parseOverpass } from './osm';
 export { dedupePlaces } from './dedupe';
+export { NominatimPlacesProvider, RequestGate, parseNominatimPlaces, viewbox } from './nominatimPlaces';
 export { GooglePlacesProvider, parseGoogleHours, parseGooglePlaces } from './google';
 export { MockPlacesProvider } from './mock';
 export { OpenMeteoProvider, NoWeatherProvider, skyFromWmo, withOffset } from './weather';

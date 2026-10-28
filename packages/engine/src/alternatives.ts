@@ -201,6 +201,13 @@ function place(seq: Slot[], v: Variant, env: SolverEnv, referenceMs: number): Pl
       const sim = simulate(cand, env);
       if (!sim) continue;
       const item = sim[i]!;
+      // The planner allows a few minutes' grace for set times; an alternative may not make you late at all.
+      const ni = sim.findIndex((s, k) => k > i && s.slot.pinned && s.slot.block.fixed);
+      if (ni > 0) {
+        const next = sim[ni]!;
+        const already = (next.slot.pinned!.lateOkMin ?? 0) > 0 || next.slot.pinned!.overlapOk;
+        if (!already && sim[ni - 1]!.end + next.travelMin * MINUTE > next.start) continue;
+      }
       // Score the option itself, plus a little for leaving the rest of the day undisturbed.
       const score = itemValue(item, env) - (Math.abs(item.start - referenceMs) / (60 * MINUTE)) * SHIFT_PER_HOUR;
       if (!best || score > best.score + 1e-9) best = { variant: v, sim, item, index: i, score };
@@ -217,15 +224,18 @@ function durations(block: Block, cap?: number): number[] {
 }
 
 /** Why a place can't work today, in one plain sentence. */
-function whyNot(p: Place, block: Block, seq: Slot[], env: SolverEnv, input: AlternativesInput): string {
+function whyNot(p: Place, block: Block, seq: Slot[], env: SolverEnv, avoid: Set<string>, unavailableId?: string): string {
   const tz = env.context.utcOffsetMinutes;
   if (p.temporarilyClosed) return 'Listed as temporarily closed';
+  if (p.id === unavailableId) return "You said it isn't available";
   const missing = block.requirements.filter((r) => p.attributes[r] === false);
   if (missing.length) return `Doesn't have ${missing.join(' or ')}, as far as the map says`;
-  if ((input.avoidPlaceIds ?? []).includes(p.id)) return 'You turned it down earlier';
+  if (avoid.has(p.id)) return 'You turned it down earlier';
   const travel = env.travel(env.context.location, p.location, env.context.mode, env.nowMs);
   const arrive = env.nowMs + travel * MINUTE;
   const latest = Math.min(env.endMs, block.latest ? toMs(block.latest) : Infinity);
+  const left = Math.max(0, Math.round((latest - env.nowMs) / MINUTE));
+  if (left < block.minMinutes) return `Only ${minutesWord(left)} left before ${formatClock(latest, tz)}, and it takes ${minutesWord(block.minMinutes)}`;
   if (arrive + block.minMinutes * MINUTE > latest) return `About ${travel} min away: too far to fit ${minutesWord(block.minMinutes)} before ${formatClock(latest, tz)}`;
   if (p.hours) {
     if (earliestOpenStart(p.hours, arrive, 1, latest, tz) === null) return 'Closed for the rest of today by its listed hours';
@@ -399,31 +409,47 @@ export function alternatives(input: AlternativesInput): AlternativesResult {
   for (const { p, b } of considered.sort((x, y) => (x.p.id === planned?.place?.id ? -1 : y.p.id === planned?.place?.id ? 1 : 0))) {
     if (placedIds.has(p.id) || seenExcluded.has(p.id)) continue;
     seenExcluded.add(p.id);
-    result.excluded.push({ label: p.name, placeId: p.id, reason: whyNot(p, b, seq, env, input) });
+    result.excluded.push({ label: p.name, placeId: p.id, reason: whyNot(p, b, seq, env, avoid, trigger === 'closed' ? planned?.place?.id : undefined) });
   }
   result.excluded = result.excluded.slice(0, 6);
 
   // Pick a small, varied set: the best of each kind, then the best of the rest.
   placed.sort((a, b) => b.score - a.score || a.item.start - b.item.start);
   const chosen: Placed[] = [];
-  const usedPlaces = new Set<string>();
+  const near = (a: Placed, b: Placed) => {
+    const pa = a.variant.option.place;
+    const pb = b.variant.option.place;
+    if (!pa || !pb) return false;
+    // Glorietta and Glorietta 3: separate map entries, the same trip.
+    const dLat = (pa.location.lat - pb.location.lat) * 111_320;
+    const dLng = (pa.location.lng - pb.location.lng) * 111_320 * Math.cos((pa.location.lat * Math.PI) / 180);
+    return pa.id === pb.id || Math.hypot(dLat, dLng) < 150;
+  };
   const take = (p: Placed) => {
-    const id = p.variant.option.place?.id ?? `${p.variant.kind}:none`;
-    if (usedPlaces.has(id) && p.variant.kind !== 'later' && p.variant.kind !== 'shorter') return;
+    const repeatable = p.variant.kind === 'later' || p.variant.kind === 'shorter';
     if (chosen.some((c) => c.variant.kind === p.variant.kind && (c.variant.option.place?.id ?? '') === (p.variant.option.place?.id ?? ''))) return;
-    usedPlaces.add(id);
+    if (!repeatable && chosen.some((c) => near(c, p) || (!c.variant.option.place && !p.variant.option.place && c.variant.kind === p.variant.kind))) return;
     chosen.push(p);
   };
   const limit = input.limit ?? 4;
+  // One of each kind first; substitutes once per kind of place (a gym and a mall walk, not two malls).
+  const groups = (kind: AlternativeKind) =>
+    kind === 'substitute' ? (SUBSTITUTES[block.category] ?? []).map((cat) => (p: Placed) => p.variant.kind === kind && p.variant.block.category === cat) : [(p: Placed) => p.variant.kind === kind];
   const order: AlternativeKind[] = rainMatters ? ['substitute', 'no-place', 'later', 'shorter', 'same-kind'] : ['same-kind', 'substitute', 'no-place', 'later', 'shorter'];
   for (const kind of order) {
-    const first = placed.find((p) => p.variant.kind === kind);
-    if (first) take(first);
+    for (const test of groups(kind)) {
+      if (chosen.length >= limit) break;
+      const first = placed.find(test);
+      if (first) take(first);
+    }
   }
   for (const p of placed) if (chosen.length < limit) take(p);
   chosen.sort((a, b) => b.score - a.score || a.item.start - b.item.start);
 
   result.options = chosen.slice(0, limit).map((p) => describe(p, { input, env, block, planned, nextFixed, hazard, rainMatters }));
+  // Two branches of the same chain read the same; say which is which.
+  const twins = result.options.filter((o) => o.place && result.options.some((x) => x !== o && x.label === o.label));
+  for (const o of twins) o.label = `${o.label} (about ${o.travelMinutes} min away)`;
 
   // What the answer rests on.
   if (!input.context.weather?.length)

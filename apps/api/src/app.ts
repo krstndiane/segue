@@ -123,7 +123,19 @@ export function createApp(deps: AppDeps) {
     const method = req.method ?? 'GET';
 
     if (method === 'GET' && url.pathname === '/health') {
-      return { status: 200, body: { ok: true, places: deps.places.name, weather: deps.weather.name, smartAdd: !!deps.understand, accounts: !!deps.social, assistant: deps.assistant ? 'ai' : 'basic' } };
+      return {
+        status: 200,
+        body: {
+          ok: true,
+          places: deps.places.name,
+          weather: deps.weather.name,
+          smartAdd: !!deps.understand,
+          accounts: !!deps.social,
+          assistant: deps.assistant ? 'ai' : 'basic',
+          // Which map source answered last, and the latest failure: how to check live data after a deploy.
+          ...(deps.places.status ? { placesStatus: deps.places.status() } : {}),
+        },
+      };
     }
 
     if (SOCIAL_PATH.test(url.pathname)) {
@@ -138,8 +150,13 @@ export function createApp(deps: AppDeps) {
       const parsed = NearbyQuerySchema.safeParse(Object.fromEntries(url.searchParams));
       if (!parsed.success) throw new HttpError(400, 'Invalid query', formatIssues(parsed.error));
       const q = parsed.data;
-      const places = await deps.places.nearby({ location: { lat: q.lat, lng: q.lng }, radiusM: q.radius, category: q.category, limit: q.limit });
-      return { status: 200, body: { places } };
+      try {
+        const places = await deps.places.nearby({ location: { lat: q.lat, lng: q.lng }, radiusM: q.radius, category: q.category, limit: q.limit });
+        return { status: 200, body: { places } };
+      } catch (e) {
+        log(`places failed: ${(e as Error).message}`);
+        throw new HttpError(503, "Live map data isn't available right now", undefined, { 'retry-after': '60' }, 'places_unavailable');
+      }
     }
 
     if (method === 'GET' && url.pathname === '/v1/weather/now') {

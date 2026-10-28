@@ -163,3 +163,27 @@ describe('places', () => {
     expect(describePlaces([p('Pulse', daily('06:00', '22:00'))], 'gym', ctx(), { openNow: false, source: 'device' }).text).toMatch(/^You're offline, so these are places saved earlier/);
   });
 });
+
+describe('plain-language requests from the audit', () => {
+  it('searches for a place when asked to find one, even if one is already planned', () => {
+    const withGym = ctx({ blocks: [...blocks, block('gym', 'Gym', 'gym')], day: { ...day, plan: { ...day.plan, items: [...day.plan.items, item('gym', 'Gym', t(20), t(21), { place: { id: 'g', name: 'Anytime Fitness', location: { lat: 0, lng: 0 } } })] } } });
+    expect(answer("Find a gym near me that's open now.", withGym).run).toEqual({ type: 'find-places', category: 'gym', openNow: true });
+    expect(answer('Find somewhere quiet near my next meeting.', ctx()).run).toMatchObject({ type: 'find-places', category: 'library' });
+  });
+
+  it('checks a deadline said as "I need to finish … before 7 PM"', () => {
+    expect(answer('I need to finish this report before 7 PM.', ctx()).text).toBe('Yes: Write report is planned 3:00 PM–4:30 PM, 2 h 30 min before 7 PM.');
+  });
+
+  it('answers "I only have 30 minutes before …" with the next set time and what fits', () => {
+    const r = answer('I only have 30 minutes before dinner.', ctx({ now: new Date(2026, 9, 27, 18, 0), day: { ...day, plan: { ...day.plan, items: day.plan.items.filter((i) => i.blockId === 'dinner') } } }));
+    expect(r.text).toBe('Dinner with Ana is at 6:30 PM, in 30 min. Nothing else is planned before it, so the 30 min is free.');
+    const busy = answer('I only have 30 minutes before dinner', ctx());
+    expect(busy.text).toMatch(/^Dinner with Ana is at 6:30 PM, in 4 h\. Write report, Run are planned before it but take longer than 30 min\.$/);
+    expect(busy.buttons?.[0]?.action).toEqual({ type: 'options', blockId: 'report', maxMinutes: 30 });
+  });
+
+  it('says how to add something instead of pretending to', () => {
+    expect(answer('I need to study for two hours.', ctx()).text).toMatch(/^I can't add things to your day from here yet/);
+  });
+});

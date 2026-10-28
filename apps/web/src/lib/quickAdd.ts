@@ -87,9 +87,19 @@ function durationLabel(min: number): string {
   return min % 60 ? `${Math.floor(min / 60)} h ${min % 60} min` : `${min / 60} h`;
 }
 
+const NUMBER_WORDS: Record<string, string> = { one: '1', two: '2', three: '3', four: '4', five: '5', six: '6', seven: '7', eight: '8', nine: '9', ten: '10', fifteen: '15', twenty: '20', thirty: '30', forty: '40', 'forty-five': '45', fortyfive: '45', ninety: '90' };
+
+/** "two hours" → "2 hours", "an hour and a half" → "90 min", so durations in words are read too. */
+export function durationWords(text: string): string {
+  return text
+    .replace(/\b(an?|one) hour and a half\b/gi, '90 min')
+    .replace(/\b(one|two|three|four|five|six) and a half hours?\b/gi, (_m, n: string) => `${Number(NUMBER_WORDS[n.toLowerCase()]) + 0.5} hours`)
+    .replace(/\b(one|two|three|four|five|six|seven|eight|nine|ten|fifteen|twenty|thirty|forty-five|fortyfive|forty|ninety)\s+(hours?|hrs?|minutes?|mins?)\b/gi, (_m, n: string, unit: string) => `${NUMBER_WORDS[n.toLowerCase()]} ${unit}`);
+}
+
 export function parseQuickAdd(input: string, now = new Date()): QuickAddResult {
   const nowMin = now.getHours() * 60 + now.getMinutes();
-  let text = ` ${input.trim().replace(/\s+/g, ' ')} `;
+  let text = ` ${durationWords(input.trim().replace(/\s+/g, ' '))} `;
   const lower = () => text.toLowerCase();
   const take = (re: RegExp): RegExpMatchArray | null => {
     const m = text.match(re);
@@ -197,7 +207,14 @@ export function parseQuickAdd(input: string, now = new Date()): QuickAddResult {
   const kind = KINDS.find((k) => k.words.test(lower()));
   if (kind) understood++;
 
-  let title = text.replace(/\s+/g, ' ').replace(/^[\s,;:-]+|[\s,;:-]+$/g, '').trim();
+  let title = text
+    .replace(/\s+/g, ' ')
+    // "I need to study for …" → "Study"
+    .replace(/^\s*(i\s+(need|have|want|got|gotta|should|must)\s+to|i'?ll|i\s+will|need\s+to|have\s+to|gotta|remember\s+to)\s+/i, '')
+    .replace(/\s+(for|this|the)\s*[.,!?]?\s*$/i, '')
+    .replace(/[\s.!?]+$/g, '')
+    .replace(/^[\s,;:-]+|[\s,;:-]+$/g, '')
+    .trim();
   title = title ? title.charAt(0).toUpperCase() + title.slice(1) : '';
   if (!title && kind) title = CATEGORY_LABEL[kind.category];
 
