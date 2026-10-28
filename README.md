@@ -80,7 +80,7 @@ Segue only reads today's timed events, and never changes your calendar. Sign-in 
 ANTHROPIC_API_KEY=... pnpm dev:api     # SMART_ADD=off turns it off again
 ```
 
-**Places in production** come from OpenStreetMap (or Google Places with a key). Segue never fills in made-up places outside `PLACES_PROVIDER=mock`. Overpass servers are tried in order (`OVERPASS_URLS`, comma-separated, overrides the default two; update the privacy policy if you change them).
+**Places in production** come from OpenStreetMap (or Google Places with a key): Overpass first, then Nominatim search when the Overpass servers are busy. Segue never fills in made-up places outside `PLACES_PROVIDER=mock`. `OVERPASS_URLS` (comma-separated) overrides the Overpass servers; `NOMINATIM_USER_AGENT` should name you and a contact (Nominatim's policy); update the privacy policy if you change providers. After a deploy, `/health` → `placesStatus` shows which source answered last. For dependable opening hours and coverage, Google Places (`PLACES_PROVIDER=google`, paid, capped by `GOOGLE_DAILY_BUDGET`) is the upgrade.
 
 **The planning assistant** works without any AI. To let Claude word its answers for signed-in users, the API needs `ANTHROPIC_API_KEY` (the same key as smart add) and Supabase sign-in checks; `ASSISTANT_MODEL` (default `claude-haiku-5-5`), `ASSISTANT_RATE_LIMIT` (per account per hour, default 60) and `ASSISTANT_DAILY_CAP` (all users, default 500) control cost. Each answer is one short model call with a small snapshot of today; set a monthly spend limit in the Anthropic Console first.
 

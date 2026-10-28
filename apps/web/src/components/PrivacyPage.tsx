@@ -172,8 +172,9 @@ export function PrivacyPage() {
             <li>
               <strong>OpenStreetMap</strong> (Overpass, for nearby places): the position you are planning from, or your previous stop when you look for
               other options for one item. It goes to the main Overpass server (overpass-api.de) and, only if that one doesn&apos;t answer, to the one at
-              overpass.private.coffee. <strong>Nominatim</strong>, for place names: your position rounded to about 1 km. When Google Places is switched
-              on, the same search area goes to Google Places first.
+              overpass.private.coffee. When neither answers, the same search area goes to OpenStreetMap&apos;s <strong>Nominatim</strong> search
+              instead. Nominatim also gives place names: your position rounded to about 1 km. When Google Places is switched on, the search area goes
+              to Google Places first.
             </li>
             <li>
               <strong>Open-Meteo</strong>, for weather: your position rounded to about 1 km. If Open-Meteo is unavailable, the same rounded position goes to{' '}
