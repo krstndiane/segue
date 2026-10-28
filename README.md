@@ -26,6 +26,7 @@ Calendars assume you stay put. When you're always moving city to city, one misse
 | `apps/web` | Installable PWA (React + Vite). First-run setup, plain-words adding, a day timeline with swipe gestures, one-tap re-route with reasons, nudges and reminders, My spots, Google Calendar, an animated weather sky, undo, and offline re-route on the device. |
 | `docs/ARCHITECTURE.md` | How it fits together, and the roadmap. |
 | `docs/AUDIT.md` | The October 2026 audit: what works, what was fixed, what is open, and what to do next. |
+| `docs/DEPLOYMENT_READINESS.md` | Release decision, scorecard, test report and the steps before deploying. With `MAP_AND_REROUTING_AUDIT.md` and `RELEASE_BLOCKERS.md`. |
 
 ## Quick start
 
