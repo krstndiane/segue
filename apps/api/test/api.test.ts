@@ -65,7 +65,7 @@ describe('API', () => {
   it('reports health', async () => {
     const res = await fetch(`${base}/health`);
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ ok: true, places: 'mock', weather: 'fake', smartAdd: false, accounts: false });
+    expect(await res.json()).toEqual({ ok: true, places: 'mock', weather: 'fake', smartAdd: false, accounts: false, assistant: 'basic' });
   });
 
   it('re-routes a day and returns the plan, alternatives, and candidates', async () => {
@@ -90,6 +90,21 @@ describe('API', () => {
     const body = (await res.json()) as { plan: { items: { place?: { id: string } }[] }; meta: { placesProvider: string } };
     expect(body.plan.items[0]?.place?.id).toBe('mine');
     expect(body.meta.placesProvider).toBe('client');
+  });
+
+  it('keeps two clashing commitments and says so, instead of dropping one', async () => {
+    const meeting = (id: string, start: string, end: string) => ({
+      id, title: id, minMinutes: 30, maxMinutes: 30, priority: 'must', category: 'none', requirements: [],
+      fixed: { start: `2026-10-19T${start}:00+08:00`, end: `2026-10-19T${end}:00+08:00` },
+    });
+    const res = await post('/v1/reroute', { blocks: [meeting('Class', '15:00', '16:00'), meeting('Dentist', '15:30', '16:30')], context: ctx }, { 'x-forwarded-for': '10.0.0.5' });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { plan: { items: { blockId: string; conflict?: string }[]; unscheduled: unknown[] } };
+    expect(body.plan.unscheduled).toEqual([]);
+    expect(body.plan.items.map((i) => [i.blockId, i.conflict])).toEqual([
+      ['Class', 'Overlaps Dentist (3:30 PM–4:30 PM)'],
+      ['Dentist', 'Overlaps Class (3:00 PM–4:00 PM)'],
+    ]);
   });
 
   it('rejects invalid requests with readable details', async () => {
@@ -246,6 +261,22 @@ describe('tidyBlocks', () => {
   });
 });
 
+describe('work and study from a note', () => {
+  const b = (title: string, category: 'cafe' | 'library' | 'gym', requirements: ('wifi' | 'power')[] = []) =>
+    ({ title, minutes: 90, priority: 'should', category, requirements, fixedStart: null, fixedEnd: null, place: null, earliest: null, latest: null, timePref: null, repeatsDaily: false }) as const;
+
+  it('stays "anywhere" unless the note names a place or a need, whatever the model said', () => {
+    expect(tidyBlocks([b('Write the report', 'cafe', ['wifi', 'power'])], 'write the report before 7')[0]).toMatchObject({ category: 'none', requirements: [] });
+    expect(tidyBlocks([b('Study', 'library')], 'study for two hours')[0]!.category).toBe('none');
+  });
+
+  it('keeps the place when the note asks for one', () => {
+    expect(tidyBlocks([b('Emails', 'cafe', ['wifi'])], 'emails somewhere with wifi')[0]).toMatchObject({ category: 'cafe', requirements: ['wifi'] });
+    expect(tidyBlocks([b('Study', 'library')], 'study at the library')[0]!.category).toBe('library');
+    expect(tidyBlocks([b('Gym', 'gym')], 'gym after work')[0]!.category).toBe('gym');
+  });
+});
+
 describe('clientKey', () => {
   const req = (headers: Record<string, string>, remote = '203.0.113.7') => ({ headers, socket: { remoteAddress: remote } }) as never;
 
@@ -332,5 +363,204 @@ describe('API protections', () => {
     expect(res.status).toBe(503);
     expect(await res.json()).toMatchObject({ error: expect.stringMatching(/resting for today/) });
     expect(claudeCalls).toBe(2);
+  });
+});
+
+describe('places setup', () => {
+  it('never falls back to made-up places outside mock mode', async () => {
+    const { buildPlacesProvider } = await import('../src/providers');
+    expect(buildPlacesProvider({ placesProvider: 'osm', googleDailyBudget: 1 }, () => {}).name).toBe('cached(osm→nominatim)');
+    expect(buildPlacesProvider({ placesProvider: 'google', googlePlacesApiKey: 'k', googleDailyBudget: 1 }, () => {}).name).toBe('cached(budget(google)→osm→nominatim)');
+    expect(buildPlacesProvider({ placesProvider: 'mock', googleDailyBudget: 1 }).name).toBe('mock');
+  });
+});
+
+describe('POST /v1/alternatives', () => {
+  const run = { id: 'run', title: 'Run', minMinutes: 45, maxMinutes: 45, priority: 'should', category: 'park', requirements: ['outdoor'] };
+  const plan = (start: string, end: string) => ({
+    label: 'Balanced',
+    items: [{ blockId: 'run', title: 'Run', start, end, travelMinutesBefore: 5, confidence: 'verified', fixed: false, fallbacks: [] }],
+    unscheduled: [],
+    score: 0,
+    totalTravelMinutes: 5,
+  });
+  const body = { blocks: [run], plan: plan('2026-10-19T17:00:00+08:00', '2026-10-19T17:45:00+08:00'), blockId: 'run', context: ctx, trigger: 'rain' };
+
+  async function app(places: import('@segue/providers').PlacesProvider) {
+    const s = createServer(createApp({ config: { corsOrigins: [], rerouteRateLimit: 50 }, places, weather, log: () => {} }));
+    await new Promise<void>((r) => s.listen(0, r));
+    const at = `http://127.0.0.1:${(s.address() as AddressInfo).port}`;
+    return { s, ask: (b: unknown) => fetch(`${at}/v1/alternatives`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(b) }) };
+  }
+
+  it('finds indoor options, and keeps everyone out of a storm', async () => {
+    const { s, ask } = await app(new MockPlacesProvider());
+    try {
+      const res = await ask(body);
+      expect(res.status).toBe(200);
+      const out = (await res.json()) as { result: { options: { kind: string; category: string; label: string }[]; notes: { text: string }[]; problem?: { text: string } }; places: Record<string, unknown[]>; meta: Record<string, unknown> };
+      // The fake weather reports a thunderstorm.
+      expect(out.result.notes[0]!.text).toBe('A thunderstorm is reported nearby, so nothing outdoors for now');
+      expect(out.result.options.length).toBeGreaterThan(0);
+      expect(out.result.options.every((o) => o.category !== 'park')).toBe(true);
+      expect(Object.keys(out.places).sort()).toEqual(['gym', 'mall', 'park']);
+      expect(out.meta).toMatchObject({ placesProvider: 'mock', currentWeather: 'storm', searchedNear: 'here' });
+    } finally {
+      s.close();
+    }
+  });
+
+  it('says when live map data is down and still offers the no-place version', async () => {
+    const { s, ask } = await app({ name: 'down', nearby: async () => { throw new Error('no map server answered'); } });
+    try {
+      const out = (await (await ask(body)).json()) as { result: { options: { kind: string; label: string }[] }; meta: { warnings: string[] } };
+      expect(out.meta.warnings).toContain("Couldn't reach live map data for gyms right now.");
+      expect(out.result.options.map((o) => o.kind)).toEqual(['no-place']);
+      expect(out.result.options[0]!.label).toBe('Indoor workout where you are');
+    } finally {
+      s.close();
+    }
+  });
+
+  it('rejects a malformed request with readable details', async () => {
+    const { s, ask } = await app(new MockPlacesProvider());
+    try {
+      const res = await ask({ ...body, blockId: '' });
+      expect(res.status).toBe(400);
+      expect(((await res.json()) as { details: string[] }).details.join(' ')).toMatch(/blockId/);
+    } finally {
+      s.close();
+    }
+  });
+});
+
+describe('POST /v1/assistant (optional AI mode)', () => {
+  const snapshot = {
+    now: '2026-10-19T14:00:00+08:00',
+    endOfDay: '2026-10-19T22:00:00+08:00',
+    items: [
+      { id: 'run', title: 'Run', start: '2026-10-19T17:00:00+08:00', end: '2026-10-19T17:45:00+08:00', fixed: false, calendar: false, status: 'planned' },
+      { id: 'gcal_1', title: 'Standup', start: '2026-10-19T15:00:00+08:00', end: '2026-10-19T15:30:00+08:00', fixed: true, calendar: true, status: 'planned' },
+    ],
+    unscheduled: [],
+    changes: [],
+    options: [{ id: 'opt-a', label: 'Work out at Pulse instead', start: '2026-10-19T17:00:00+08:00', end: '2026-10-19T17:45:00+08:00', why: 'Open until 10 PM', facts: [], tradeoffs: [] }],
+  };
+  const ask = { question: "What's next?", draft: 'Next: 3:00 PM–3:30 PM Standup (set time).', snapshot, history: [] };
+  const GOOD = 'good.token.one';
+  const OTHER = 'other.token.two';
+  const verifier = { verify: async (t: string) => { if (t !== GOOD && t !== OTHER) throw new (await import('../src/auth')).AuthError('bad'); return { id: t === GOOD ? '00000000-0000-4000-8000-000000000001' : '00000000-0000-4000-8000-000000000002', email: 'x@example.com' }; } };
+
+  async function app(answerWith: (req: unknown) => Promise<{ answer: string; action: unknown }>, extra: Record<string, number> = {}) {
+    const s = createServer(createApp({ config: { corsOrigins: [], rerouteRateLimit: 5, ...extra }, places: new MockPlacesProvider(), weather, log: () => {}, assistant: { ask: answerWith as never, verifier: verifier as never } }));
+    await new Promise<void>((r) => s.listen(0, r));
+    const at = `http://127.0.0.1:${(s.address() as AddressInfo).port}`;
+    return { s, at, post: (b: unknown, token?: string) => fetch(`${at}/v1/assistant`, { method: 'POST', headers: { 'content-type': 'application/json', ...(token ? { authorization: `Bearer ${token}` } : {}) }, body: JSON.stringify(b) }) };
+  }
+
+  it('is off unless a model is configured, and the phone answers on its own', async () => {
+    expect((await post('/v1/assistant', ask)).status).toBe(404);
+  });
+
+  it('needs a signed-in Segue account', async () => {
+    const { s, post: p, at } = await app(async () => ({ answer: 'x', action: null }));
+    try {
+      expect((await p(ask)).status).toBe(401);
+      expect((await p(ask, 'aaa.bbb.ccc')).status).toBe(401);
+      expect((await (await fetch(`${at}/health`)).json()).assistant).toBe('ai');
+    } finally {
+      s.close();
+    }
+  });
+
+  it('rejects malformed or oversized requests', async () => {
+    const { s, post: p } = await app(async () => ({ answer: 'x', action: null }));
+    try {
+      expect((await p({ ...ask, question: '' }, GOOD)).status).toBe(400);
+      expect((await p({ ...ask, snapshot: { ...snapshot, items: Array.from({ length: 41 }, () => snapshot.items[0]) } }, GOOD)).status).toBe(400);
+    } finally {
+      s.close();
+    }
+  });
+
+  it('passes the answer through, but only actions about things in the snapshot, never replacing a set-time item', async () => {
+    const actions: unknown[] = [
+      { type: 'use-option', optionId: 'opt-a' },
+      { type: 'use-option', optionId: 'made-up' },
+      { type: 'options', blockId: 'gcal_1' },
+      { type: 'options', blockId: 'someone-elses-item' },
+      { type: 'open-item', blockId: 'run' },
+      { type: 'replan' },
+    ];
+    let i = 0;
+    const { s, post: p } = await app(async () => ({ answer: 'Next is your standup at 3:00 PM.', action: actions[i++] }));
+    try {
+      const got = [];
+      for (let n = 0; n < actions.length; n++) got.push(((await (await p(ask, GOOD)).json()) as { action: unknown }).action);
+      expect(got).toEqual([{ type: 'use-option', optionId: 'opt-a' }, null, null, null, { type: 'open-item', blockId: 'run' }, { type: 'replan' }]);
+    } finally {
+      s.close();
+    }
+  });
+
+  it('says plainly when the model fails, so the phone falls back to its own answer', async () => {
+    const { s, post: p } = await app(async () => {
+      throw new Error('overloaded');
+    });
+    try {
+      const res = await p(ask, GOOD);
+      expect(res.status).toBe(502);
+      expect(await res.json()).toMatchObject({ code: 'assistant_unavailable' });
+    } finally {
+      s.close();
+    }
+  });
+
+  it('limits each account separately', async () => {
+    const { s, post: p } = await app(async () => ({ answer: 'ok', action: null }), { assistantRateLimit: 2 });
+    try {
+      expect([(await p(ask, GOOD)).status, (await p(ask, GOOD)).status, (await p(ask, GOOD)).status]).toEqual([200, 200, 429]);
+      expect((await p(ask, OTHER)).status).toBe(200);
+    } finally {
+      s.close();
+    }
+  });
+});
+
+describe('assistant conversation turns', () => {
+  it('start with the user and alternate', async () => {
+    const { turns } = await import('../src/assistant');
+    expect(
+      turns([
+        { role: 'assistant', text: 'hi' },
+        { role: 'user', text: 'a' },
+        { role: 'user', text: 'b' },
+        { role: 'assistant', text: 'c' },
+        { role: 'user', text: 'd' },
+      ]),
+    ).toEqual([
+      { role: 'user', content: 'a\nb' },
+      { role: 'assistant', content: 'c' },
+    ]);
+  });
+});
+
+describe('when no map source answers', () => {
+  it('says so with a 503 (not a 500, and never made-up places), and /health shows the failure', async () => {
+    const { FallbackPlacesProvider, CachedPlacesProvider } = await import('@segue/providers');
+    const down = new CachedPlacesProvider(new FallbackPlacesProvider([{ name: 'osm', nearby: async () => { throw new Error('at capacity'); } }]));
+    const s = createServer(createApp({ config: { corsOrigins: [], rerouteRateLimit: 5 }, places: down, weather, log: () => {} }));
+    await new Promise<void>((r) => s.listen(0, r));
+    const at = `http://127.0.0.1:${(s.address() as AddressInfo).port}`;
+    try {
+      const res = await fetch(`${at}/v1/places/nearby?lat=14.55&lng=121.02&category=gym`);
+      expect(res.status).toBe(503);
+      expect(await res.json()).toMatchObject({ error: "Live map data isn't available right now", code: 'places_unavailable' });
+      const health = (await (await fetch(`${at}/health`)).json()) as { placesStatus: { lastAnswer: unknown; lastFailure: { message: string } } };
+      expect(health.placesStatus.lastAnswer).toBeNull();
+      expect(health.placesStatus.lastFailure.message).toBe('osm: at capacity');
+    } finally {
+      s.close();
+    }
   });
 });

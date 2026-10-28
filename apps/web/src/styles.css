@@ -783,7 +783,9 @@ textarea {
 .text-button {
   border: 0;
   background: none;
-  padding: 0;
+  padding: 2px 0;
+  /* WCAG 2.2 target size: at least 24 px tall */
+  min-height: 24px;
   color: var(--ink);
   text-decoration: underline;
   text-underline-offset: 3px;
@@ -1921,6 +1923,12 @@ details.more[open] {
   background: var(--surface);
   box-shadow: inset 0 0 0 1px var(--line);
 }
+.hour-item.clash-left {
+  right: 50%;
+}
+.hour-item.clash-right {
+  left: calc(50% + 3px);
+}
 .hour-item.past {
   opacity: 0.55;
 }
@@ -2963,4 +2971,239 @@ details.more[open] {
   .username-status.error {
     color: #ff8f86;
   }
+}
+
+/* A commitment that can't be kept as planned: words and an icon, not colour alone. */
+.conflict-note {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  margin-top: 4px;
+  font-size: 0.86rem;
+  font-weight: 600;
+  line-height: 1.35;
+  color: var(--danger);
+}
+.conflict-note svg {
+  flex: none;
+  margin-top: 2px;
+}
+.next-conflict {
+  margin: 2px 0 8px;
+  font-size: 0.95rem;
+}
+.preview .conflict-note {
+  font-size: 0.8rem;
+}
+.hour-item-body .clash-mark {
+  margin-right: 4px;
+  color: var(--danger);
+}
+
+/* Phones: the section tabs get their own full-width row so none of them is
+   hidden off the edge (Routines and Together used to be cut off at 360-412 px). */
+@media (max-width: 600px) {
+  .top {
+    flex-wrap: wrap;
+    row-gap: 10px;
+  }
+  .top-actions {
+    display: contents;
+  }
+  .top-actions .gear {
+    order: 1;
+  }
+  .top-actions .tabs {
+    order: 2;
+    flex: 1 1 100%;
+  }
+  .tabs button {
+    flex: 1 1 auto;
+    text-align: center;
+    min-height: 32px;
+  }
+}
+@media (max-width: 360px) {
+  .tabs button {
+    padding: 6px 4px;
+    font-size: 0.76rem;
+  }
+}
+
+/* ---------- Other options for one item (AlternativesSheet). Scoped, existing tokens only. ---------- */
+.alternatives .alt-list {
+  list-style: none;
+  margin: 12px 0;
+  padding: 0;
+  display: grid;
+  gap: 10px;
+}
+.alternatives .alt-option {
+  border: 1px solid var(--line);
+  border-radius: var(--radius-l);
+  background: var(--surface);
+  padding: 12px 14px;
+}
+.alternatives .alt-when {
+  margin: 0;
+  font-size: var(--step--1);
+  color: var(--slate);
+}
+.alternatives .alt-label {
+  margin: 2px 0 6px;
+  font-size: 1.02rem;
+  line-height: 1.3;
+}
+.alternatives .alt-facts {
+  margin: 0 0 10px;
+  padding-left: 18px;
+  font-size: var(--step--1);
+  line-height: 1.45;
+}
+.alternatives .alt-fact-unknown,
+.alternatives .alt-tradeoff {
+  color: var(--slate);
+}
+.alternatives .alt-tradeoff::marker {
+  content: '± ';
+}
+.alternatives .alt-fact-unknown::marker {
+  content: '? ';
+}
+.alternatives .alt-actions {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+.alternatives .alt-problem-hard,
+.alternatives .alt-problem-preference {
+  font-weight: 600;
+}
+.alternatives .alt-excluded {
+  margin: 12px 0 4px;
+  font-size: var(--step--1);
+}
+.alternatives .alt-excluded summary {
+  cursor: pointer;
+  min-height: 24px;
+}
+.alternatives .alt-excluded ul,
+.alternatives .alt-notes {
+  margin: 6px 0 0;
+  padding-left: 18px;
+}
+.item-sheet .item-options {
+  margin: 4px 0 14px;
+}
+
+/* ---------- Planning assistant: over the page, never squeezing it ---------- */
+@media (max-width: 600px) {
+  .top-actions .gear.ask {
+    order: 1;
+    margin-left: auto;
+  }
+}
+.assistant-panel {
+  position: fixed;
+  inset: 0;
+  z-index: 9; /* under sheets (10) and toasts (20), so a proposal or details can open over the conversation */
+  display: flex;
+  flex-direction: column;
+  background: var(--fog);
+  color: var(--ink);
+  padding: env(safe-area-inset-top) 0 env(safe-area-inset-bottom);
+}
+@media (min-width: 720px) {
+  .assistant-panel {
+    left: auto;
+    width: min(400px, 100vw);
+    border-left: 1px solid var(--line);
+    box-shadow: -12px 0 32px rgb(0 0 0 / 0.12);
+  }
+}
+.assistant-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 16px var(--gutter) 10px;
+  border-bottom: 1px solid var(--line);
+}
+.assistant-head h2 {
+  margin: 0;
+  font-size: 1.1rem;
+}
+.assistant-head p {
+  margin: 2px 0 0;
+}
+.assistant-log {
+  flex: 1;
+  overflow-y: auto;
+  padding: 14px var(--gutter);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.assistant-msg {
+  max-width: 92%;
+  border-radius: var(--radius-l);
+  padding: 10px 12px;
+  line-height: 1.45;
+}
+.assistant-msg p {
+  margin: 0;
+}
+.assistant-msg ul {
+  margin: 6px 0 0;
+  padding-left: 18px;
+  font-size: var(--step--1);
+}
+.assistant-msg.user {
+  align-self: flex-end;
+  background: var(--ink);
+  color: var(--fog);
+}
+.assistant-msg.assistant {
+  align-self: flex-start;
+  background: var(--surface);
+  border: 1px solid var(--line);
+}
+.assistant-msg.error {
+  border-color: var(--danger);
+}
+.assistant-msg.pending {
+  border-style: dashed;
+}
+.assistant-actions,
+.assistant-confirm {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+}
+.assistant-confirm p {
+  flex-basis: 100%;
+  font-weight: 600;
+}
+.assistant-empty .chips {
+  margin-top: 10px;
+}
+.assistant-form {
+  display: flex;
+  gap: 8px;
+  padding: 10px var(--gutter) 14px;
+  border-top: 1px solid var(--line);
+  background: var(--fog);
+}
+.assistant-form input {
+  flex: 1;
+  min-width: 0;
+  min-height: 44px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 0 16px;
+  background: var(--surface);
+  color: var(--ink);
+  font: inherit;
 }

@@ -46,6 +46,8 @@ async function onboard(page: Page, things: string[]) {
 }
 
 test('the landing page explains Segue and opens the app', async ({ page }) => {
+  // "before 8" means 8 PM in the morning and 8 AM before dawn, so fix the clock.
+  await page.clock.setFixedTime(MORNING);
   await page.goto('/');
   await expect(page.getByRole('heading', { level: 1 })).toContainText('Re-route your day in one tap');
   await page.locator('#lp-try').fill('Groceries before 8');
@@ -180,4 +182,21 @@ test('sign up with Google on the landing page: greeted by name, calendar already
 
   await page.goto('/');
   await expect(page.getByRole('link', { name: 'Continue as Ana' }).first()).toBeVisible();
+});
+
+test('every section tab is on screen on a small phone', async ({ page }) => {
+  await page.setViewportSize({ width: 360, height: 740 });
+  await page.clock.setFixedTime(MORNING);
+  await page.goto('/app?sky=clear');
+  await page.getByRole('button', { name: /^Next/ }).click();
+  await page.getByRole('button', { name: 'Next', exact: true }).click();
+  await page.getByRole('button', { name: 'Try an example day' }).click();
+  const nav = page.getByRole('navigation', { name: 'Sections' });
+  await expect(nav).toBeVisible();
+  for (const name of ['Today', 'Plan', 'Calendar', 'Routines']) {
+    const box = (await nav.getByRole('button', { name }).boundingBox())!;
+    expect(box.x).toBeGreaterThanOrEqual(0);
+    expect(box.x + box.width).toBeLessThanOrEqual(360);
+    expect(box.height).toBeGreaterThanOrEqual(24);
+  }
 });

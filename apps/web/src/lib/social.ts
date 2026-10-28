@@ -193,3 +193,13 @@ export type { ConnectionsResponse, ConnectionState, InterestView, InvitationView
 
 /** A stable id for one create, so a retry after a dropped connection doesn't make two. */
 export const clientId = () => `c${Date.now().toString(36)}${Math.random().toString(36).slice(2, 10)}`;
+
+// ---- planning assistant (AI mode) ----
+
+export interface AssistantAiAnswer {
+  answer: string;
+  action: { type: 'options' | 'use-option' | 'replan' | 'open-item'; blockId?: string; optionId?: string } | null;
+}
+
+/** Ask the AI mode. Only a small snapshot of today goes, never location, notes or other days. */
+export const askAssistantAi = (body: unknown, signal?: AbortSignal) => api<AssistantAiAnswer>('POST', '/v1/assistant', body, signal);

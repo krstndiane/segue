@@ -2,6 +2,8 @@ export interface Config {
   port: number;
   placesProvider: 'osm' | 'google' | 'mock';
   googlePlacesApiKey?: string;
+  /** Overpass servers to try in order (OVERPASS_URLS, comma-separated); defaults to public ones. */
+  overpassUrls?: string[];
   /** Daily cap on paid Google calls before falling back to OSM. */
   googleDailyBudget: number;
   corsOrigins: string[];
@@ -13,6 +15,9 @@ export interface Config {
   readRateLimit: number;
   /** All clients together: paid smart-add calls per UTC day. 0 turns the cap off. */
   smartAddDailyCap: number;
+  /** AI assistant answers per account per hour, and per day for everyone (it shares the Anthropic key with smart add). */
+  assistantRateLimit: number;
+  assistantDailyCap: number;
   /** A header the host sets to the real client IP (for example x-real-ip). Wins over x-forwarded-for. */
   clientIpHeader?: string;
   /** Proxies in front of this server that each append to x-forwarded-for. */
@@ -63,6 +68,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     port: Number(env.PORT ?? 8787),
     placesProvider: provider as Config['placesProvider'],
     googlePlacesApiKey: env.GOOGLE_PLACES_API_KEY || undefined,
+    overpassUrls: env.OVERPASS_URLS ? env.OVERPASS_URLS.split(',').map((u) => u.trim()).filter(Boolean) : undefined,
     googleDailyBudget: Number(env.GOOGLE_DAILY_BUDGET ?? 500),
     corsOrigins: (env.CORS_ORIGINS ?? 'http://localhost:5173')
       .split(',')
@@ -74,6 +80,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     smartAddRateLimit: Number(env.SMART_ADD_RATE_LIMIT ?? 40),
     readRateLimit: count(env, 'READ_RATE_LIMIT', 300),
     smartAddDailyCap: count(env, 'SMART_ADD_DAILY_CAP', 300),
+    assistantRateLimit: count(env, 'ASSISTANT_RATE_LIMIT', 60),
+    assistantDailyCap: count(env, 'ASSISTANT_DAILY_CAP', 500),
     clientIpHeader: env.CLIENT_IP_HEADER?.trim().toLowerCase() || undefined,
     trustedProxyHops: count(env, 'TRUSTED_PROXY_HOPS', 1),
     databaseUrl: env.DATABASE_URL?.trim() || undefined,

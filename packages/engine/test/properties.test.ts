@@ -73,6 +73,8 @@ describe('engine invariants', () => {
 
         // Every block is either scheduled or reported, never both.
         const scheduled = r.plan.items.map((i) => i.blockId);
+        // Commitments that haven't ended are always in the plan.
+        for (const b of blocks) if (b.fixed && toMs(b.fixed.end) > nowMs) expect(scheduled).toContain(b.id);
         const missing = r.plan.unscheduled.map((u) => u.blockId);
         expect(new Set([...scheduled, ...missing]).size).toBe(scheduled.length + missing.length);
 
@@ -81,7 +83,16 @@ describe('engine invariants', () => {
           const s = toMs(item.start);
           const e = toMs(item.end);
           expect(e).toBeGreaterThan(s);
-          if (idx > 0) expect(s).toBeGreaterThanOrEqual(toMs(r.plan.items[idx - 1]!.end));
+          if (idx > 0) {
+            const prev = r.plan.items[idx - 1]!;
+            if (s < toMs(prev.end)) {
+              // Only two commitments may overlap, and both say so.
+              expect(item.fixed && prev.fixed).toBe(true);
+              expect(item.conflict).toMatch(/^Overlaps|Overlaps/);
+            }
+            // Flexible items never overlap anything that came before.
+            if (!item.fixed) for (const earlier of r.plan.items.slice(0, idx)) expect(s).toBeGreaterThanOrEqual(toMs(earlier.end));
+          }
           if (b.fixed) {
             // Fixed blocks never move.
             expect(s).toBe(toMs(b.fixed.start));

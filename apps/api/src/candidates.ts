@@ -5,6 +5,17 @@
 import { searchRadiusMeters, type Block, type LatLng, type Place, type TravelMode } from '@segue/engine';
 import type { PlacesProvider, SearchableCategory } from '@segue/providers';
 
+const CATEGORY_PLURAL: Record<SearchableCategory, string> = {
+  cafe: 'cafés',
+  cowork: 'coworking spaces',
+  library: 'libraries',
+  restaurant: 'places to eat',
+  gym: 'gyms',
+  park: 'parks',
+  grocery: 'groceries',
+  mall: 'malls',
+};
+
 export interface CandidateResult {
   candidates: Record<string, Place[]>;
   warnings: string[];
@@ -29,7 +40,7 @@ export async function gatherCandidates(
         byCategory.set(category, await provider.nearby({ location, radiusM, category, limit: 20 }));
       } catch (e) {
         console.warn(`places failed for ${category}: ${(e as Error).message}`);
-        warnings.push(`Couldn't look up nearby ${category === 'cafe' ? 'cafés' : `${category} places`}, so those blocks may use their fallback.`);
+        warnings.push(`Couldn't reach live map data for ${CATEGORY_PLURAL[category]} right now, so those plans use their no-place version.`);
         byCategory.set(category, []);
       }
     }),

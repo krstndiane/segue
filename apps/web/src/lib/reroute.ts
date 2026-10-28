@@ -19,20 +19,27 @@ export interface RerouteOutcome extends RerouteResult {
 
 interface ServerResponse extends RerouteResult {
   candidates: Record<string, Place[]>;
-  meta: { warnings: string[] };
+  meta: { warnings: string[]; placesProvider?: string };
 }
 
 /** Cached places are only trusted within this distance of where they were fetched. */
 const CACHE_RADIUS_M = 8000;
 
-function cacheFromCandidates(blocks: StoredBlock[], candidates: Record<string, Place[]>, ctx: Context): PlaceCache {
+function cacheFromCandidates(blocks: StoredBlock[], candidates: Record<string, Place[]>, ctx: Context, mockServer: boolean): PlaceCache {
   const byCategory: PlaceCache['byCategory'] = {};
   for (const b of blocks) {
     const list = candidates[b.id];
     if (list?.length) byCategory[b.category] = list;
   }
-  return { savedAt: new Date().toISOString(), location: ctx.location, byCategory };
+  return { savedAt: new Date().toISOString(), location: ctx.location, byCategory, ...(mockServer ? { mock: true } : {}) };
 }
+
+/**
+ * Made-up places are only for a server openly running in mock mode (local
+ * development). Older versions of the live server could fall back to them, so
+ * any saved on a phone from then are ignored.
+ */
+export const trustedPlaces = (places: Place[], cache: Pick<PlaceCache, 'mock'> | undefined) => (cache?.mock ? places : places.filter((p) => p.source !== 'mock'));
 
 function candidatesFromCache(blocks: StoredBlock[], cache: PlaceCache | undefined, ctx: Context, favorites: FavoritePlace[]): Record<string, Place[]> {
   const out: Record<string, Place[]> = {};
@@ -40,7 +47,7 @@ function candidatesFromCache(blocks: StoredBlock[], cache: PlaceCache | undefine
   for (const b of blocks) {
     if (b.fixedStart || b.category === 'none') continue;
     const mine = favorites.filter((f) => f.category === b.category);
-    const cached = near ? (cache!.byCategory[b.category] ?? []) : [];
+    const cached = near ? trustedPlaces(cache!.byCategory[b.category] ?? [], cache) : [];
     out[b.id] = [...mine, ...cached.filter((p) => !mine.some((f) => f.id === p.id))];
   }
   return out;
@@ -90,7 +97,7 @@ export async function rerouteDay(opts: {
           changes: body.changes,
           source: 'server',
           warnings: body.meta?.warnings ?? [],
-          placeCache: cacheFromCandidates(active, body.candidates ?? {}, opts.context),
+          placeCache: cacheFromCandidates(active, body.candidates ?? {}, opts.context, body.meta?.placesProvider === 'mock'),
         };
       }
       if (res.status === 429) throw new Error('rate');

@@ -40,6 +40,8 @@ export const PlaceSchema = z.object({
   reviewCount: z.number().int().min(0).optional(),
   address: z.string().optional(),
   source: z.string(),
+  fetchedAt: isoTimestamp.optional(),
+  temporarilyClosed: z.boolean().optional(),
 }) satisfies z.ZodType<Place>;
 
 export const BlockSchema = z
@@ -94,6 +96,7 @@ export const PlanItemSchema = z.object({
   fixed: z.boolean(),
   fallbacks: z.array(z.object({ kind: z.enum(['place', 'no-place']), place: PlaceRefSchema.optional(), label: z.string() })),
   explanation: z.string().optional(),
+  conflict: z.string().optional(),
 });
 
 export const PlanSchema = z.object({
@@ -116,6 +119,66 @@ export const RerouteRequestSchema = z.object({
   /** The user's saved places ("My spots"): always considered for blocks of their category. */
   favorites: z.array(PlaceSchema).max(30).optional(),
 });
+
+export const AlternativesRequestSchema = z.object({
+  blocks: z.array(BlockSchema).min(1).max(30),
+  plan: PlanSchema,
+  blockId: z.string().min(1).max(80),
+  context: ContextSchema,
+  trigger: z.enum(['rain', 'closed', 'late', 'missed', 'manual']).optional(),
+  /** the user said it's raining (until about then) */
+  rainingUntil: isoTimestamp.optional(),
+  avoidPlaceIds: z.array(z.string().max(200)).max(30).optional(),
+  /** "I only have 30 minutes" */
+  maxMinutes: z.number().int().min(5).max(720).optional(),
+  doneBlockIds: z.array(z.string()).max(30).optional(),
+  favorites: z.array(PlaceSchema).max(30).optional(),
+});
+export type AlternativesRequest = z.infer<typeof AlternativesRequestSchema>;
+
+/** The planning assistant's AI mode: a small snapshot of today, never the whole calendar, notes or location. */
+const shortText = (n: number) => z.string().max(n);
+export const AssistantSnapshotSchema = z.object({
+  now: isoTimestamp,
+  endOfDay: isoTimestamp,
+  items: z
+    .array(
+      z.object({
+        id: shortText(120),
+        title: shortText(120),
+        start: isoTimestamp,
+        end: isoTimestamp,
+        place: shortText(160).optional(),
+        fixed: z.boolean(),
+        calendar: z.boolean(),
+        status: z.enum(['planned', 'done', 'skipped']),
+        conflict: shortText(240).optional(),
+        explanation: shortText(300).optional(),
+      }),
+    )
+    .max(40),
+  unscheduled: z.array(z.object({ id: shortText(120), title: shortText(120), reason: shortText(240) })).max(30),
+  changes: z.array(z.object({ title: shortText(120), message: shortText(240) })).max(30),
+  options: z
+    .array(z.object({ id: shortText(300), label: shortText(200), start: isoTimestamp, end: isoTimestamp, why: shortText(400), facts: z.array(shortText(240)).max(10), tradeoffs: z.array(shortText(200)).max(5) }))
+    .max(4),
+  weather: shortText(300).optional(),
+});
+export const AssistantRequestSchema = z.object({
+  question: z.string().trim().min(1).max(500),
+  /** what Segue's own (non-AI) assistant would say, worked out on the phone */
+  draft: z.string().max(2000),
+  snapshot: AssistantSnapshotSchema,
+  history: z.array(z.object({ role: z.enum(['user', 'assistant']), text: shortText(400) })).max(6).default([]),
+});
+export type AssistantRequest = z.infer<typeof AssistantRequestSchema>;
+export type AssistantSnapshot = z.infer<typeof AssistantSnapshotSchema>;
+export const AssistantActionSchema = z.object({
+  type: z.enum(['options', 'use-option', 'replan', 'open-item']),
+  blockId: shortText(120).optional(),
+  optionId: shortText(300).optional(),
+});
+export type AssistantAiAction = z.infer<typeof AssistantActionSchema>;
 
 export const UnderstandRequestSchema = z.object({
   text: z.string().trim().min(1).max(500),

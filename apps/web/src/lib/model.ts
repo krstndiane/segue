@@ -69,6 +69,10 @@ export interface DayState {
   excludedIds?: string[];
   /** weather precautions already acknowledged today, by kind */
   dismissedPrecautions?: string[];
+  /** places turned down in "other options" today: not offered again today */
+  declinedPlaceIds?: string[];
+  /** items moved indoors (or to no place) today, so the rain nudge leaves them alone */
+  indoorIds?: string[];
   generatedAt?: string;
   source?: 'server' | 'device';
   warnings: string[];
@@ -79,6 +83,8 @@ export interface PlaceCache {
   location: LatLng;
   /** keyed by category so new blocks can reuse them */
   byCategory: Partial<Record<PlaceCategory, Place[]>>;
+  /** came from a server running with made-up places (development only) */
+  mock?: boolean;
 }
 
 export const CATEGORY_LABEL: Record<PlaceCategory, string> = {

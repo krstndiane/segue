@@ -1,7 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type { FallbackOption, Place, Plan, PlanItem } from '@segue/engine';
+import { haversineMeters, type AlternativeOption, type AlternativeTrigger, type FallbackOption, type Place, type Plan, type PlanItem } from '@segue/engine';
 import { AccountSettings, AuthSheet, ProfileSheet, SyncPromptSheet } from './components/Account';
 import { AddAtSheet } from './components/AddAtSheet';
+import { AlternativesSheet } from './components/AlternativesSheet';
+import { AssistantPanel } from './components/AssistantPanel';
+import { assistantAiAvailable } from './lib/smartAdd';
+import { askAssistantAi } from './lib/social';
 import { BlockForm, RoutinesView } from './components/Blocks';
 import { CalendarCard } from './components/CalendarCard';
 import { CalendarPage } from './components/CalendarPage';
@@ -37,6 +41,7 @@ import {
   localDate,
   newId,
   plannedToday,
+  toEngineBlock,
   todayAt,
   utcOffsetMinutes,
   type DayState,
@@ -51,7 +56,8 @@ import { applyPageTheme, pageTheme } from './lib/pageTheme';
 import { precautionsFor } from './lib/precautions';
 import { toneAt } from './lib/skyRenderer';
 import { BUSY_BLOCK_ID, adjustFor, type ReplanReason } from './lib/replan';
-import { rerouteDay, type RerouteOutcome } from './lib/reroute';
+import { API_URL, rerouteDay, trustedPlaces, type RerouteOutcome } from './lib/reroute';
+import { applyAlternative, findAlternatives, forecastFromSky, refine, type AlternativesOutcome } from './lib/alternatives';
 import { navigate, useRoute } from './lib/router';
 import { DEFAULT_LOCATION, DEFAULT_SETTINGS, SEED_BLOCKS } from './lib/seed';
 import { clearAll, getItem } from './lib/store';
@@ -67,6 +73,7 @@ const UNDO_DEPTH = 10;
 type SheetState =
   | { kind: 'replan' }
   | { kind: 'item'; id: string }
+  | { kind: 'alternatives'; id: string; trigger: AlternativeTrigger }
   | { kind: 'block'; id: string | null; draft?: StoredBlock }
   | { kind: 'settings' }
   | { kind: 'addAt'; at: string }
@@ -103,6 +110,20 @@ export function App() {
   const [replanBusy, setReplanBusy] = useState(false);
   const [replanError, setReplanError] = useState<string | null>(null);
   const [outcome, setOutcome] = useState<RerouteOutcome | null>(null);
+  const [alt, setAlt] = useState<{ busy: boolean; error: string | null; outcome: AlternativesOutcome | null }>({ busy: false, error: null, outcome: null });
+  const [assistantOpen, setAssistantOpen] = useState(false);
+  const [assistantAi, setAssistantAi] = useState(false);
+  const [online, setOnline] = useState(() => typeof navigator === 'undefined' || navigator.onLine !== false);
+  useEffect(() => {
+    const up = () => setOnline(true);
+    const down = () => setOnline(false);
+    window.addEventListener('online', up);
+    window.addEventListener('offline', down);
+    return () => {
+      window.removeEventListener('online', up);
+      window.removeEventListener('offline', down);
+    };
+  }, []);
   const [reason, setReason] = useState<ReplanReason | null>(null);
   const [dismissed, setDismissed] = useState<Set<string>>(new Set());
   const [seed, setSeed] = useState<{ text: string; n: number } | undefined>();
@@ -128,6 +149,15 @@ export function App() {
     },
   });
   const together = useTogether(me.userId);
+  // The assistant words its answers with AI only when the server offers it and you're signed in.
+  useEffect(() => {
+    if (!me.userId) return setAssistantAi(false);
+    let live = true;
+    void assistantAiAvailable().then((on) => live && setAssistantAi(on));
+    return () => {
+      live = false;
+    };
+  }, [me.userId]);
   const [togetherTab, setTogetherTab] = useState<TogetherTab>('notes');
   // Segue finds and follows the location on its own. A real fix (now or saved) is the user's own;
   // otherwise the time zone's main city stands in, and the pin says so. The user never picks the sky.
@@ -410,6 +440,89 @@ export function App() {
     setToast({ text: 'Swapped.', undo: true });
   };
 
+  /** Today's blocks as the engine sees them, calendar events included. */
+  async function engineBlocksFor(start: Date) {
+    const excluded = new Set(day.excludedIds ?? []);
+    const planned = blocks.filter((b) => plannedToday(b, localDate(start)) && !excluded.has(b.id));
+    const fromCalendar = await cal.forReroute(start, MAX_BLOCKS - planned.length);
+    return [...planned.map((b) => toEngineBlock(b, start)), ...fromCalendar.extra.filter((b) => !excluded.has(b.id))];
+  }
+
+  /** Where Segue plans from: the last known position, or the time zone's main city. */
+  const planningLocation = () => where.fix?.location ?? areaForZone(deviceZone())?.location ?? DEFAULT_LOCATION;
+
+  /** "What can I do instead?" for one item, checked against the rest of the day. Changes nothing. */
+  async function alternativesFor(id: string, trigger: AlternativeTrigger = 'manual', maxMinutes?: number): Promise<AlternativesOutcome> {
+    if (!day.plan) throw new Error('no plan');
+    const start = new Date();
+    const endOfDay = todayAt(settings.endOfDay, start);
+    const location = planningLocation();
+    const engineBlocks = await engineBlocksFor(start);
+    return findAlternatives(
+      {
+        blocks: engineBlocks.slice(0, MAX_BLOCKS),
+        plan: day.plan,
+        blockId: id,
+        context: { now: start.toISOString(), endOfDay, location, energy: settings.energy, mode: settings.mode, utcOffsetMinutes: utcOffsetMinutes(start) },
+        trigger,
+        maxMinutes,
+        avoidPlaceIds: day.declinedPlaceIds,
+        doneBlockIds: [...day.doneIds, ...day.skippedIds],
+        favorites,
+      },
+      {
+        placeCache,
+        cacheNear: !!placeCache && haversineMeters(placeCache.location, location) <= 8000,
+        deviceWeather: forecastFromSky(sky, start.getTime()),
+      },
+    );
+  }
+
+  async function openAlternatives(id: string, trigger: AlternativeTrigger = 'manual') {
+    if (!day.plan) return;
+    setSheet({ kind: 'alternatives', id, trigger });
+    setAlt({ busy: true, error: null, outcome: null });
+    try {
+      setAlt({ busy: false, error: null, outcome: await alternativesFor(id, trigger) });
+    } catch {
+      setAlt({ busy: false, error: "Couldn't check other options just now. Try again.", outcome: null });
+    }
+  }
+
+  /** Nearby places of one kind for the assistant; the phone's saved places when offline. */
+  async function nearbyPlaces(category: Exclude<Place['category'], 'none'>): Promise<{ places: Place[]; source: 'server' | 'device' }> {
+    const at = planningLocation();
+    try {
+      const ctrl = new AbortController();
+      const timer = setTimeout(() => ctrl.abort(), 10_000);
+      const res = await fetch(`${API_URL}/v1/places/nearby?lat=${at.lat.toFixed(4)}&lng=${at.lng.toFixed(4)}&category=${category}&radius=2000&limit=12`, { signal: ctrl.signal }).finally(() => clearTimeout(timer));
+      if (res.ok) return { places: ((await res.json()) as { places: Place[] }).places, source: 'server' };
+    } catch {
+      // fall through to what the phone has
+    }
+    const near = !!placeCache && haversineMeters(placeCache.location, at) <= 8000;
+    const mine = favorites.filter((f) => f.category === category);
+    const saved = near ? trustedPlaces(placeCache!.byCategory[category] ?? [], placeCache) : [];
+    return { places: [...mine, ...saved.filter((p) => !mine.some((m) => m.id === p.id))], source: 'device' };
+  }
+
+  function chooseAlternative(option: AlternativeOption) {
+    const indoors = option.category !== 'park';
+    changeDay((d) => {
+      const next = applyAlternative(d, option);
+      return indoors ? { ...next, indoorIds: [...new Set([...(d.indoorIds ?? []), option.blockId])] } : next;
+    });
+    if (sheet?.kind === 'alternatives') setSheet(null);
+    setAlt({ busy: false, error: null, outcome: null });
+    setToast({ text: `Changed: ${option.label}.`, undo: true });
+    navigator.vibrate?.(12);
+  }
+
+  function declinePlace(placeId: string) {
+    setDay((d) => ({ ...d, declinedPlaceIds: [...new Set([...(d.declinedPlaceIds ?? []), placeId])] }));
+    setAlt((a) => (a.outcome ? { ...a, outcome: refine(a.outcome, { avoidPlaceIds: [...new Set([...(a.outcome.request.avoidPlaceIds ?? []), placeId])] }) } : a));
+  }
+
   function toggleSpot(item: PlanItem) {
     const ref = item.place;
     if (!ref) return;
@@ -592,6 +705,7 @@ export function App() {
       onView={(r) => navigate(r)}
       location={status}
       onSettings={() => setSheet({ kind: 'settings' })}
+      onAssistant={settings.onboarded ? () => setAssistantOpen(true) : undefined}
       tempUnit={settings.tempUnit ?? 'C'}
       showNav={!!settings.onboarded}
       together={me.enabled}
@@ -745,6 +859,7 @@ export function App() {
               onDone={(id) => mark('doneIds', id)}
               onSkip={(id) => mark('skippedIds', id)}
               onReplan={() => void replan(null)}
+              onOptions={(item, trigger) => void openAlternatives(item.blockId, trigger)}
               onFillGap={(from) => {
                 setSeed((s) => ({ text: `after ${from}`, n: (s?.n ?? 0) + 1 }));
                 window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -909,6 +1024,53 @@ export function App() {
             onUseFallback={(f) => useFallback(openItem.blockId, f)}
             onToggleSpot={() => toggleSpot(openItem)}
             onEdit={blocks.some((b) => b.id === openItem.blockId) ? () => setSheet({ kind: 'block', id: openItem.blockId }) : undefined}
+            onOptions={blocks.some((b) => b.id === openItem.blockId) ? () => void openAlternatives(openItem.blockId) : undefined}
+          />
+        )}
+        {assistantOpen && (
+          <AssistantPanel
+            ctx={{
+              now,
+              day,
+              blocks,
+              calendarEvents,
+              calendarConnected: cal.calendar.connected,
+              endOfDay: todayAt(settings.endOfDay, now),
+              weather: sky.known && !sky.preview ? { condition: sky.condition, known: true, fetchedAt: sky.fetchedAt, upcoming: sky.details?.upcoming?.map((h) => ({ time: h.time, rainChance: h.rainChance })) } : undefined,
+              syncStatus: sync.status,
+            }}
+            ai={assistantAi}
+            online={online}
+            onClose={() => setAssistantOpen(false)}
+            runOptions={(id, trigger, maxMinutes) => alternativesFor(id, trigger, maxMinutes)}
+            findPlaces={nearbyPlaces}
+            useOption={(o) => {
+              chooseAlternative(o);
+              return `Done: ${o.title} is now “${o.label}”, ${clock(o.start)}–${clock(o.end)}. Undo is on the notice that just appeared.`;
+            }}
+            move={(id, hhmm) => {
+              const title = itemById(id)?.title ?? 'It';
+              moveItem(id, hhmm);
+              return `Done: ${title} moved to ${clock(hhmmToIso(hhmm))} and pinned. Re-route to fit the rest around it.`;
+            }}
+            replan={() => void replan(null)}
+            openItem={(id) => setSheet({ kind: 'item', id })}
+            askAi={(body) => askAssistantAi(body)}
+          />
+        )}
+        {sheet?.kind === 'alternatives' && (
+          <AlternativesSheet
+            title={itemById(sheet.id)?.title ?? 'this'}
+            busy={alt.busy}
+            error={alt.error}
+            outcome={alt.outcome}
+            onUse={chooseAlternative}
+            onNotThis={declinePlace}
+            onMaxMinutes={(m) => setAlt((a) => (a.outcome ? { ...a, outcome: refine(a.outcome, { maxMinutes: m }) } : a))}
+            onClose={() => {
+              setSheet(null);
+              setAlt({ busy: false, error: null, outcome: null });
+            }}
           />
         )}
         {sheet?.kind === 'block' && (

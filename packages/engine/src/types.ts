@@ -59,6 +59,10 @@ export interface Place {
   reviewCount?: number;
   address?: string;
   source: string;
+  /** ISO time the provider was asked (cached results keep the original time). */
+  fetchedAt?: string;
+  /** The provider says it's temporarily closed. */
+  temporarilyClosed?: boolean;
 }
 
 export interface FixedTime {
@@ -140,6 +144,11 @@ export interface PlanItem {
   fallbacks: FallbackOption[];
   /** Human-readable reason this item looks the way it does after a re-route. */
   explanation?: string;
+  /**
+   * A commitment that can't be kept as planned: you can't get there in time,
+   * or it overlaps another commitment. It stays in the plan; the user decides.
+   */
+  conflict?: string;
 }
 
 export interface Unscheduled {

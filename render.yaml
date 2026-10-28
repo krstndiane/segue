@@ -15,6 +15,9 @@ services:
         value: production
       - key: PLACES_PROVIDER
         value: osm
+      # OpenStreetMap's Nominatim asks every app to name itself and give a contact. Put a real email here.
+      - key: NOMINATIM_USER_AGENT
+        value: Segue day planner (https://segue.pdyntech.com)
       # Your web app's address, e.g. https://segue.example.com (comma-separate more than one).
       - key: CORS_ORIGINS
         sync: false

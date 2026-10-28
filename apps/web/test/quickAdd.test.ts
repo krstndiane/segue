@@ -32,8 +32,9 @@ describe('quick add', () => {
 
   it('picks up needs, priority and routines', () => {
     const { block, chips } = parseQuickAdd('must deep work 2h wifi quiet every day', morning);
+    // Asking for Wi-Fi is what makes it need a place.
     expect(block).toMatchObject({ priority: 'must', category: 'cafe', maxMinutes: 120, minMinutes: 90 });
-    expect(block.requirements).toEqual(expect.arrayContaining(['wifi', 'power', 'quiet']));
+    expect(block.requirements).toEqual(expect.arrayContaining(['wifi', 'quiet']));
     expect(block.date).toBeUndefined();
     expect(chips).toContain('Every day');
   });
@@ -54,5 +55,37 @@ describe('quick add', () => {
     expect(r.block.title).toBe('Figure out the thing for the landlord about the leaky sink');
     expect(r.confident).toBe(false);
     expect(parseQuickAdd('Laundry', morning).confident).toBe(true);
+  });
+});
+
+describe('work and study happen anywhere unless you say otherwise', () => {
+  const morning = new Date('2026-10-20T09:00:00+08:00');
+  it('writing, studying and emails need no place', () => {
+    for (const text of ['Write report 2h', 'Study for two hours', 'Emails 30 min', 'Code review 1h']) {
+      const { block, chips } = parseQuickAdd(text, morning);
+      expect(block.category).toBe('none');
+      expect(block.requirements).toEqual([]);
+      expect(chips).not.toContain('Café');
+    }
+  });
+  it('a café, Wi-Fi or quiet makes it a place to find', () => {
+    expect(parseQuickAdd('Study at a café 2h', morning).block).toMatchObject({ category: 'cafe', requirements: ['wifi', 'power'] });
+    expect(parseQuickAdd('Work 2h with wifi', morning).block).toMatchObject({ category: 'cafe', requirements: ['wifi'] });
+    expect(parseQuickAdd('Study somewhere quiet 2h', morning).block).toMatchObject({ category: 'library', requirements: ['quiet'] });
+    expect(parseQuickAdd('Study at the library', morning).block.category).toBe('library');
+    expect(parseQuickAdd('Coffee with Ana', morning).block.category).toBe('cafe');
+  });
+});
+
+describe('durations in words, and how people start a sentence', () => {
+  const morning = new Date('2026-10-20T09:00:00+08:00');
+  it('reads "two hours", "an hour and a half", "forty-five minutes"', () => {
+    expect(parseQuickAdd('I need to study for two hours.', morning).block).toMatchObject({ title: 'Study', maxMinutes: 120, category: 'none' });
+    expect(parseQuickAdd('Gym for an hour and a half', morning).block.maxMinutes).toBe(90);
+    expect(parseQuickAdd('Read forty-five minutes', morning).block.maxMinutes).toBe(45);
+    expect(parseQuickAdd('Walk one and a half hours', morning).block.maxMinutes).toBe(90);
+  });
+  it('keeps the deadline and drops the filler', () => {
+    expect(parseQuickAdd('I need to finish this report before 7 PM.', morning).block).toMatchObject({ title: 'Finish this report', latest: '19:00', category: 'none' });
   });
 });

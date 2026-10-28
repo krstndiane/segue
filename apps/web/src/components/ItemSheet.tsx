@@ -20,6 +20,8 @@ interface Props {
   onUseFallback: (f: FallbackOption) => void;
   onToggleSpot: () => void;
   onEdit?: () => void;
+  /** realistic other options for this item (flexible items only) */
+  onOptions?: () => void;
 }
 
 const hhmm = (iso: string) => {
@@ -43,6 +45,7 @@ function addToCalendarUrl(item: PlanItem): string {
 /** Plain reasons for where and when the item landed. */
 function reasons(item: PlanItem, block: StoredBlock | undefined, locked: boolean, mode: TravelMode): string[] {
   const out: string[] = [];
+  if (item.conflict) out.push(`${item.conflict}. Segue won't move or drop a set-time commitment, so decide which one to keep, or let people know you'll be late.`);
   if (isCalendarBlock(item.blockId)) out.push("It's on your Google Calendar, so it stays at this time.");
   else if (item.fixed) out.push('It happens at a set time, so it stays put.');
   else if (locked) out.push('You pinned it to this time.');
@@ -112,6 +115,14 @@ export function ItemSheet(props: Props) {
               ))}
             </ul>
           </section>
+        )}
+
+        {movable && props.onOptions && (
+          <p className="item-options">
+            <button type="button" className="text-button" onClick={props.onOptions}>
+              Closed, raining or short on time? See other options
+            </button>
+          </p>
         )}
 
         <div className="row-actions">

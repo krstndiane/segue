@@ -6,7 +6,10 @@ import {
   MetNoProvider,
   NoGeocoder,
   NominatimGeocoder,
+  NominatimPlacesProvider,
+  RequestGate,
   CachedPlacesProvider,
+  DEFAULT_OVERPASS_ENDPOINTS,
   FallbackPlacesProvider,
   GooglePlacesProvider,
   MockPlacesProvider,
@@ -17,27 +20,35 @@ import {
 } from '@segue/providers';
 import type { Config } from './config';
 
+/** Everything that calls OpenStreetMap's Nominatim shares one request a second (its usage policy). */
+const nominatimGate = new RequestGate(1100);
+const nominatimAgent = () => process.env.NOMINATIM_USER_AGENT || 'Segue day planner (https://segue.pdyntech.com)';
+
 /**
  * Wire up the Places Gateway from config:
- *   google → budget cap → falls back to OSM → falls back to mock, all cached
- *   osm    → falls back to mock, cached
- *   mock   → mock only
+ *   google → budget cap → OpenStreetMap (Overpass, then Nominatim search), cached
+ *   osm    → Overpass servers in turn, then Nominatim search, cached
+ *   mock   → made-up places, for development and tests only
+ * Real modes never fall back to made-up places: when no map source answers,
+ * the lookup fails, the plan says so, and blocks use their no-place version.
+ * Public Overpass servers are often at capacity, so after they all fail they
+ * rest for 10 minutes and Nominatim answers straight away.
  */
-export function buildPlacesProvider(config: Config): PlacesProvider {
-  const mock = new MockPlacesProvider();
-  if (config.placesProvider === 'mock') return mock;
-  const osm = new OsmPlacesProvider();
+export function buildPlacesProvider(config: Pick<Config, 'placesProvider' | 'googlePlacesApiKey' | 'googleDailyBudget' | 'overpassUrls'>, log: (line: string) => void = console.warn): PlacesProvider {
+  if (config.placesProvider === 'mock') return new MockPlacesProvider();
+  const osm = new OsmPlacesProvider(fetch, config.overpassUrls ?? DEFAULT_OVERPASS_ENDPOINTS, { log });
+  const nominatim = new NominatimPlacesProvider(fetch, nominatimAgent(), nominatimGate);
   const chain: PlacesProvider[] =
     config.placesProvider === 'google'
-      ? [new BudgetedPlacesProvider(new GooglePlacesProvider(config.googlePlacesApiKey!), config.googleDailyBudget), osm, mock]
-      : [osm, mock];
-  return new CachedPlacesProvider(new FallbackPlacesProvider(chain));
+      ? [new BudgetedPlacesProvider(new GooglePlacesProvider(config.googlePlacesApiKey!), config.googleDailyBudget), osm, nominatim]
+      : [osm, nominatim];
+  return new CachedPlacesProvider(new FallbackPlacesProvider(chain, log));
 }
 
 /** Place names from OpenStreetMap (Nominatim), cached; none with offline demo data. */
 export function buildGeocoder(config: Config) {
   if (config.placesProvider === 'mock') return new NoGeocoder();
-  return new CachedGeocoder(new NominatimGeocoder(fetch, process.env.NOMINATIM_USER_AGENT || 'Segue day planner'));
+  return new CachedGeocoder(new NominatimGeocoder(fetch, nominatimAgent(), undefined, undefined, undefined, nominatimGate));
 }
 
 /**

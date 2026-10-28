@@ -4,6 +4,7 @@ import { calendarBlockId, isCalendarBlock, type CalendarEvent } from '../lib/cal
 import { clock, clockParts, directionsUrl, duration, minutesBetween, travelLine } from '../lib/format';
 import type { DayState } from '../lib/model';
 import type { Nudge } from '../lib/nudges';
+import { ConflictNote } from './ConflictNote';
 
 interface Props {
   day: DayState;
@@ -19,6 +20,8 @@ interface Props {
   onDone: (id: string) => void;
   onSkip: (id: string) => void;
   onReplan: () => void;
+  /** other options for one item, e.g. from the rain nudge */
+  onOptions: (item: PlanItem, trigger: 'rain') => void;
   onFillGap: (from: string) => void;
   onDismissNudge: (id: string) => void;
 }
@@ -59,7 +62,7 @@ function StatusLine({ day }: { day: DayState }) {
   );
 }
 
-function NudgeBanner({ nudge, onReplan, onDismiss }: { nudge: Nudge; onReplan: () => void; onDismiss: () => void }) {
+function NudgeBanner({ nudge, onReplan, onOptions, onDismiss }: { nudge: Nudge; onReplan: () => void; onOptions: () => void; onDismiss: () => void }) {
   const directions = nudge.item ? directionsUrl(nudge.item) : null;
   return (
     <div className={`nudge nudge-${nudge.kind}`} role="status">
@@ -75,6 +78,10 @@ function NudgeBanner({ nudge, onReplan, onDismiss }: { nudge: Nudge; onReplan: (
         ) : nudge.action === 'replan' ? (
           <button type="button" className="ghost" onClick={onReplan}>
             Re-route
+          </button>
+        ) : nudge.action === 'options' && nudge.item ? (
+          <button type="button" className="ghost" onClick={onOptions}>
+            See options
           </button>
         ) : null}
         <button type="button" className="icon-button" aria-label="Dismiss" onClick={onDismiss}>
@@ -161,7 +168,7 @@ export function Timeline(props: Props) {
     <>
       <StatusLine day={day} />
       {props.nudges.map((n) => (
-        <NudgeBanner key={n.id} nudge={n} onReplan={props.onReplan} onDismiss={() => props.onDismissNudge(n.id)} />
+        <NudgeBanner key={n.id} nudge={n} onReplan={props.onReplan} onOptions={() => n.item && props.onOptions(n.item, 'rain')} onDismiss={() => props.onDismissNudge(n.id)} />
       ))}
       {props.weather}
       {props.adder}
@@ -196,6 +203,7 @@ export function Timeline(props: Props) {
             {placeLabel(next, events, 'Wherever you are')}
             {next.place && travelLine(next, mode) && <span className="muted"> · {travelLine(next, mode)}</span>}
           </p>
+          <ConflictNote item={next} className="next-conflict" />
           <p className="next-meta">
             <span>{duration(minutesBetween(next.start, next.end))}</span>
             {next.confidence === 'verified' && <span className="conf conf-ok">Open then</span>}
@@ -239,7 +247,7 @@ export function Timeline(props: Props) {
                   )}
                   {travel && <div className="tl-leg">{travel}</div>}
                   <SwipeRow
-                    label={`${clock(item.start)}, ${item.title}. Swipe right for done, left to skip, or tap for details.`}
+                    label={`${clock(item.start)}, ${item.title}.${item.conflict ? ` Heads up: ${item.conflict}.` : ''} Swipe right for done, left to skip, or tap for details.`}
                     onDone={() => props.onDone(item.blockId)}
                     onSkip={() => props.onSkip(item.blockId)}
                     onOpen={() => props.onOpen(item)}
@@ -251,6 +259,7 @@ export function Timeline(props: Props) {
                         {tags(item)}
                       </span>
                       <span className="tl-sub">{placeLabel(item, events, 'Anywhere')}</span>
+                      <ConflictNote item={item} />
                     </span>
                     <span className="tl-dur">{duration(minutesBetween(item.start, item.end))}</span>
                   </SwipeRow>

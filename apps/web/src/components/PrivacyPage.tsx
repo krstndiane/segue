@@ -170,8 +170,11 @@ export function PrivacyPage() {
           <p>To do its job, Segue&apos;s server (or your browser) contacts these services. Each receives only what is listed.</p>
           <ul>
             <li>
-              <strong>OpenStreetMap</strong> (Overpass, for nearby places): the position you are planning from. <strong>Nominatim</strong>, for place
-              names: your position rounded to about 1 km. When Google Places is switched on, the same search area goes to Google Places instead.
+              <strong>OpenStreetMap</strong> (Overpass, for nearby places): the position you are planning from, or your previous stop when you look for
+              other options for one item. It goes to the main Overpass server (overpass-api.de) and, only if that one doesn&apos;t answer, to the one at
+              overpass.private.coffee. When neither answers, the same search area goes to OpenStreetMap&apos;s <strong>Nominatim</strong> search
+              instead. Nominatim also gives place names: your position rounded to about 1 km. When Google Places is switched on, the search area goes
+              to Google Places first.
             </li>
             <li>
               <strong>Open-Meteo</strong>, for weather: your position rounded to about 1 km. If Open-Meteo is unavailable, the same rounded position goes to{' '}
@@ -183,7 +186,10 @@ export function PrivacyPage() {
               above.
             </li>
             <li>
-              <strong>Anthropic</strong>, only for &ldquo;Let Segue read it&rdquo;: your note and local time, to turn it into blocks.
+              <strong>Anthropic</strong>, only for &ldquo;Let Segue read it&rdquo;: your note and local time, to turn it into blocks. And only if the AI
+              assistant is switched on and you&apos;re signed in: the question you ask, the last few messages, and a short summary of today&apos;s plan
+              (titles, times, place names, reasons and the options on screen). Never your location, notes, other days or your calendar beyond today&apos;s
+              plan. Without it, the assistant answers on your phone and nothing is sent.
             </li>
             <li>
               <strong>Google</strong>: sign-in, your profile, your calendar, and fonts. Your browser asks Google Fonts for the typeface, which shares your
