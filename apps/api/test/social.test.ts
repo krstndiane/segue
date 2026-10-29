@@ -60,7 +60,7 @@ describe.skipIf(!DB_URL)('accounts and social (Postgres)', () => {
   beforeAll(async () => {
     db = connect({ url: DB_URL!, ssl: 'off', max: 4 });
     await db.query('drop schema if exists segue cascade');
-    expect(await migrate(db)).toEqual(['001_accounts_notes_invitations', '002_profile_settings_connections', '003_username_rules', '004_google_calendar_sync', '005_join_requests']);
+    expect(await migrate(db)).toEqual(['001_accounts_notes_invitations', '002_profile_settings_connections', '003_username_rules', '004_google_calendar_sync', '005_join_requests', '006_today_progress']);
     expect(await migrate(db)).toEqual([]);
     server = createServer(
       createApp({
@@ -128,6 +128,19 @@ describe.skipIf(!DB_URL)('accounts and social (Postgres)', () => {
       const next = await a.as('PUT', '/v1/state/blocks', { value: [{ id: 'b1', title: 'Gym' }, { id: 'b2', title: 'Run' }], baseVersion: 1 });
       expect(next.body.item.version).toBe(2);
       expect((await a.as('PUT', '/v1/state/passwords', { value: {}, baseVersion: 0 })).status).toBe(400);
+    });
+
+    it("syncs today's done and skipped items, checks their shape, and keeps calendar ids on the device", async () => {
+      const a = await person('progress');
+      const today = { date: '2026-10-30', done: ['read', 'gcal_abc123'], skipped: ['gym'], updatedAt: '2026-10-30T01:00:00.000Z' };
+      const put = await a.as('PUT', '/v1/state/today', { value: today, baseVersion: 0 });
+      expect(put.status).toBe(200);
+      expect(put.body.item.value).toEqual({ ...today, done: ['read'] });
+      // Another device saving an older copy is told to merge first.
+      expect((await a.as('PUT', '/v1/state/today', { value: today, baseVersion: 0 })).status).toBe(409);
+      expect((await a.as('PUT', '/v1/state/today', { value: { date: 'today', done: [], skipped: [], updatedAt: 'x' }, baseVersion: 1 })).status).toBe(400);
+      expect((await a.as('PUT', '/v1/state/today', { value: { ...today, done: 'read' }, baseVersion: 1 })).status).toBe(400);
+      expect((await a.as('GET', '/v1/state')).body.items.today.value.done).toEqual(['read']);
     });
 
     it('never stores a precise position or calendar events', async () => {
@@ -518,9 +531,10 @@ describe.skipIf(!DB_URL)('accounts and social (Postgres)', () => {
   });
 
   it('rolls back and re-applies the migrations', async () => {
+    expect(await rollback(db)).toBe('006_today_progress');
     expect(await rollback(db)).toBe('005_join_requests');
     expect(await rollback(db)).toBe('004_google_calendar_sync');
-    expect(await migrate(db)).toEqual(['004_google_calendar_sync', '005_join_requests']);
+    expect(await migrate(db)).toEqual(['004_google_calendar_sync', '005_join_requests', '006_today_progress']);
   });
 });
 

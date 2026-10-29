@@ -452,4 +452,18 @@ alter table segue.notes drop column if exists open_to_join;
 `,
 };
 
-export const MIGRATIONS: Migration[] = [social, profilesConnections, usernameRules, calendarSync, joinRequests];
+/** Today's done and skipped items sync across devices. Additive: one more allowed key. */
+const todayProgress: Migration = {
+  id: '006_today_progress',
+  up: /* sql */ `
+alter table segue.user_state drop constraint if exists user_state_key_check;
+alter table segue.user_state add constraint user_state_key_check check (key in ('blocks', 'settings', 'favorites', 'placeHistory', 'dayArchive', 'today'));
+`,
+  down: /* sql */ `
+delete from segue.user_state where key = 'today';
+alter table segue.user_state drop constraint if exists user_state_key_check;
+alter table segue.user_state add constraint user_state_key_check check (key in ('blocks', 'settings', 'favorites', 'placeHistory', 'dayArchive'));
+`,
+};
+
+export const MIGRATIONS: Migration[] = [social, profilesConnections, usernameRules, calendarSync, joinRequests, todayProgress];

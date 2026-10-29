@@ -21,6 +21,8 @@ interface Props {
   onOpen: (item: PlanItem) => void;
   onDone: (id: string) => void;
   onSkip: (id: string) => void;
+  /** bring a done or skipped item back */
+  onReopen: (id: string) => void;
   onReplan: () => void;
   /** other options for one item, e.g. from the rain nudge */
   onOptions: (item: PlanItem, trigger: 'rain') => void;
@@ -96,25 +98,39 @@ function NudgeBanner({ nudge, onReplan, onOptions, onDismiss }: { nudge: Nudge; 
   );
 }
 
-/** A row you can swipe right for done, left to skip. Tapping opens it. Buttons in the sheet do the same. */
-function SwipeRow({ onDone, onSkip, onOpen, children, label }: { onDone: () => void; onSkip: () => void; onOpen: () => void; children: ReactNode; label: string }) {
+const Check = () => (
+  <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true">
+    <path d="M5 12.5l4.5 4.5L19 7.5" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round" />
+  </svg>
+);
+
+/**
+ * A row you can swipe right for done, left to skip, with a ✓ button beside it
+ * for one-tap done. Tapping the row opens it. Calendar events (their status is
+ * Google Calendar's) have neither.
+ */
+function SwipeRow({ onDone, onSkip, onOpen, children, label, title, markable }: { onDone: () => void; onSkip: () => void; onOpen: () => void; children: ReactNode; label: string; title: string; markable: boolean }) {
   const [dx, setDx] = useState(0);
+  const [doing, setDoing] = useState(false);
   const start = useRef<{ x: number; y: number; id: number } | null>(null);
   const moved = useRef(false);
   const THRESHOLD = 90;
 
   return (
-    <div className="swipe">
-      <div className="swipe-bg" aria-hidden="true">
-        <span className={dx > 20 ? 'on done' : 'done'}>Done</span>
-        <span className={dx < -20 ? 'on skip' : 'skip'}>Skip</span>
-      </div>
+    <div className={`swipe${markable ? ' with-quick' : ''}`}>
+      {markable && (
+        <div className="swipe-bg" aria-hidden="true">
+          <span className={dx > 20 ? 'on done' : 'done'}>Done</span>
+          <span className={dx < -20 ? 'on skip' : 'skip'}>Skip</span>
+        </div>
+      )}
       <button
         type="button"
         className="tl-card"
         aria-label={label}
         style={{ transform: dx ? `translateX(${dx}px)` : undefined, transition: start.current ? 'none' : undefined }}
         onPointerDown={(e) => {
+          if (!markable) return;
           start.current = { x: e.clientX, y: e.clientY, id: e.pointerId };
           moved.current = false;
         }}
@@ -145,6 +161,21 @@ function SwipeRow({ onDone, onSkip, onOpen, children, label }: { onDone: () => v
       >
         {children}
       </button>
+      {markable && (
+        <button
+          type="button"
+          className={`quick-done${doing ? ' doing' : ''}`}
+          aria-label={`Mark ${title} as done`}
+          disabled={doing}
+          onClick={() => {
+            // One tap: a short tick, then it's done. Further taps do nothing.
+            setDoing(true);
+            setTimeout(onDone, 180);
+          }}
+        >
+          <Check />
+        </button>
+      )}
     </div>
   );
 }
@@ -214,9 +245,16 @@ export function Timeline(props: Props) {
             {tags(next)}
           </p>
           <div className="row-actions">
-            <button type="button" className="primary" onClick={() => props.onDone(next.blockId)}>
-              Done
-            </button>
+            {!isCalendarBlock(next.blockId) && (
+              <>
+                <button type="button" className="primary" aria-label={`Mark ${next.title} as done`} onClick={() => props.onDone(next.blockId)}>
+                  <Check /> Done
+                </button>
+                <button type="button" className="ghost tall" onClick={() => props.onSkip(next.blockId)}>
+                  Skip
+                </button>
+              </>
+            )}
             {directionsUrl(next) && (
               <a className="ghost tall" href={directionsUrl(next)!} target="_blank" rel="noreferrer">
                 Directions
@@ -250,7 +288,9 @@ export function Timeline(props: Props) {
                   )}
                   {travel && <div className="tl-leg">{travel}</div>}
                   <SwipeRow
-                    label={`${clock(item.start)}, ${item.title}.${item.conflict ? ` Heads up: ${item.conflict}.` : ''} Swipe right for done, left to skip, or tap for details.`}
+                    title={item.title}
+                    markable={!isCalendarBlock(item.blockId)}
+                    label={`${clock(item.start)}, ${item.title}.${item.conflict ? ` Heads up: ${item.conflict}.` : ''} Tap for details.`}
                     onDone={() => props.onDone(item.blockId)}
                     onSkip={() => props.onSkip(item.blockId)}
                     onOpen={() => props.onOpen(item)}
@@ -270,7 +310,7 @@ export function Timeline(props: Props) {
               );
             })}
           </ol>
-          <p className="muted small swipe-hint">Swipe right for done, left to skip.</p>
+          <p className="muted small swipe-hint">Tap ✓ for done. Swipe left to skip; the rest of your day stays put.</p>
         </section>
       )}
 
@@ -291,9 +331,27 @@ export function Timeline(props: Props) {
       )}
 
       {(day.doneIds.length > 0 || day.skippedIds.length > 0) && (
-        <p className="muted small tally">
-          {day.doneIds.length} done{day.skippedIds.length ? `, ${day.skippedIds.length} skipped` : ''} today.
-        </p>
+        <details className="finished">
+          <summary className="muted small tally">
+            {day.doneIds.length} done{day.skippedIds.length ? `, ${day.skippedIds.length} skipped` : ''} today
+          </summary>
+          <ul>
+            {[...day.doneIds.map((id) => [id, 'Done'] as const), ...day.skippedIds.map((id) => [id, 'Skipped'] as const)].map(([id, what]) => {
+              const title = day.plan?.items.find((i) => i.blockId === id)?.title ?? day.plan?.unscheduled.find((u) => u.blockId === id)?.title ?? 'Removed item';
+              return (
+                <li key={id}>
+                  <span className={`finished-mark ${what === 'Done' ? 'is-done' : 'is-skipped'}`}>{what === 'Done' ? <Check /> : '–'}</span>
+                  <span className="finished-title">
+                    {title} <span className="muted small">· {what}</span>
+                  </span>
+                  <button type="button" className="text-button" onClick={() => props.onReopen(id)}>
+                    Bring back
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+        </details>
       )}
     </>
   );

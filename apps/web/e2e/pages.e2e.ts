@@ -241,6 +241,8 @@ test('a new day: yesterday’s calendar isn’t shown as today’s, one tap brin
   await expect(page.locator('main')).toContainText('Team standup');
   await expect(page.locator('.calendar-line')).toContainText('All day: Company day off');
   await expect(page.locator('.calendar-line')).toContainText('Google Calendar synced 8:00 AM');
+  // Calendar events have no ✓ or skip: their status belongs to Google Calendar.
+  await expect(page.getByRole('button', { name: 'Mark Client call as done' })).toHaveCount(0);
 
   // Later, lunch is added in Google Calendar; Segue picks it up on its own when you come back to the app.
   lunch = true;

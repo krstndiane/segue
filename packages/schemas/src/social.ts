@@ -58,9 +58,18 @@ export const ProfileCreateSchema = z.object({
 });
 export const ProfileUpdateSchema = ProfileCreateSchema.partial();
 
-export const SYNC_KEYS = ['blocks', 'settings', 'favorites', 'placeHistory', 'dayArchive'] as const;
+/** `today`: what's done and skipped today (not the plan itself, which each device builds). */
+export const SYNC_KEYS = ['blocks', 'settings', 'favorites', 'placeHistory', 'dayArchive', 'today'] as const;
 export type SyncKey = (typeof SYNC_KEYS)[number];
 export const SyncKeySchema = z.enum(SYNC_KEYS);
+/** The `today` sync value: which items are done or skipped on one day, and when that last changed. */
+export const TodayProgressSchema = z.object({
+  date: localDay,
+  done: z.array(z.string().max(80)).max(200),
+  skipped: z.array(z.string().max(80)).max(200),
+  updatedAt: isoTimestamp,
+});
+export type TodayProgress = z.infer<typeof TodayProgressSchema>;
 export const StatePutSchema = z.object({
   value: z.union([z.array(z.unknown()), z.record(z.unknown())]),
   /** The version this device last saw; 0 when it has never been saved. */
