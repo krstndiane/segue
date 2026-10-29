@@ -16,9 +16,10 @@ import { Avatar } from '../Account';
 import { Segmented } from '../Sheet';
 import { InvitationsSection, InviteSheet, type InviteDraft } from './Invitations';
 import { NotesSection } from './Notes';
+import { OverviewSection } from './Overview';
 import { PeopleSection } from './People';
 
-export type TogetherTab = 'notes' | 'invites' | 'people' | 'updates';
+export type TogetherTab = 'overview' | 'notes' | 'invites' | 'people' | 'updates';
 
 interface Props {
   accountState: AccountState;
@@ -58,7 +59,7 @@ export function TogetherPage(props: Props) {
         <header className="page-head">
           <div>
             <h2 className="page-title">Together</h2>
-            <p className="muted">Share notes, say you'd like to join, and invite people.</p>
+            <p className="muted">Share plans, ask to join, and agree on plans together.</p>
           </div>
         </header>
         <section className="panel">
@@ -67,7 +68,7 @@ export function TogetherPage(props: Props) {
             <>
               <ul className="promises">
                 <li>Your plans stay private. You choose what to share, note by note.</li>
-                <li>A heart on a friend's note means “I'd like to come”. They decide whether to invite you.</li>
+                <li>“Can I join?” only asks. Nothing is agreed until the other person says yes.</li>
                 <li>Invitations never change your day unless you add them yourself.</li>
               </ul>
               <div className="row-actions">
@@ -120,7 +121,7 @@ export function TogetherPage(props: Props) {
       setTimeout(() => document.getElementById(`inv-${n.entityId}`)?.scrollIntoView({ block: 'center', behavior: 'smooth' }), 50);
       return;
     }
-    setNoteFocus((f) => ({ scope: n.type === 'note_shared' ? 'shared' : 'mine', noteId: n.entityId, interests: n.type === 'note_hearted', n: (f?.n ?? 0) + 1 }));
+    setNoteFocus((f) => ({ scope: n.type === 'note_shared' ? 'shared' : n.type === 'join_declined' ? 'hearted' : 'mine', noteId: n.entityId, interests: n.type === 'note_hearted', n: (f?.n ?? 0) + 1 }));
     props.onTab('notes');
   }
 
@@ -143,6 +144,7 @@ export function TogetherPage(props: Props) {
         value={props.tab}
         onChange={props.onTab}
         options={[
+          { value: 'overview', label: 'Overview' },
           { value: 'notes', label: 'Notes' },
           { value: 'invites', label: t.waiting.length ? `Invitations (${t.waiting.length})` : 'Invitations' },
           { value: 'people', label: t.requestCount ? `People (${t.requestCount})` : 'People' },
@@ -150,12 +152,32 @@ export function TogetherPage(props: Props) {
         ]}
       />
 
+      {props.tab === 'overview' && (
+        <OverviewSection
+          today={props.today}
+          together={t}
+          eventsOn={props.eventsOn}
+          notify={props.notify}
+          onOpenInvitation={(id) => {
+            setHighlight(id);
+            props.onTab('invites');
+            setTimeout(() => document.getElementById(`inv-${id}`)?.scrollIntoView({ block: 'center', behavior: 'smooth' }), 50);
+          }}
+          onInvite={(note, people) => setInvite({ title: note.title, description: note.body, people, sourceNoteId: note.id, placeName: note.placeName, date: note.onDate })}
+          onNewNote={() => {
+            setNoteFocus((f) => ({ scope: 'mine', n: (f?.n ?? 0) + 1 }));
+            props.onTab('notes');
+          }}
+          onFindPeople={() => props.onTab('people')}
+        />
+      )}
       {props.tab === 'notes' && (
         <NotesSection
           today={props.today}
           blocks={props.blocks}
           notify={props.notify}
           focus={noteFocus}
+          onJoined={t.upsert}
           onInvite={(note: NoteView, people: PublicProfile[]) =>
             setInvite({ title: note.title, description: note.body, people, sourceNoteId: note.id, placeName: note.placeName, date: note.onDate })
           }
@@ -178,7 +200,7 @@ export function TogetherPage(props: Props) {
       {props.tab === 'updates' && (
         <section className="together-section" aria-label="Updates">
           {t.error && !t.loaded && <p className="error">Couldn't load updates just now.</p>}
-          {t.loaded && t.notifications.length === 0 && <p className="empty muted">Nothing yet. Hearts on your notes, connection requests and answers to your invitations show up here.</p>}
+          {t.loaded && t.notifications.length === 0 && <p className="empty muted">Nothing yet. Requests to join your plans, connection requests and answers to your invitations show up here.</p>}
           {t.unread > 0 && (
             <button type="button" className="text-button" onClick={() => void readAll()}>
               Mark all as read

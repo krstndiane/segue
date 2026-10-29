@@ -16,12 +16,19 @@ export interface CalendarEvent {
   location?: string;
 }
 
+/** An all-day event (a holiday, a birthday, a trip): shown on the day, never blocks time. */
+export interface AllDayEvent {
+  id: string;
+  title: string;
+}
+
 /** Saved on the phone. The access token is never saved; it lives in memory only. */
 export interface CalendarState {
   connected: boolean;
   /** local "YYYY-MM-DD" the events belong to */
   date?: string;
   events: CalendarEvent[];
+  allDay?: AllDayEvent[];
   syncedAt?: string;
 }
 
@@ -39,6 +46,12 @@ export interface GoogleEvent {
   start?: { dateTime?: string; date?: string };
   end?: { dateTime?: string; date?: string };
   attendees?: { self?: boolean; responseStatus?: string }[];
+}
+
+/** One page of a Calendar API events list. */
+export interface GoogleEventPage {
+  items?: GoogleEvent[];
+  nextPageToken?: string;
 }
 
 const PREFIX = 'gcal_';
@@ -89,6 +102,53 @@ export function parseEvents(items: GoogleEvent[], dayStart: string, dayEnd: stri
     });
   }
   return out.sort((a, b) => Date.parse(a.start) - Date.parse(b.start));
+}
+
+/** All-day events that cover the local day `dayKey` ("YYYY-MM-DD"). Google's end date is exclusive. */
+export function parseAllDay(items: GoogleEvent[], dayKey: string): AllDayEvent[] {
+  const out: AllDayEvent[] = [];
+  const seen = new Set<string>();
+  for (const e of items) {
+    if (e.status === 'cancelled' || !e.start?.date || e.start.dateTime) continue;
+    if (e.attendees?.some((a) => a.self && a.responseStatus === 'declined')) continue;
+    const end = e.end?.date ?? e.start.date;
+    if (!(e.start.date <= dayKey && (end > dayKey || end === e.start.date))) continue;
+    const key = e.iCalUID ?? e.id;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push({ id: e.id, title: (e.summary?.trim() || 'Busy').slice(0, MAX_TITLE) });
+  }
+  return out;
+}
+
+/**
+ * How today's calendar compares with today's plan: events not planned around
+ * yet, events whose time changed in Google Calendar, and planned calendar
+ * items that are no longer there. Events the user chose to leave out don't count.
+ */
+export interface CalendarDiff {
+  missing: CalendarEvent[];
+  changed: CalendarEvent[];
+  gone: { blockId: string; title: string }[];
+}
+
+export function calendarDiff(events: CalendarEvent[], plan: { items: { blockId: string; title: string; start: string; end: string }[]; unscheduled: { blockId: string; title: string }[] } | null | undefined, excludedIds: string[] = []): CalendarDiff {
+  const out: CalendarDiff = { missing: [], changed: [], gone: [] };
+  if (!plan) return out;
+  const excluded = new Set(excludedIds);
+  const planned = new Map(plan.items.filter((i) => isCalendarBlock(i.blockId)).map((i) => [i.blockId, i]));
+  const unscheduled = new Set(plan.unscheduled.filter((u) => isCalendarBlock(u.blockId)).map((u) => u.blockId));
+  const current = new Set<string>();
+  for (const e of events) {
+    const id = calendarBlockId(e.id);
+    current.add(id);
+    if (excluded.has(id) || unscheduled.has(id)) continue;
+    const p = planned.get(id);
+    if (!p) out.missing.push(e);
+    else if (Date.parse(p.start) !== Date.parse(e.start) || Date.parse(p.end) !== Date.parse(e.end)) out.changed.push(e);
+  }
+  for (const [id, p] of planned) if (!current.has(id)) out.gone.push({ blockId: id, title: p.title });
+  return out;
 }
 
 /** Fixed engine blocks for the events, keeping within `room` blocks. */

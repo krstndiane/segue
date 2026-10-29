@@ -426,4 +426,44 @@ drop table if exists segue.google_accounts;
 `,
 };
 
-export const MIGRATIONS: Migration[] = [social, profilesConnections, usernameRules, calendarSync];
+/** Join requests: a plan can be open (or not) to "Can I join?", and its owner can say yes or not this time. Additive only. */
+const joinRequests: Migration = {
+  id: '005_join_requests',
+  up: /* sql */ `
+alter table segue.notes add column open_to_join boolean not null default true;
+-- The owner said "not this time" to a request. The requester can't ask again for the same plan.
+alter table segue.note_interests add column declined_at timestamptz;
+alter table segue.notifications drop constraint if exists notifications_type_check;
+alter table segue.notifications add constraint notifications_type_check check (type in (
+  'note_hearted', 'note_shared', 'invitation_received', 'invitation_accepted', 'invitation_declined',
+  'invitation_cancelled', 'invitation_changed', 'invitation_counter', 'connection_request', 'connection_accepted',
+  'join_accepted', 'join_declined'
+));
+`,
+  down: /* sql */ `
+delete from segue.notifications where type in ('join_accepted', 'join_declined');
+alter table segue.notifications drop constraint if exists notifications_type_check;
+alter table segue.notifications add constraint notifications_type_check check (type in (
+  'note_hearted', 'note_shared', 'invitation_received', 'invitation_accepted', 'invitation_declined',
+  'invitation_cancelled', 'invitation_changed', 'invitation_counter', 'connection_request', 'connection_accepted'
+));
+alter table segue.note_interests drop column if exists declined_at;
+alter table segue.notes drop column if exists open_to_join;
+`,
+};
+
+/** Today's done and skipped items sync across devices. Additive: one more allowed key. */
+const todayProgress: Migration = {
+  id: '006_today_progress',
+  up: /* sql */ `
+alter table segue.user_state drop constraint if exists user_state_key_check;
+alter table segue.user_state add constraint user_state_key_check check (key in ('blocks', 'settings', 'favorites', 'placeHistory', 'dayArchive', 'today'));
+`,
+  down: /* sql */ `
+delete from segue.user_state where key = 'today';
+alter table segue.user_state drop constraint if exists user_state_key_check;
+alter table segue.user_state add constraint user_state_key_check check (key in ('blocks', 'settings', 'favorites', 'placeHistory', 'dayArchive'));
+`,
+};
+
+export const MIGRATIONS: Migration[] = [social, profilesConnections, usernameRules, calendarSync, joinRequests, todayProgress];

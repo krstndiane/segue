@@ -21,10 +21,10 @@ export const loadAccount = () => getItem<Account>('account');
  */
 export async function signUpWithGoogle(): Promise<{ account: Account | null; calendar: CalendarState }> {
   const token = await requestToken('consent', { profile: true });
-  const [profile, events] = await Promise.all([fetchProfile(token).catch(() => null), fetchTodayEvents(token, new Date())]);
+  const [profile, today] = await Promise.all([fetchProfile(token).catch(() => null), fetchTodayEvents(token, new Date())]);
   const now = new Date().toISOString();
   const account: Account | null = profile ? { ...profile, provider: 'google', signedUpAt: now } : null;
-  const calendar: CalendarState = { connected: true, date: localDate(), events, syncedAt: now };
+  const calendar: CalendarState = { connected: true, date: localDate(), events: today.events, allDay: today.allDay, syncedAt: now };
   await Promise.all([account ? setItem('account', account) : Promise.resolve(), setItem('calendar', calendar)]);
   return { account, calendar };
 }

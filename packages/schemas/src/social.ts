@@ -58,9 +58,18 @@ export const ProfileCreateSchema = z.object({
 });
 export const ProfileUpdateSchema = ProfileCreateSchema.partial();
 
-export const SYNC_KEYS = ['blocks', 'settings', 'favorites', 'placeHistory', 'dayArchive'] as const;
+/** `today`: what's done and skipped today (not the plan itself, which each device builds). */
+export const SYNC_KEYS = ['blocks', 'settings', 'favorites', 'placeHistory', 'dayArchive', 'today'] as const;
 export type SyncKey = (typeof SYNC_KEYS)[number];
 export const SyncKeySchema = z.enum(SYNC_KEYS);
+/** The `today` sync value: which items are done or skipped on one day, and when that last changed. */
+export const TodayProgressSchema = z.object({
+  date: localDay,
+  done: z.array(z.string().max(80)).max(200),
+  skipped: z.array(z.string().max(80)).max(200),
+  updatedAt: isoTimestamp,
+});
+export type TodayProgress = z.infer<typeof TodayProgressSchema>;
 export const StatePutSchema = z.object({
   value: z.union([z.array(z.unknown()), z.record(z.unknown())]),
   /** The version this device last saw; 0 when it has never been saved. */
@@ -79,6 +88,8 @@ const noteFields = {
   blockId: z.string().max(80).nullable(),
   pinned: z.boolean(),
   archived: z.boolean(),
+  /** People who can see it may ask "Can I join?" (on unless the author turns it off). */
+  openToJoin: z.boolean(),
   /** People a "selected" note is shared with. */
   shareWith: z.array(uuid).max(50),
 };
@@ -109,6 +120,11 @@ export const InvitationCreateSchema = z
 export const InvitationUpdateSchema = z.object(activityFields).partial();
 export const CounterSchema = z.object({ startsAt: isoTimestamp, endsAt: isoTimestamp.nullable().optional(), note: text(300).optional() });
 export const CancelSchema = z.object({ everyone: z.boolean().optional() });
+/** Saying yes to "Can I join?": the time and place for the plan you'll do together (optional; the note's place by default). */
+export const JoinAcceptSchema = z
+  .object({ startsAt: isoTimestamp.nullable(), endsAt: isoTimestamp.nullable(), timezone, placeName: line(1, 120).nullable(), meetingNotes: text(500) })
+  .partial()
+  .required({ timezone: true });
 
 // ---- Responses ----
 
@@ -180,7 +196,8 @@ export interface StateItem {
   updatedAt: string;
 }
 
-export type InterestStatus = 'interested' | 'invited' | 'accepted' | 'declined' | 'withdrawn';
+/** `not_now`: the author said not this time. */
+export type InterestStatus = 'interested' | 'invited' | 'accepted' | 'declined' | 'withdrawn' | 'not_now';
 
 export interface NoteView {
   id: string;
@@ -194,6 +211,8 @@ export interface NoteView {
   updatedAt: string;
   archived: boolean;
   mine: boolean;
+  /** whether people who can see it may ask to join */
+  openToJoin: boolean;
   /** Only for the author */
   pinned?: boolean;
   blockId?: string | null;
@@ -254,7 +273,9 @@ export type NotificationType =
   | 'invitation_changed'
   | 'invitation_counter'
   | 'connection_request'
-  | 'connection_accepted';
+  | 'connection_accepted'
+  | 'join_accepted'
+  | 'join_declined';
 
 export interface NotificationView {
   id: string;

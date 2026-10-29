@@ -3207,3 +3207,197 @@ details.more[open] {
   color: var(--ink);
   font: inherit;
 }
+
+/* ---------- Google Calendar on Today ---------- */
+
+.nudge-calendar {
+  align-items: flex-start;
+}
+.calendar-changes {
+  margin: 6px 0 4px;
+  padding-left: 18px;
+  font-size: var(--step--1);
+}
+.calendar-changes li + li {
+  margin-top: 2px;
+}
+.nudge-calendar .muted {
+  color: inherit;
+  opacity: 0.75;
+}
+.calendar-line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 6px;
+  margin: 0 0 12px;
+}
+.calendar-line .ghost {
+  min-height: 24px;
+  padding: 2px 10px;
+}
+
+/* ---------- Together overview ---------- */
+
+.overview {
+  gap: 18px;
+}
+.ov-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.ov-head {
+  margin: 0;
+  font-size: var(--step--1);
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--slate);
+}
+.ov-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  border-radius: var(--radius-l);
+  background: var(--surface);
+  box-shadow: inset 0 0 0 1px var(--line);
+}
+.ov-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 56px;
+  padding: 10px 14px;
+  border-top: 1px solid var(--line);
+}
+.ov-row:first-child {
+  border-top: 0;
+}
+.ov-text {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.ov-count {
+  display: inline-grid;
+  place-items: center;
+  flex: 0 0 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: var(--brass-soft);
+  font-weight: 800;
+}
+.ov-row .heart,
+.ov-row .small-button {
+  flex: 0 0 auto;
+}
+.warn-text {
+  color: var(--danger);
+}
+.join-request {
+  flex-direction: column;
+  align-items: stretch !important;
+}
+.join-yes {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 0 2px;
+}
+@media (max-width: 420px) {
+  .ov-row {
+    flex-wrap: wrap;
+  }
+  .ov-row .heart,
+  .ov-row .small-button {
+    margin-left: 48px;
+  }
+}
+
+/* ---------- move tasks up ---------- */
+
+.moveup-list {
+  margin: 0;
+  padding-left: 18px;
+}
+.moveup-list li + li {
+  margin-top: 4px;
+}
+
+/* ---------- one-tap done ---------- */
+
+.swipe.with-quick .tl-card {
+  padding-right: 64px;
+}
+.quick-done {
+  position: absolute;
+  top: 50%;
+  right: 10px;
+  z-index: 1;
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  margin-top: -22px;
+  padding: 0;
+  border: 1.5px solid var(--line);
+  border-radius: 50%;
+  background: var(--surface);
+  color: var(--patina);
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s, transform 0.15s;
+}
+.quick-done:hover {
+  border-color: var(--patina);
+}
+.quick-done:focus-visible {
+  outline: 3px solid var(--focus);
+  outline-offset: 2px;
+}
+.quick-done.doing {
+  background: var(--patina);
+  border-color: var(--patina);
+  color: var(--surface);
+  transform: scale(1.08);
+}
+.next .row-actions .primary svg {
+  vertical-align: -5px;
+  margin-right: 2px;
+}
+
+.finished {
+  margin-top: 8px;
+}
+.finished summary {
+  cursor: pointer;
+  min-height: 24px;
+}
+.finished ul {
+  list-style: none;
+  margin: 6px 0 0;
+  padding: 0;
+}
+.finished li {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 44px;
+  border-top: 1px solid var(--line);
+}
+.finished-mark {
+  display: inline-grid;
+  place-items: center;
+  width: 24px;
+  color: var(--slate);
+}
+.finished-mark.is-done {
+  color: var(--patina);
+}
+.finished-title {
+  flex: 1;
+  min-width: 0;
+  text-decoration: line-through;
+  text-decoration-color: color-mix(in srgb, currentColor 40%, transparent);
+  overflow-wrap: anywhere;
+}

@@ -76,6 +76,8 @@ export interface DayState {
   generatedAt?: string;
   source?: 'server' | 'device';
   warnings: string[];
+  /** when done/skipped last changed on this device (the latest change wins when devices sync) */
+  progressAt?: string;
 }
 
 export interface PlaceCache {

@@ -26,6 +26,7 @@ export default defineConfig({
     command: `vite --port ${PORT} --strictPort`,
     url: `http://localhost:${PORT}`,
     reuseExistingServer: !process.env.CI,
-    env: { VITE_API_URL: 'http://127.0.0.1:9', VITE_GOOGLE_CLIENT_ID: 'e2e-client.apps.googleusercontent.com' },
+    // The assistant is built in for the browser tests (it stays out of production builds).
+    env: { VITE_API_URL: 'http://127.0.0.1:9', VITE_GOOGLE_CLIENT_ID: 'e2e-client.apps.googleusercontent.com', VITE_ASSISTANT: 'on' },
   },
 });

@@ -78,7 +78,7 @@ function invitationView(r: Row, viewer: string, now = Date.now()): InvitationVie
 }
 
 /** Invitations the viewer is part of, matching `where` (which may use $1 = viewer and later params). */
-async function load(q: Db['query'], viewer: string, where: string, params: unknown[] = []): Promise<InvitationView[]> {
+export async function loadInvitations(q: Db['query'], viewer: string, where: string, params: unknown[] = []): Promise<InvitationView[]> {
   const rows = await q(
     `select ${INVITATION_SELECT} where (v.sender_id = $1 or v.recipient_id = $1) and ${where} order by v.created_at desc, v.id limit 200`,
     [viewer, ...params],
@@ -87,7 +87,7 @@ async function load(q: Db['query'], viewer: string, where: string, params: unkno
 }
 
 async function one(q: Db['query'], viewer: string, id: string): Promise<InvitationView> {
-  const [v] = await load(q, viewer, 'v.id = $2', [id]);
+  const [v] = await loadInvitations(q, viewer, 'v.id = $2', [id]);
   if (!v) throw new HttpError(404, "Couldn't find that invitation");
   return v;
 }
@@ -122,7 +122,7 @@ export const invitationRoutes: Route[] = [
       const f = parse(ListSchema, Object.fromEntries(ctx.url.searchParams));
       const box = f.box === 'received' ? 'v.recipient_id = $1' : f.box === 'sent' ? 'v.sender_id = $1' : 'true';
       const now = ctx.deps.now?.() ?? Date.now();
-      let list = await load(ctx.db.query, ctx.user.id, box);
+      let list = await loadInvitations(ctx.db.query, ctx.user.id, box);
       if (f.state !== 'all') list = list.filter((v) => open(v, now) === (f.state === 'open'));
       return { status: 200, body: { invitations: list } };
     },
@@ -199,7 +199,7 @@ export const invitationRoutes: Route[] = [
         }
         return activity;
       });
-      return { status: 201, body: { invitations: await load(ctx.db.query, ctx.user.id, 'v.activity_id = $2', [activityId]) } };
+      return { status: 201, body: { invitations: await loadInvitations(ctx.db.query, ctx.user.id, 'v.activity_id = $2', [activityId]) } };
     },
   },
   {
@@ -269,7 +269,7 @@ export const invitationRoutes: Route[] = [
         }
         return String(act.id);
       });
-      return { status: 200, body: { invitations: await load(ctx.db.query, ctx.user.id, 'v.activity_id = $2', [activityId]) } };
+      return { status: 200, body: { invitations: await loadInvitations(ctx.db.query, ctx.user.id, 'v.activity_id = $2', [activityId]) } };
     },
   },
   {

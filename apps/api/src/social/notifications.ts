@@ -37,6 +37,10 @@ function words(type: NotificationType, who: string, title: string | null): strin
       return `${who} changed ${t}. Take a look.`;
     case 'invitation_counter':
       return `${who} suggested another time for ${t}.`;
+    case 'join_accepted':
+      return `${who} said yes: you're joining ${t}.`;
+    case 'join_declined':
+      return `${who} can't fit anyone else into ${t} this time.`;
     default:
       return `${who} sent you an update.`;
   }

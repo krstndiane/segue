@@ -200,3 +200,60 @@ test('every section tab is on screen on a small phone', async ({ page }) => {
     expect(box.height).toBeGreaterThanOrEqual(24);
   }
 });
+
+test('a new day: yesterday’s calendar isn’t shown as today’s, one tap brings today’s events, and changes wait for review', async ({ page }) => {
+  await fakeGoogle(page);
+  // Google answers with the day that was asked for; `lunch` is added in Google Calendar later on.
+  let lunch = false;
+  await page.route('https://www.googleapis.com/calendar/v3/calendars/**', (r) => {
+    const day = new URL(r.request().url()).searchParams.get('timeMin')!;
+    const date = new Date(Date.parse(day) + 8 * 3_600_000).toISOString().slice(0, 10); // the Manila date asked for
+    const items = r.request().url().includes('team%40x')
+      ? []
+      : [
+          { id: `standup-${date}`, summary: 'Team standup', start: { dateTime: `${date}T10:00:00+08:00` }, end: { dateTime: `${date}T10:30:00+08:00` } },
+          { id: `call-${date}`, summary: 'Client call', start: { dateTime: `${date}T15:00:00+08:00` }, end: { dateTime: `${date}T16:00:00+08:00` } },
+          { id: `holiday-${date}`, summary: 'Company day off', start: { date }, end: { date: `${date.slice(0, 8)}${String(Number(date.slice(8)) + 1).padStart(2, '0')}` } },
+          ...(lunch ? [{ id: `lunch-${date}`, summary: 'Lunch with Ana', start: { dateTime: `${date}T12:00:00+08:00` }, end: { dateTime: `${date}T13:00:00+08:00` } }] : []),
+        ];
+    return r.fulfill({ headers: cors, body: JSON.stringify({ items }) });
+  });
+
+  // Day one: sign up with Google and plan.
+  await page.clock.setFixedTime(MORNING);
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Continue with Google' }).first().click();
+  await expect(page.getByRole('heading', { name: 'Welcome, Ana' })).toBeVisible();
+  await page.getByRole('button', { name: /^Next/ }).click();
+  await page.getByRole('button', { name: 'Next', exact: true }).click();
+  await page.getByRole('button', { name: 'Plan my day' }).click();
+  await expect(page.locator('main')).toContainText('Client call');
+
+  // The next morning: a fresh page, so Google's sign-in (kept in memory only) is gone.
+  await page.clock.setFixedTime(new Date('2026-10-21T08:00:00+08:00'));
+  await page.reload();
+  const notice = page.locator('.nudge-calendar');
+  await expect(notice).toContainText("Today's Google Calendar isn't loaded yet");
+  await expect(page.locator('main')).not.toContainText('Client call');
+  await notice.getByRole('button', { name: 'Refresh calendar' }).click();
+  // Today's events are in, the day is planned around them, and the all-day event is shown without blocking time.
+  await expect(page.locator('main')).toContainText('Client call');
+  await expect(page.locator('main')).toContainText('Team standup');
+  await expect(page.locator('.calendar-line')).toContainText('All day: Company day off');
+  await expect(page.locator('.calendar-line')).toContainText('Google Calendar synced 8:00 AM');
+  // Calendar events have no ✓ or skip: their status belongs to Google Calendar.
+  await expect(page.getByRole('button', { name: 'Mark Client call as done' })).toHaveCount(0);
+
+  // Later, lunch is added in Google Calendar; Segue picks it up on its own when you come back to the app.
+  lunch = true;
+  await page.clock.setFixedTime(new Date('2026-10-21T08:20:00+08:00'));
+  await page.evaluate(() => document.dispatchEvent(new Event('visibilitychange')));
+  await expect(page.locator('.nudge-calendar')).toContainText('New: 12:00 PM–1:00 PM Lunch with Ana');
+  await expect(page.locator('.timeline')).not.toContainText('Lunch with Ana'); // not until you say so
+  await page.locator('.nudge-calendar').getByRole('button', { name: 'Update my plan' }).click();
+  const sheet = page.getByRole('dialog', { name: 'Re-route from here' });
+  await expect(sheet.locator('.preview')).toContainText('Lunch with Ana');
+  await sheet.getByRole('button', { name: 'Use this plan' }).click();
+  await expect(page.locator('.timeline')).toContainText('Lunch with Ana');
+  await expect(page.locator('.nudge-calendar')).toHaveCount(0);
+});

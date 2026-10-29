@@ -18,6 +18,8 @@ export interface Config {
   /** AI assistant answers per account per hour, and per day for everyone (it shares the Anthropic key with smart add). */
   assistantRateLimit: number;
   assistantDailyCap: number;
+  /** The AI assistant is in development (branch ai-assistant): off unless ASSISTANT_AI=on, even with an Anthropic key. */
+  assistantAi: boolean;
   /** A header the host sets to the real client IP (for example x-real-ip). Wins over x-forwarded-for. */
   clientIpHeader?: string;
   /** Proxies in front of this server that each append to x-forwarded-for. */
@@ -82,6 +84,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     smartAddDailyCap: count(env, 'SMART_ADD_DAILY_CAP', 300),
     assistantRateLimit: count(env, 'ASSISTANT_RATE_LIMIT', 60),
     assistantDailyCap: count(env, 'ASSISTANT_DAILY_CAP', 500),
+    assistantAi: env.ASSISTANT_AI === 'on',
     clientIpHeader: env.CLIENT_IP_HEADER?.trim().toLowerCase() || undefined,
     trustedProxyHops: count(env, 'TRUSTED_PROXY_HOPS', 1),
     databaseUrl: env.DATABASE_URL?.trim() || undefined,

@@ -143,6 +143,7 @@ export interface NoteInput {
   blockId?: string | null;
   pinned?: boolean;
   archived?: boolean;
+  openToJoin?: boolean;
   shareWith?: string[];
   clientId?: string;
 }
@@ -156,6 +157,10 @@ export const deleteNote = (id: string) => api<{ deleted: boolean }>('DELETE', `/
 export const heartNote = (id: string) => api<{ note: NoteView }>('POST', `/v1/notes/${id}/heart`);
 export const unheartNote = (id: string) => api<{ hearted: false; invitationStillOpen: boolean }>('DELETE', `/v1/notes/${id}/heart`);
 export const noteInterests = (id: string) => api<{ interests: InterestView[] }>('GET', `/v1/notes/${id}/interests`);
+/** "Yes, join me": makes it a plan you're both in. Time and place are optional. */
+export const acceptJoin = (noteId: string, interestId: string, b: { startsAt?: string | null; endsAt?: string | null; timezone: string; placeName?: string | null }) =>
+  api<{ invitations: InvitationView[] }>('POST', `/v1/notes/${noteId}/interests/${interestId}/accept`, b);
+export const declineJoin = (noteId: string, interestId: string) => api<{ declined: true }>('POST', `/v1/notes/${noteId}/interests/${interestId}/decline`);
 
 // ---- invitations ----
 

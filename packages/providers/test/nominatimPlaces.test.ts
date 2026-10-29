@@ -3,7 +3,7 @@
  * seen on 2026-10-29 near Ayala, Makati (14.5547, 121.0244).
  */
 import { describe, expect, it } from 'vitest';
-import { CachedPlacesProvider, FallbackPlacesProvider, MemoryStore, NominatimPlacesProvider, OsmPlacesProvider, RequestGate, parseNominatimPlaces, viewbox, type FetchFn } from '../src';
+import { CachedPlacesProvider, FallbackPlacesProvider, MemoryStore, NominatimPlacesProvider, OsmPlacesProvider, RequestGate, backoffMs, parseNominatimPlaces, viewbox, type FetchFn } from '../src';
 
 const AYALA = { lat: 14.5547, lng: 121.0244 };
 const req = { location: AYALA, radiusM: 2000, category: 'gym' as const };
@@ -51,6 +51,32 @@ describe('places from Nominatim search', () => {
   it('fails clearly on an error answer instead of returning nothing as if it were true', async () => {
     const p = new NominatimPlacesProvider(async () => new Response('busy', { status: 503 }), 'x', new RequestGate(0));
     await expect(p.nearby(req)).rejects.toThrow(/503/);
+  });
+
+  it('leaves Nominatim alone after it refuses us (429), instead of asking again on every search', async () => {
+    // Seen from Render right after the 29 Oct deploy: "[nominatim] search returned 429".
+    let now = 0;
+    let calls = 0;
+    const fetchFn: FetchFn = async () => {
+      calls++;
+      return calls === 1 ? new Response('slow down', { status: 429, headers: { 'retry-after': '120' } }) : new Response(JSON.stringify(gymResults));
+    };
+    const p = new NominatimPlacesProvider(fetchFn, 'x', new RequestGate(0), undefined, () => now);
+    await expect(p.nearby(req)).rejects.toThrow(/429/);
+    now = 60_000;
+    await expect(p.nearby(req)).rejects.toThrow(/slow down/);
+    expect(calls).toBe(1);
+    now = 121_000;
+    expect((await p.nearby(req)).length).toBe(2);
+    expect(calls).toBe(2);
+  });
+
+  it('waits what Nominatim asks, 5 minutes when it does not say, and never more than 30', () => {
+    expect(backoffMs('120', 0)).toBe(120_000);
+    expect(backoffMs(null, 0)).toBe(300_000);
+    expect(backoffMs('garbage', 0)).toBe(300_000);
+    expect(backoffMs('86400', 0)).toBe(1_800_000);
+    expect(backoffMs(new Date(90_000).toUTCString(), 0)).toBe(90_000);
   });
 });
 

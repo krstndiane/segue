@@ -1,9 +1,9 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { haversineMeters, type AlternativeOption, type AlternativeTrigger, type FallbackOption, type Place, type Plan, type PlanItem } from '@segue/engine';
 import { AccountSettings, AuthSheet, ProfileSheet, SyncPromptSheet } from './components/Account';
 import { AddAtSheet } from './components/AddAtSheet';
 import { AlternativesSheet } from './components/AlternativesSheet';
-import { AssistantPanel } from './components/AssistantPanel';
+import { ASSISTANT_ENABLED } from './lib/features';
 import { assistantAiAvailable } from './lib/smartAdd';
 import { askAssistantAi } from './lib/social';
 import { BlockForm, RoutinesView } from './components/Blocks';
@@ -17,16 +17,19 @@ import { PlanPage } from './components/PlanPage';
 import { PrecautionsCard } from './components/Precautions';
 import { QuickAdd } from './components/QuickAdd';
 import { ReplanSheet } from './components/ReplanSheet';
+import { MoveUpSheet } from './components/MoveUpSheet';
 import { SettingsSheet } from './components/SettingsSheet';
 import { LocationBanner } from './components/LocationBanner';
 import { SkyHeader, type View } from './components/SkyHeader';
 import { Timeline } from './components/Timeline';
+import { CalendarNotice } from './components/CalendarNotice';
 import { TogetherCard, TogetherPage, type TogetherTab } from './components/together/TogetherPage';
 import { useAccount } from './lib/useAccount';
 import { useSync } from './lib/useSync';
 import { useTogether } from './lib/useTogether';
 import type { Synced } from './lib/syncMerge';
-import { calendarBlockId } from './lib/calendar';
+import { calendarBlockId, calendarDiff, isCalendarBlock } from './lib/calendar';
+import { moveUp, planStampOf, type MoveUpResult } from './lib/moveUp';
 import { addDays, dayLabel, withArchived, type CalendarDays, type DayArchive } from './lib/days';
 import { clock } from './lib/format';
 import { firstName, forgetAccount, loadAccount, signUpWithGoogle, type Account } from './lib/account';
@@ -66,6 +69,10 @@ import { askNotificationPermission, useReminders } from './lib/useReminders';
 import { usePlaceName } from './lib/placeName';
 import { useSky } from './lib/useSky';
 
+// Built in only when the assistant is switched on for this build (see lib/features.ts); production leaves it out.
+// The constant is checked right here so the build can drop the import (a constant from another module isn't always folded).
+const AssistantPanel = typeof __SEGUE_ASSISTANT__ !== 'undefined' && __SEGUE_ASSISTANT__ === true ? lazy(() => import('./components/AssistantPanel').then((m) => ({ default: m.AssistantPanel }))) : null;
+
 /** The API takes at most this many blocks per re-route (packages/schemas). */
 const MAX_BLOCKS = 30;
 const UNDO_DEPTH = 10;
@@ -79,11 +86,14 @@ type SheetState =
   | { kind: 'addAt'; at: string }
   | { kind: 'auth'; start: 'signin' | 'signup' | 'newPassword' }
   | { kind: 'profile' }
+  | { kind: 'moveUp' }
   | null;
 
 interface Toast {
   text: string;
   undo?: boolean;
+  /** one optional follow-up, e.g. "Move tasks up" after a skip; ignoring it changes nothing */
+  action?: { label: string; run: () => void };
 }
 
 const hhmmToIso = (hhmm: string, d = new Date()) => new Date(todayAt(hhmm, d)).toISOString();
@@ -135,7 +145,9 @@ export function App() {
   const cal = useCalendar(ready, notify);
   // Segue account (optional): sync across devices, notes, hearts and invitations.
   const me = useAccount();
-  const synced: Synced = { blocks, settings, favorites, placeHistory: history, dayArchive: archive };
+  // Today's progress syncs; the plan itself is built on each device.
+  const today_ = day.progressAt ? { date: day.date, done: day.doneIds, skipped: day.skippedIds, updatedAt: day.progressAt } : null;
+  const synced: Synced = { blocks, settings, favorites, placeHistory: history, dayArchive: archive, today: today_ };
   const sync = useSync({
     userId: me.userId,
     ready,
@@ -145,20 +157,29 @@ export function App() {
       else if (key === 'settings') setSettings(value as Settings);
       else if (key === 'favorites') setFavorites(value as FavoritePlace[]);
       else if (key === 'placeHistory') setHistory(value as PlaceHistory);
+      else if (key === 'today') {
+        // Another device marked things done or skipped today, more recently than this one.
+        const t = value as Synced['today'];
+        setDay((d) => {
+          if (!t || t.date !== d.date || Date.parse(t.updatedAt) <= Date.parse(d.progressAt ?? '1970-01-01')) return d;
+          const cal = (ids: string[]) => ids.filter((id) => id.startsWith('gcal_'));
+          return { ...d, doneIds: [...new Set([...t.done, ...cal(d.doneIds)])], skippedIds: [...new Set([...t.skipped, ...cal(d.skippedIds)])], progressAt: t.updatedAt };
+        });
+      }
       else if (key === 'dayArchive') setArchive(value as DayArchive);
     },
   });
   const together = useTogether(me.userId);
   // The assistant words its answers with AI only when the server offers it and you're signed in.
   useEffect(() => {
-    if (!me.userId) return setAssistantAi(false);
+    if (!ASSISTANT_ENABLED || !me.userId) return setAssistantAi(false);
     let live = true;
     void assistantAiAvailable().then((on) => live && setAssistantAi(on));
     return () => {
       live = false;
     };
   }, [me.userId]);
-  const [togetherTab, setTogetherTab] = useState<TogetherTab>('notes');
+  const [togetherTab, setTogetherTab] = useState<TogetherTab>('overview');
   // Segue finds and follows the location on its own. A real fix (now or saved) is the user's own;
   // otherwise the time zone's main city stands in, and the pin says so. The user never picks the sky.
   const where = useWhereabouts(ready, { location: settings.lastLocation, at: settings.lastLocatedAt });
@@ -230,7 +251,7 @@ export function App() {
 
   useEffect(() => {
     if (!toast) return;
-    const t = setTimeout(() => setToast(null), toast.undo ? 6000 : 3500);
+    const t = setTimeout(() => setToast(null), toast.action ? 9000 : toast.undo ? 6000 : 3500);
     return () => clearTimeout(t);
   }, [toast]);
 
@@ -263,7 +284,9 @@ export function App() {
   function undo() {
     const [prev, ...rest] = undoStack;
     if (!prev) return;
-    setDay(prev);
+    // Undoing a done or skip is itself a change, so it wins over the older copy when devices sync.
+    const progressChanged = prev.doneIds.join() !== day.doneIds.join() || prev.skippedIds.join() !== day.skippedIds.join();
+    setDay(progressChanged ? { ...prev, progressAt: new Date().toISOString() } : prev);
     setUndoStack(rest);
     setToast({ text: 'Undone.' });
   }
@@ -392,12 +415,83 @@ export function App() {
 
   const itemById = (id: string) => day.plan?.items.find((i) => i.blockId === id);
 
+  /**
+   * Done or skipped. Neither ever moves anything else: after a skip the rest of
+   * the day stays as it is unless you ask to move things up. Calendar events
+   * aren't marked here (their status belongs to Google Calendar).
+   */
   function mark(field: 'doneIds' | 'skippedIds', id: string) {
+    if (isCalendarBlock(id) || day.doneIds.includes(id) || day.skippedIds.includes(id)) return;
     learn(itemById(id), field === 'doneIds' ? 'done' : 'skipped');
-    changeDay((d) => ({ ...d, [field]: [...new Set([...d[field], id])] }));
+    const other = field === 'doneIds' ? 'skippedIds' : 'doneIds';
+    changeDay((d) => ({ ...d, [field]: [...new Set([...d[field], id])], [other]: d[other].filter((x) => x !== id), progressAt: new Date().toISOString() }));
     setSheet(null);
-    setToast({ text: field === 'doneIds' ? 'Nice, marked done.' : 'Skipped for today.', undo: true });
+    if (field === 'doneIds') setToast({ text: 'Nice, marked done.', undo: true });
+    else {
+      const skipped = itemById(id);
+      const later = (day.plan?.items ?? []).some((i) => i.blockId !== id && !i.fixed && !isCalendarBlock(i.blockId) && !day.doneIds.includes(i.blockId) && !day.skippedIds.includes(i.blockId) && skipped && Date.parse(i.start) >= Date.parse(skipped.start));
+      setToast({
+        text: 'Skipped. The rest of your day stays as it is.',
+        undo: true,
+        action: later ? { label: 'Move tasks up', run: () => void proposeMoveUp(id) } : undefined,
+      });
+    }
     navigator.vibrate?.(8);
+  }
+
+  /** Bring a done or skipped item back to the plan, where it was. */
+  function reopen(id: string) {
+    changeDay((d) => ({ ...d, doneIds: d.doneIds.filter((x) => x !== id), skippedIds: d.skippedIds.filter((x) => x !== id), progressAt: new Date().toISOString() }));
+    setToast({ text: `${itemById(id)?.title ?? 'It'} is back in your plan.`, undo: true });
+  }
+
+  const dayNow = useRef(day);
+  dayNow.current = day;
+  const [moveUpState, setMoveUpState] = useState<{ busy: boolean; result: MoveUpResult | null; note?: string }>({ busy: false, result: null });
+
+  /**
+   * "Move tasks up": the same things in the same order, earlier where that's
+   * realistic (trips, set times, listed hours, "not before" times). Worked out
+   * on this phone; nothing changes until "Apply changes".
+   */
+  async function proposeMoveUp(_skippedId?: string, note?: string) {
+    // Read the day as it is now: this often runs from a button made before the skip landed.
+    const day = dayNow.current;
+    if (!day.plan) return;
+    setSheet({ kind: 'moveUp' });
+    setMoveUpState({ busy: true, result: null, note });
+    try {
+      const start = new Date();
+      const finished = [...day.doneIds, ...day.skippedIds];
+      const engineBlocks = await engineBlocksFor(start);
+      const result = moveUp(day.plan, finished, {
+        now: start.getTime(),
+        location: planningLocation(),
+        mode: settings.mode,
+        utcOffsetMinutes: utcOffsetMinutes(start),
+        earliest: Object.fromEntries(engineBlocks.map((b) => [b.id, b.earliest])),
+        places: [...favorites, ...Object.values(placeCache?.byCategory ?? {}).flat()] as Place[],
+        pinned: day.lockedIds,
+      });
+      setMoveUpState({ busy: false, result, note });
+    } catch {
+      setMoveUpState({ busy: false, result: { kind: 'blocked', reason: "Couldn't work that out just now, so your schedule stays as it is." }, note });
+    }
+  }
+
+  /** Apply the previewed move, but only if the plan is still the one it was worked out for. */
+  function applyMoveUp() {
+    const day = dayNow.current;
+    const r = moveUpState.result;
+    if (r?.kind !== 'moves') return;
+    if (planStampOf(day.plan, [...day.doneIds, ...day.skippedIds]) !== r.stamp) {
+      void proposeMoveUp(undefined, 'Your plan changed since this suggestion, so here it is again for the plan as it is now.');
+      return;
+    }
+    changeDay((d) => ({ ...d, plan: r.plan }));
+    setSheet(null);
+    setMoveUpState({ busy: false, result: null });
+    setToast({ text: r.moves.length === 1 ? `${r.moves[0]!.title} moved up.` : `${r.moves.length} things moved up.`, undo: true });
   }
 
   const toggleLock = (id: string) =>
@@ -688,6 +782,9 @@ export function App() {
     />
   );
   const calendarEvents = cal.calendar.date === day.date ? cal.calendar.events : [];
+  // Events added, moved or removed in Google Calendar since today's plan was made.
+  // (Plain code, not a hook: this runs after the early returns above.)
+  const calendarChanges = calendarDiff(cal.calendar.date === today ? cal.calendar.events : [], day.plan, day.excludedIds);
   const excludedSet = new Set(day.excludedIds ?? []);
   const marks = (k: string) => marksFor(k, { today, day, blocks, archive, events: cal.days.days, todayEvents: calendarEvents });
   const openDay = (k: string) => {
@@ -705,7 +802,7 @@ export function App() {
       onView={(r) => navigate(r)}
       location={status}
       onSettings={() => setSheet({ kind: 'settings' })}
-      onAssistant={settings.onboarded ? () => setAssistantOpen(true) : undefined}
+      onAssistant={ASSISTANT_ENABLED && settings.onboarded ? () => setAssistantOpen(true) : undefined}
       tempUnit={settings.tempUnit ?? 'C'}
       showNav={!!settings.onboarded}
       together={me.enabled}
@@ -838,6 +935,22 @@ export function App() {
               mode={settings.mode}
               calendarEvents={calendarEvents}
               nudges={shownNudges}
+              calendar={
+                <CalendarNotice
+                  connected={cal.calendar.connected}
+                  loadedToday={cal.calendar.date === today}
+                  syncedAt={cal.calendar.syncedAt}
+                  allDay={cal.calendar.date === today ? (cal.calendar.allDay ?? []) : []}
+                  diff={calendarChanges}
+                  items={day.plan?.items ?? []}
+                  hasPlan={!!day.plan}
+                  needsTap={cal.needsTap}
+                  busy={cal.busy}
+                  error={cal.error}
+                  onRefresh={() => void cal.sync()}
+                  onUpdatePlan={() => void replan(null)}
+                />
+              }
               weather={
                 <PrecautionsCard
                   items={freshPrecautions}
@@ -858,6 +971,7 @@ export function App() {
               onOpen={(item) => setSheet({ kind: 'item', id: item.blockId })}
               onDone={(id) => mark('doneIds', id)}
               onSkip={(id) => mark('skippedIds', id)}
+              onReopen={reopen}
               onReplan={() => void replan(null)}
               onOptions={(item, trigger) => void openAlternatives(item.blockId, trigger)}
               onFillGap={(from) => {
@@ -984,12 +1098,38 @@ export function App() {
         {toast && (
           <div className="toast" role="status">
             <span>{toast.text}</span>
+            {toast.action && (
+              <button
+                type="button"
+                className="toast-undo"
+                onClick={() => {
+                  const run = toast.action!.run;
+                  setToast(null);
+                  run();
+                }}
+              >
+                {toast.action.label}
+              </button>
+            )}
             {toast.undo && undoStack.length > 0 && (
               <button type="button" className="toast-undo" onClick={undo}>
                 Undo
               </button>
             )}
           </div>
+        )}
+
+        {sheet?.kind === 'moveUp' && (
+          <MoveUpSheet
+            busy={moveUpState.busy}
+            result={moveUpState.result}
+            note={moveUpState.note}
+            onApply={applyMoveUp}
+            onKeep={() => {
+              setSheet(null);
+              setMoveUpState({ busy: false, result: null });
+            }}
+          />
         )}
 
         {sheet?.kind === 'replan' && (
@@ -1027,7 +1167,8 @@ export function App() {
             onOptions={blocks.some((b) => b.id === openItem.blockId) ? () => void openAlternatives(openItem.blockId) : undefined}
           />
         )}
-        {assistantOpen && (
+        {AssistantPanel && assistantOpen && (
+          <Suspense fallback={null}>
           <AssistantPanel
             ctx={{
               now,
@@ -1057,6 +1198,7 @@ export function App() {
             openItem={(id) => setSheet({ kind: 'item', id })}
             askAi={(body) => askAssistantAi(body)}
           />
+          </Suspense>
         )}
         {sheet?.kind === 'alternatives' && (
           <AlternativesSheet

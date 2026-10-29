@@ -1,5 +1,6 @@
 import { useEffect } from 'react';
 import '../landing.css';
+import { ASSISTANT_ENABLED } from '../lib/features';
 
 const CONTACT_EMAIL = 'pdyntechnology@gmail.com';
 const UPDATED = 'October 25, 2026';
@@ -186,10 +187,15 @@ export function PrivacyPage() {
               above.
             </li>
             <li>
-              <strong>Anthropic</strong>, only for &ldquo;Let Segue read it&rdquo;: your note and local time, to turn it into blocks. And only if the AI
-              assistant is switched on and you&apos;re signed in: the question you ask, the last few messages, and a short summary of today&apos;s plan
-              (titles, times, place names, reasons and the options on screen). Never your location, notes, other days or your calendar beyond today&apos;s
-              plan. Without it, the assistant answers on your phone and nothing is sent.
+              <strong>Anthropic</strong>, only for &ldquo;Let Segue read it&rdquo;: your note and local time, to turn it into blocks.
+              {ASSISTANT_ENABLED && (
+                <>
+                  {' '}
+                  And only if the AI assistant is switched on and you&apos;re signed in: the question you ask, the last few messages, and a short summary of
+                  today&apos;s plan (titles, times, place names, reasons and the options on screen). Never your location, notes, other days or your calendar
+                  beyond today&apos;s plan. Without it, the assistant answers on your phone and nothing is sent.
+                </>
+              )}
             </li>
             <li>
               <strong>Google</strong>: sign-in, your profile, your calendar, and fonts. Your browser asks Google Fonts for the typeface, which shares your

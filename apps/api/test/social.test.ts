@@ -60,7 +60,7 @@ describe.skipIf(!DB_URL)('accounts and social (Postgres)', () => {
   beforeAll(async () => {
     db = connect({ url: DB_URL!, ssl: 'off', max: 4 });
     await db.query('drop schema if exists segue cascade');
-    expect(await migrate(db)).toEqual(['001_accounts_notes_invitations', '002_profile_settings_connections', '003_username_rules', '004_google_calendar_sync']);
+    expect(await migrate(db)).toEqual(['001_accounts_notes_invitations', '002_profile_settings_connections', '003_username_rules', '004_google_calendar_sync', '005_join_requests', '006_today_progress']);
     expect(await migrate(db)).toEqual([]);
     server = createServer(
       createApp({
@@ -128,6 +128,19 @@ describe.skipIf(!DB_URL)('accounts and social (Postgres)', () => {
       const next = await a.as('PUT', '/v1/state/blocks', { value: [{ id: 'b1', title: 'Gym' }, { id: 'b2', title: 'Run' }], baseVersion: 1 });
       expect(next.body.item.version).toBe(2);
       expect((await a.as('PUT', '/v1/state/passwords', { value: {}, baseVersion: 0 })).status).toBe(400);
+    });
+
+    it("syncs today's done and skipped items, checks their shape, and keeps calendar ids on the device", async () => {
+      const a = await person('progress');
+      const today = { date: '2026-10-30', done: ['read', 'gcal_abc123'], skipped: ['gym'], updatedAt: '2026-10-30T01:00:00.000Z' };
+      const put = await a.as('PUT', '/v1/state/today', { value: today, baseVersion: 0 });
+      expect(put.status).toBe(200);
+      expect(put.body.item.value).toEqual({ ...today, done: ['read'] });
+      // Another device saving an older copy is told to merge first.
+      expect((await a.as('PUT', '/v1/state/today', { value: today, baseVersion: 0 })).status).toBe(409);
+      expect((await a.as('PUT', '/v1/state/today', { value: { date: 'today', done: [], skipped: [], updatedAt: 'x' }, baseVersion: 1 })).status).toBe(400);
+      expect((await a.as('PUT', '/v1/state/today', { value: { ...today, done: 'read' }, baseVersion: 1 })).status).toBe(400);
+      expect((await a.as('GET', '/v1/state')).body.items.today.value.done).toEqual(['read']);
     });
 
     it('never stores a precise position or calendar events', async () => {
@@ -413,9 +426,115 @@ describe.skipIf(!DB_URL)('accounts and social (Postgres)', () => {
     });
   });
 
-  it('rolls back and re-applies the migration', async () => {
+  describe('join requests ("Can I join?")', () => {
+    async function asked(title = 'Study at the library', extra: Record<string, unknown> = {}) {
+      const a = await person('owner', { discoverable: true });
+      const b = await person('asker');
+      const note = (await a.as('POST', '/v1/notes', { title, visibility: 'selected', shareWith: [b.id], placeName: 'Filipinas Heritage Library', ...extra })).body.note;
+      return { a, b, note };
+    }
+    const interestOf = async (a: Awaited<ReturnType<typeof person>>, noteId: string) => (await a.as('GET', `/v1/notes/${noteId}/interests`)).body.interests[0];
+
+    it('asking, then the owner saying yes, makes one plan both people are in, without touching anyone\'s day', async () => {
+      const { a, b, note } = await asked();
+      expect(note.openToJoin).toBe(true);
+      expect((await b.as('POST', `/v1/notes/${note.id}/heart`)).body.note.interest).toBe('interested');
+      const interest = await interestOf(a, note.id);
+      const yes = await a.as('POST', `/v1/notes/${note.id}/interests/${interest.id}/accept`, { startsAt: soon(24), endsAt: soon(26), timezone: 'Asia/Manila' });
+      expect(yes.status).toBe(201);
+      expect(yes.body.invitations).toHaveLength(1);
+      expect(yes.body.invitations[0]).toMatchObject({ status: 'accepted', direction: 'sent', activity: { title: 'Study at the library', placeName: 'Filipinas Heritage Library' } });
+      // The person who asked sees it as agreed, and is told.
+      const theirs = (await b.as('GET', '/v1/invitations')).body.invitations;
+      expect(theirs.map((v: { status: string; direction: string }) => [v.status, v.direction])).toEqual([['accepted', 'received']]);
+      expect((await b.as('GET', `/v1/notes/${note.id}`)).body.note.interest).toBe('accepted');
+      const told = (await b.as('GET', '/v1/notifications')).body.notifications.filter((n: { type: string }) => n.type === 'join_accepted');
+      expect(told).toHaveLength(1);
+      expect(told[0].text).toBe(`owner said yes: you're joining “Study at the library”.`);
+      // Saying yes twice doesn't make a second plan.
+      expect((await a.as('POST', `/v1/notes/${note.id}/interests/${interest.id}/accept`, { timezone: 'UTC' })).status).toBe(409);
+      expect((await a.as('GET', '/v1/invitations')).body.invitations).toHaveLength(1);
+      // Nobody's own planner state was touched.
+      expect((await db.query('select count(*)::int as n from segue.user_state where user_id = any($1::uuid[])', [[a.id, b.id]]))[0]).toEqual({ n: 0 });
+    });
+
+    it('a heart alone is only interest: nothing is confirmed until the owner says yes', async () => {
+      const { a, b, note } = await asked('Jog at the park');
+      await b.as('POST', `/v1/notes/${note.id}/heart`);
+      expect((await b.as('GET', '/v1/invitations')).body.invitations).toEqual([]);
+      expect((await a.as('GET', '/v1/invitations')).body.invitations).toEqual([]);
+      expect((await interestOf(a, note.id)).status).toBe('interested');
+    });
+
+    it('"not this time" closes the request kindly, and they can\'t ask again for that plan', async () => {
+      const { a, b, note } = await asked('Board games');
+      await b.as('POST', `/v1/notes/${note.id}/heart`);
+      const interest = await interestOf(a, note.id);
+      expect((await a.as('POST', `/v1/notes/${note.id}/interests/${interest.id}/decline`)).body).toEqual({ declined: true });
+      expect((await a.as('POST', `/v1/notes/${note.id}/interests/${interest.id}/decline`)).status).toBe(200); // harmless twice
+      expect((await b.as('GET', `/v1/notes/${note.id}`)).body.note.interest).toBe('not_now');
+      const again = await b.as('POST', `/v1/notes/${note.id}/heart`);
+      expect([again.status, again.body.code]).toEqual([409, 'not_now']);
+      const told = (await b.as('GET', '/v1/notifications')).body.notifications.filter((n: { type: string }) => n.type === 'join_declined');
+      expect(told.map((n: { text: string }) => n.text)).toEqual([`owner can't fit anyone else into “Board games” this time.`]);
+      expect((await a.as('POST', `/v1/notes/${note.id}/interests/${interest.id}/accept`, { timezone: 'UTC' })).status).toBe(409);
+    });
+
+    it('only the owner can answer, and only for their own plan', async () => {
+      const { a, b, note } = await asked('Lunch');
+      const c = await person('stranger');
+      await b.as('POST', `/v1/notes/${note.id}/heart`);
+      const interest = await interestOf(a, note.id);
+      expect((await b.as('POST', `/v1/notes/${note.id}/interests/${interest.id}/accept`, { timezone: 'UTC' })).status).toBe(404);
+      expect((await c.as('POST', `/v1/notes/${note.id}/interests/${interest.id}/accept`, { timezone: 'UTC' })).status).toBe(404);
+      expect((await c.as('POST', `/v1/notes/${note.id}/interests/${interest.id}/decline`)).status).toBe(404);
+      expect((await call(null, 'POST', `/v1/notes/${note.id}/interests/${interest.id}/accept`, { timezone: 'UTC' })).status).toBe(401);
+      // A request for another note can't be answered through this one.
+      const other = (await a.as('POST', '/v1/notes', { title: 'Other', visibility: 'selected', shareWith: [b.id] })).body.note;
+      expect((await a.as('POST', `/v1/notes/${other.id}/interests/${interest.id}/accept`, { timezone: 'UTC' })).status).toBe(404);
+    });
+
+    it('a plan that is not open to join refuses requests, on the server', async () => {
+      const { a, b, note } = await asked('Quiet study', { openToJoin: false });
+      expect(note.openToJoin).toBe(false);
+      const res = await b.as('POST', `/v1/notes/${note.id}/heart`);
+      expect([res.status, res.body.code]).toEqual([409, 'not_open']);
+      expect((await a.as('PATCH', `/v1/notes/${note.id}`, { openToJoin: true })).body.note.openToJoin).toBe(true);
+      expect((await b.as('POST', `/v1/notes/${note.id}/heart`)).status).toBe(200);
+    });
+
+    it('after sharing is taken back, or someone blocks someone, a request can no longer be accepted', async () => {
+      const { a, b, note } = await asked('Review session');
+      await b.as('POST', `/v1/notes/${note.id}/heart`);
+      const interest = await interestOf(a, note.id);
+      await a.as('PATCH', `/v1/notes/${note.id}`, { shareWith: [] });
+      expect((await a.as('POST', `/v1/notes/${note.id}/interests/${interest.id}/accept`, { timezone: 'UTC' })).status).toBe(409);
+
+      const second = await asked('Coffee');
+      await second.b.as('POST', `/v1/notes/${second.note.id}/heart`);
+      const req = await interestOf(second.a, second.note.id);
+      await second.b.as('POST', '/v1/blocks', { userId: second.a.id });
+      const res = await second.a.as('POST', `/v1/notes/${second.note.id}/interests/${req.id}/accept`, { timezone: 'UTC' });
+      expect([res.status, res.body.code]).toEqual([409, 'not_open']);
+      expect((await second.a.as('GET', '/v1/invitations')).body.invitations).toEqual([]);
+    });
+
+    it('checks the time given when saying yes', async () => {
+      const { a, b, note } = await asked('Run');
+      await b.as('POST', `/v1/notes/${note.id}/heart`);
+      const interest = await interestOf(a, note.id);
+      expect((await a.as('POST', `/v1/notes/${note.id}/interests/${interest.id}/accept`, { startsAt: soon(-5), timezone: 'UTC' })).status).toBe(400);
+      expect((await a.as('POST', `/v1/notes/${note.id}/interests/${interest.id}/accept`, { startsAt: soon(5), endsAt: soon(4), timezone: 'UTC' })).status).toBe(400);
+      expect((await a.as('POST', `/v1/notes/${note.id}/interests/${interest.id}/accept`, { endsAt: soon(4), timezone: 'UTC' })).status).toBe(400);
+      expect((await a.as('POST', `/v1/notes/${note.id}/interests/${interest.id}/accept`, { timezone: 'UTC' })).status).toBe(201); // no time yet is fine
+    });
+  });
+
+  it('rolls back and re-applies the migrations', async () => {
+    expect(await rollback(db)).toBe('006_today_progress');
+    expect(await rollback(db)).toBe('005_join_requests');
     expect(await rollback(db)).toBe('004_google_calendar_sync');
-    expect(await migrate(db)).toEqual(['004_google_calendar_sync']);
+    expect(await migrate(db)).toEqual(['004_google_calendar_sync', '005_join_requests', '006_today_progress']);
   });
 });
 
