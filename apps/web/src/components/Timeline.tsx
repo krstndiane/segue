@@ -14,6 +14,8 @@ interface Props {
   nudges: Nudge[];
   /** weather precautions, e.g. "Bring an umbrella" */
   weather?: ReactNode;
+  /** Google Calendar status and changes not yet in the plan */
+  calendar?: ReactNode;
   /** the quick-add bar */
   adder: ReactNode;
   onOpen: (item: PlanItem) => void;
@@ -170,6 +172,7 @@ export function Timeline(props: Props) {
       {props.nudges.map((n) => (
         <NudgeBanner key={n.id} nudge={n} onReplan={props.onReplan} onOptions={() => n.item && props.onOptions(n.item, 'rain')} onDismiss={() => props.onDismissNudge(n.id)} />
       ))}
+      {props.calendar}
       {props.weather}
       {props.adder}
 

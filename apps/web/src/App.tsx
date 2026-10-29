@@ -21,12 +21,13 @@ import { SettingsSheet } from './components/SettingsSheet';
 import { LocationBanner } from './components/LocationBanner';
 import { SkyHeader, type View } from './components/SkyHeader';
 import { Timeline } from './components/Timeline';
+import { CalendarNotice } from './components/CalendarNotice';
 import { TogetherCard, TogetherPage, type TogetherTab } from './components/together/TogetherPage';
 import { useAccount } from './lib/useAccount';
 import { useSync } from './lib/useSync';
 import { useTogether } from './lib/useTogether';
 import type { Synced } from './lib/syncMerge';
-import { calendarBlockId } from './lib/calendar';
+import { calendarBlockId, calendarDiff } from './lib/calendar';
 import { addDays, dayLabel, withArchived, type CalendarDays, type DayArchive } from './lib/days';
 import { clock } from './lib/format';
 import { firstName, forgetAccount, loadAccount, signUpWithGoogle, type Account } from './lib/account';
@@ -692,6 +693,9 @@ export function App() {
     />
   );
   const calendarEvents = cal.calendar.date === day.date ? cal.calendar.events : [];
+  // Events added, moved or removed in Google Calendar since today's plan was made.
+  // (Plain code, not a hook: this runs after the early returns above.)
+  const calendarChanges = calendarDiff(cal.calendar.date === today ? cal.calendar.events : [], day.plan, day.excludedIds);
   const excludedSet = new Set(day.excludedIds ?? []);
   const marks = (k: string) => marksFor(k, { today, day, blocks, archive, events: cal.days.days, todayEvents: calendarEvents });
   const openDay = (k: string) => {
@@ -842,6 +846,22 @@ export function App() {
               mode={settings.mode}
               calendarEvents={calendarEvents}
               nudges={shownNudges}
+              calendar={
+                <CalendarNotice
+                  connected={cal.calendar.connected}
+                  loadedToday={cal.calendar.date === today}
+                  syncedAt={cal.calendar.syncedAt}
+                  allDay={cal.calendar.date === today ? (cal.calendar.allDay ?? []) : []}
+                  diff={calendarChanges}
+                  items={day.plan?.items ?? []}
+                  hasPlan={!!day.plan}
+                  needsTap={cal.needsTap}
+                  busy={cal.busy}
+                  error={cal.error}
+                  onRefresh={() => void cal.sync()}
+                  onUpdatePlan={() => void replan(null)}
+                />
+              }
               weather={
                 <PrecautionsCard
                   items={freshPrecautions}

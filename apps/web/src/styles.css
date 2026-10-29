@@ -3207,3 +3207,32 @@ details.more[open] {
   color: var(--ink);
   font: inherit;
 }
+
+/* ---------- Google Calendar on Today ---------- */
+
+.nudge-calendar {
+  align-items: flex-start;
+}
+.calendar-changes {
+  margin: 6px 0 4px;
+  padding-left: 18px;
+  font-size: var(--step--1);
+}
+.calendar-changes li + li {
+  margin-top: 2px;
+}
+.nudge-calendar .muted {
+  color: inherit;
+  opacity: 0.75;
+}
+.calendar-line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 6px;
+  margin: 0 0 12px;
+}
+.calendar-line .ghost {
+  min-height: 24px;
+  padding: 2px 10px;
+}
