@@ -1,9 +1,9 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { haversineMeters, type AlternativeOption, type AlternativeTrigger, type FallbackOption, type Place, type Plan, type PlanItem } from '@segue/engine';
 import { AccountSettings, AuthSheet, ProfileSheet, SyncPromptSheet } from './components/Account';
 import { AddAtSheet } from './components/AddAtSheet';
 import { AlternativesSheet } from './components/AlternativesSheet';
-import { AssistantPanel } from './components/AssistantPanel';
+import { ASSISTANT_ENABLED } from './lib/features';
 import { assistantAiAvailable } from './lib/smartAdd';
 import { askAssistantAi } from './lib/social';
 import { BlockForm, RoutinesView } from './components/Blocks';
@@ -65,6 +65,10 @@ import { useCalendar } from './lib/useCalendar';
 import { askNotificationPermission, useReminders } from './lib/useReminders';
 import { usePlaceName } from './lib/placeName';
 import { useSky } from './lib/useSky';
+
+// Built in only when the assistant is switched on for this build (see lib/features.ts); production leaves it out.
+// The constant is checked right here so the build can drop the import (a constant from another module isn't always folded).
+const AssistantPanel = typeof __SEGUE_ASSISTANT__ !== 'undefined' && __SEGUE_ASSISTANT__ === true ? lazy(() => import('./components/AssistantPanel').then((m) => ({ default: m.AssistantPanel }))) : null;
 
 /** The API takes at most this many blocks per re-route (packages/schemas). */
 const MAX_BLOCKS = 30;
@@ -151,7 +155,7 @@ export function App() {
   const together = useTogether(me.userId);
   // The assistant words its answers with AI only when the server offers it and you're signed in.
   useEffect(() => {
-    if (!me.userId) return setAssistantAi(false);
+    if (!ASSISTANT_ENABLED || !me.userId) return setAssistantAi(false);
     let live = true;
     void assistantAiAvailable().then((on) => live && setAssistantAi(on));
     return () => {
@@ -705,7 +709,7 @@ export function App() {
       onView={(r) => navigate(r)}
       location={status}
       onSettings={() => setSheet({ kind: 'settings' })}
-      onAssistant={settings.onboarded ? () => setAssistantOpen(true) : undefined}
+      onAssistant={ASSISTANT_ENABLED && settings.onboarded ? () => setAssistantOpen(true) : undefined}
       tempUnit={settings.tempUnit ?? 'C'}
       showNav={!!settings.onboarded}
       together={me.enabled}
@@ -1027,7 +1031,8 @@ export function App() {
             onOptions={blocks.some((b) => b.id === openItem.blockId) ? () => void openAlternatives(openItem.blockId) : undefined}
           />
         )}
-        {assistantOpen && (
+        {AssistantPanel && assistantOpen && (
+          <Suspense fallback={null}>
           <AssistantPanel
             ctx={{
               now,
@@ -1057,6 +1062,7 @@ export function App() {
             openItem={(id) => setSheet({ kind: 'item', id })}
             askAi={(body) => askAssistantAi(body)}
           />
+          </Suspense>
         )}
         {sheet?.kind === 'alternatives' && (
           <AlternativesSheet

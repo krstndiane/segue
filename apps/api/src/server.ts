@@ -17,8 +17,8 @@ const places = buildPlacesProvider(config);
 const understand = config.smartAdd ? claudeUnderstand() : undefined;
 /** Checks Segue sign-ins (accounts and the AI assistant both need it). */
 const verifier = config.supabaseUrl || config.supabaseJwtSecret ? createVerifier({ supabaseUrl: config.supabaseUrl, jwtSecret: config.supabaseJwtSecret }) : undefined;
-// The AI assistant uses the same Anthropic key as smart add, and needs sign-ins. Without either, the phone answers on its own.
-const assistant = config.smartAdd && verifier ? { ask: claudeAssistant(), verifier } : undefined;
+// The AI assistant is still in development: it needs ASSISTANT_AI=on as well as the Anthropic key (shared with smart add) and sign-ins.
+const assistant = config.assistantAi && config.smartAdd && verifier ? { ask: claudeAssistant(), verifier } : undefined;
 
 /** Accounts need both a database and a way to check sign-ins; without them the planner still works. */
 async function buildSocial(): Promise<SocialRoutes | undefined> {

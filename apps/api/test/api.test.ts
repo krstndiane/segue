@@ -462,6 +462,13 @@ describe('POST /v1/assistant (optional AI mode)', () => {
     expect((await post('/v1/assistant', ask)).status).toBe(404);
   });
 
+  it('stays off in production even with an Anthropic key, until ASSISTANT_AI=on (it is still in development)', async () => {
+    const { loadConfig } = await import('../src/config');
+    expect(loadConfig({ ANTHROPIC_API_KEY: 'sk-test' }).assistantAi).toBe(false);
+    expect(loadConfig({ ANTHROPIC_API_KEY: 'sk-test' }).smartAdd).toBe(true);
+    expect(loadConfig({ ANTHROPIC_API_KEY: 'sk-test', ASSISTANT_AI: 'on' }).assistantAi).toBe(true);
+  });
+
   it('needs a signed-in Segue account', async () => {
     const { s, post: p, at } = await app(async () => ({ answer: 'x', action: null }));
     try {
