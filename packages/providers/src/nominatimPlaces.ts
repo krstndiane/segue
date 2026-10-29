@@ -105,8 +105,20 @@ export function parseNominatimPlaces(results: NominatimResult[], req: NearbyRequ
   return dedupePlaces(out).sort((a, b) => metersBetween(a.location, req.location) - metersBetween(b.location, req.location));
 }
 
+/** How long to leave Nominatim alone after it refuses us (429 or 403): its `retry-after`, else 5 minutes, at most 30. */
+export function backoffMs(retryAfter: string | null, now: number): number {
+  const FALLBACK = 5 * 60_000;
+  const MAX = 30 * 60_000;
+  if (!retryAfter) return FALLBACK;
+  const secs = Number(retryAfter);
+  const ms = Number.isFinite(secs) ? secs * 1000 : Date.parse(retryAfter) - now;
+  if (!Number.isFinite(ms) || ms <= 0) return FALLBACK;
+  return Math.min(MAX, Math.max(1000, ms));
+}
+
 export class NominatimPlacesProvider implements PlacesProvider {
   readonly name = 'nominatim';
+  private refusedUntil = 0;
   constructor(
     private readonly fetchFn: FetchFn = fetch,
     private readonly userAgent = 'Segue day planner (https://segue.pdyntech.com)',
@@ -116,6 +128,8 @@ export class NominatimPlacesProvider implements PlacesProvider {
   ) {}
 
   async nearby(req: NearbyRequest): Promise<Place[]> {
+    // Asking again while refused only extends the block, so wait it out.
+    if (this.clock() < this.refusedUntil) throw new ProviderError(this.name, 'Nominatim asked us to slow down; trying again shortly', 429);
     await this.gate.wait();
     const params = new URLSearchParams({
       format: 'jsonv2',
@@ -128,6 +142,10 @@ export class NominatimPlacesProvider implements PlacesProvider {
       'accept-language': 'en',
     });
     const res = await fetchWithTimeout(this.fetchFn, `${this.endpoint}?${params}`, { timeoutMs: 6000, headers: { 'user-agent': this.userAgent, accept: 'application/json' } });
+    if (res.status === 429 || res.status === 403) {
+      this.refusedUntil = this.clock() + backoffMs(res.headers.get('retry-after'), this.clock());
+      throw new ProviderError(this.name, `search returned ${res.status}`, res.status);
+    }
     if (!res.ok) throw new ProviderError(this.name, `search returned ${res.status}`, res.status);
     const body = (await res.json()) as NominatimResult[] | { error?: string };
     if (!Array.isArray(body)) throw new ProviderError(this.name, `search failed: ${String(body.error ?? 'unexpected answer').slice(0, 120)}`);
