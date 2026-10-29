@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
-import type { AlternativeOption, AlternativeTrigger, Place, PlaceCategory } from '@segue/engine';
+import type { AlternativeOption, AlternativeTrigger, LatLng, Place, PlaceCategory } from '@segue/engine';
+import type { ReplanReason } from '../lib/replan';
 import type { AlternativesOutcome } from '../lib/alternatives';
 import { answer, describeOptions, describePlaces, snapshotFor, type AssistantAction, type AssistantButton, type AssistantContext, type AssistantReply, type Topic } from '../lib/assistant';
 import type { AssistantAiAnswer } from '../lib/social';
@@ -22,11 +23,12 @@ interface Props {
   online: boolean;
   onClose: () => void;
   runOptions: (blockId: string, trigger?: AlternativeTrigger, maxMinutes?: number) => Promise<AlternativesOutcome>;
-  findPlaces: (category: Exclude<PlaceCategory, 'none'>) => Promise<{ places: Place[]; source: 'server' | 'device' }>;
+  findPlaces: (category: Exclude<PlaceCategory, 'none'>, radiusM?: number) => Promise<{ places: Place[]; source: 'server' | 'device'; origin?: LatLng }>;
   /** apply an option; returns what changed, in words */
   useOption: (option: AlternativeOption) => string;
   move: (blockId: string, hhmm: string) => string;
-  replan: () => void;
+  /** opens the proposal; nothing changes until the user accepts it there */
+  replan: (o?: { reason?: ReplanReason; busy?: { until?: Date; title?: string } }) => void;
   openItem: (blockId: string) => void;
   askAi: (body: unknown) => Promise<AssistantAiAnswer>;
 }
@@ -76,11 +78,11 @@ export function AssistantPanel(props: Props) {
     if (action.type === 'options') {
       const o = await props.runOptions(action.blockId, action.trigger, action.maxMinutes);
       setOptions(o);
-      return describeOptions(o, { ...ctx(), options: o });
+      return describeOptions(o, { ...ctx(), options: o }, { prefer: action.prefer });
     }
     if (action.type === 'find-places') {
-      const found = await props.findPlaces(action.category);
-      return describePlaces(found.places, action.category, ctx(), { openNow: action.openNow, source: found.source });
+      const found = await props.findPlaces(action.category, action.radiusM);
+      return describePlaces(found.places, action.category, ctx(), { openNow: action.openNow, source: found.source, origin: found.origin, radiusM: action.radiusM, needs: action.needs });
     }
     return null;
   }
@@ -129,7 +131,7 @@ export function AssistantPanel(props: Props) {
     try {
       switch (action.type) {
         case 'replan':
-          props.replan();
+          props.replan(action.busyUntil || action.reason ? { reason: action.busyUntil ? 'busy' : action.reason, busy: action.busyUntil ? { until: new Date(action.busyUntil), title: action.busyTitle } : undefined } : undefined);
           say({ text: 'The proposal is open. Nothing changes until you tap “Use this plan”.' });
           return;
         case 'open-item':

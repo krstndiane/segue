@@ -141,6 +141,39 @@ test('ask about your day: answers from the plan, and changes nothing without a y
   await expect(page.locator('main')).toContainText(/4:00\s*PM\s*in 7 h\s*Read/);
 });
 
+test('ask: "my meeting is running late" asks when it ends, then shows a proposal that keeps the meeting', async ({ page }) => {
+  await page.clock.setFixedTime(new Date('2026-10-20T14:30:00+08:00'));
+  await page.goto('/app?sky=clear');
+  await page.getByRole('button', { name: /^Next/ }).click();
+  await page.getByRole('button', { name: 'Next', exact: true }).click();
+  for (const t of ['Team meeting 2pm-3pm', 'Read 2h']) {
+    await page.locator('#quick-add').fill(t);
+    await page.keyboard.press('Enter');
+  }
+  await page.getByRole('button', { name: 'Plan my day' }).click();
+  await expect(page.locator('main')).toContainText('Team meeting');
+
+  await page.getByRole('button', { name: 'Ask about your day' }).click();
+  const panel = page.getByRole('dialog', { name: 'Ask about your day' });
+  const ask = async (q: string) => {
+    await panel.getByLabel('Ask about your day').fill(q);
+    await panel.getByRole('button', { name: 'Ask', exact: true }).click();
+  };
+  await ask('My meeting is running late. Fix my schedule.');
+  await expect(panel.locator('.assistant-msg.assistant').last()).toContainText('About when will Team meeting end?');
+  await ask('3:30');
+  await expect(panel.locator('.assistant-msg.assistant').last()).toContainText("Keep 2:30 PM–3:30 PM free for Team meeting and rebuild the rest? Read will move later or say why it can't.");
+  await panel.getByRole('button', { name: 'Keep until 3:30 PM free' }).click();
+  await expect(panel.locator('.assistant-msg.assistant').last()).toContainText('Nothing changes until you tap');
+  const sheet = page.getByRole('dialog', { name: 'Re-route from here' });
+  await expect(sheet.locator('.preview')).toContainText('Team meeting running over');
+  await expect(sheet.locator('.preview')).toContainText('Team meeting');
+  await expect(sheet).not.toContainText('Dropped');
+  await sheet.getByRole('button', { name: 'Use this plan' }).click();
+  await expect(page.locator('main')).toContainText('Team meeting');
+  await expect(page.locator('.timeline')).toContainText(/3:30\s*PM[\s\S]*Read/);
+});
+
 test('other options for an item: checked offline, and keeping the plan changes nothing', async ({ page }) => {
   await onboard(page, ['Study at a café 1h after 2pm']);
   await page.getByRole('button', { name: 'Details' }).first().click();

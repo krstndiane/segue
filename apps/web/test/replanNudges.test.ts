@@ -30,6 +30,15 @@ describe('one-tap reasons', () => {
     expect(Date.parse(busy!.fixed!.end) - now.getTime()).toBe(60 * 60_000);
   });
 
+  it('"running over until 3:30" keeps exactly that long, and never past the end of the day', () => {
+    const [busy] = adjustFor('busy', now, 'medium', endOfDay, { until: new Date(iso('15:30')), title: 'Team meeting running over' }).extraBlocks;
+    expect(busy).toMatchObject({ title: 'Team meeting running over', minMinutes: 90, fixed: { end: new Date(iso('15:30')).toISOString() } });
+    const [late] = adjustFor('busy', now, 'medium', endOfDay, { until: new Date(iso('23:30')) }).extraBlocks;
+    expect(late!.fixed!.end).toBe(new Date(endOfDay).toISOString());
+    const [past] = adjustFor('busy', now, 'medium', endOfDay, { until: new Date(iso('13:00')) }).extraBlocks;
+    expect(Date.parse(past!.fixed!.end) - now.getTime()).toBe(60 * 60_000);
+  });
+
   it("I'm somewhere else asks for a fresh position, and no reason changes nothing", () => {
     expect(adjustFor('elsewhere', now, 'medium', endOfDay).refreshLocation).toBe(true);
     expect(adjustFor(null, now, 'medium', endOfDay)).toEqual({ start: now, energy: 'medium', extraBlocks: [], refreshLocation: false });

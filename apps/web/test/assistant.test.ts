@@ -187,3 +187,100 @@ describe('plain-language requests from the audit', () => {
     expect(answer('I need to study for two hours.', ctx()).text).toMatch(/^I can't add things to your day from here yet/);
   });
 });
+
+describe('requests from the AI assistant brief (30 Oct)', () => {
+  const meetingDay = {
+    ...day,
+    plan: { ...day.plan, items: [item('meet', 'Team meeting', t(14), t(14, 45), { fixed: true }), ...day.plan.items] },
+  };
+  const withMeeting = (extra: Partial<AssistantContext> = {}) => ctx({ day: meetingDay, blocks: [...blocks, block('meet', 'Team meeting', 'none', { fixedStart: '14:00', fixedEnd: '14:45' })], ...extra });
+
+  it('"I need a quiet place with Wi-Fi to study" searches libraries, asking for Wi-Fi and quiet', () => {
+    expect(answer('I need a quiet place with Wi-Fi to study.', ctx()).run).toEqual({ type: 'find-places', category: 'library', openNow: false, radiusM: undefined, needs: ['wifi', 'quiet'] });
+  });
+
+  it('"Find a café open now within 1 km" keeps the distance and "open now"', () => {
+    const r = answer('Find a café open now within 1 km.', ctx());
+    expect(r.run).toMatchObject({ type: 'find-places', category: 'cafe', openNow: true, radiusM: 1000 });
+    expect(r.text).toBe('Looking for cafés within 1 km…');
+  });
+
+  it('"It\'s raining. Find somewhere indoors where I can work out" searches gyms and offers rain options for the outdoor run', () => {
+    const r = answer("It's raining. Find somewhere indoors where I can work out.", ctx());
+    expect(r.run).toMatchObject({ type: 'find-places', category: 'gym' });
+    expect(r.buttons).toEqual([{ label: 'Rain options for Run', action: { type: 'options', blockId: 'run', trigger: 'rain' } }]);
+  });
+
+  it('"Finish this report before 7 PM" checks the deadline', () => {
+    expect(answer('Finish this report before 7 PM.', ctx()).text).toMatch(/^Yes: Write report is planned 3:00 PM–4:30 PM, .* before 7 PM\.$/);
+  });
+
+  it('"My meeting is running late" asks once when it will end, then offers to keep that time free; the meeting itself never moves', () => {
+    const first = answer('My meeting is running late. Fix my schedule.', withMeeting());
+    expect(first.text).toMatch(/^About when will Team meeting end\?/);
+    expect(first.topic).toMatchObject({ blockId: 'meet', awaiting: 'busy-until' });
+    const second = answer('3:15', withMeeting(), first.topic);
+    expect(second.text).toMatch(/^Keep 2:30 PM–3:15 PM free for Team meeting and rebuild the rest\? Write report will move later or say why it can't\. You'll see the proposal first\.$/);
+    const b = second.buttons![0]!;
+    expect(b.action).toEqual({ type: 'replan', busyUntil: new Date(2026, 9, 27, 15, 15).toISOString(), busyTitle: 'Team meeting running over' });
+    // The button opens a proposal; it does not change the plan or the meeting.
+    expect(b.action.type).toBe('replan');
+  });
+
+  it('understands the end time in the same message', () => {
+    const r = answer('The meeting is running over until 3:30', withMeeting());
+    expect(r.buttons?.[0]?.action).toMatchObject({ type: 'replan', busyUntil: new Date(2026, 9, 27, 15, 30).toISOString() });
+  });
+
+  it('says when there is no such meeting, and when "running late" is about you', () => {
+    expect(answer('My meeting is running late', ctx()).text).toMatch(/I don't see a meeting in today's plan/);
+    expect(answer("I'm running late", ctx()).buttons?.[0]?.action).toEqual({ type: 'replan', reason: 'late' });
+  });
+
+  it('"That place is closed. Find another one." leaves out the planned place', () => {
+    const r = answer('That place is closed. Find another one.', ctx());
+    expect(r.text).toBe('Leaving out Riverside Park. Checking other realistic options for Run…');
+    expect(r.run).toEqual({ type: 'options', blockId: 'run', trigger: 'closed' });
+  });
+
+  it('"I don\'t want to travel far" asks for options with the least travel', () => {
+    expect(answer("I don't want to travel far.", ctx()).run).toEqual({ type: 'options', blockId: 'run', prefer: 'near' });
+  });
+
+  it('"Why did you recommend this place?" explains from what the planner knows', () => {
+    expect(answer('Why did you recommend this place?', ctx()).text).toBe('Run needs a park, and Riverside Park is one; about 10 min to get there (an estimate, not live traffic); open then by its listed hours.');
+  });
+
+  it('"I have 30 minutes before class" says plainly that there is no class today', () => {
+    expect(answer('I have 30 minutes before class.', ctx()).text).toMatch(/^I don't see a class in today's plan\. Dinner with Ana is at 6:30 PM/);
+  });
+});
+
+describe('place answers with distance and needs', () => {
+  const here = { lat: 14.5547, lng: 121.0244 };
+  const at = (dLatM: number) => ({ lat: here.lat + dLatM / 111_320, lng: here.lng });
+  const cafe = (name: string, m: number, attributes: Place['attributes'] = {}): Place => ({ id: name, name, location: at(m), category: 'cafe', attributes, hours: null, source: 'osm' });
+
+  it('shows how far each place is, drops ones outside the distance asked, and puts listed Wi-Fi first', () => {
+    const r = describePlaces([cafe('Near', 200), cafe('Wired', 600, { wifi: true }), cafe('Far', 1800)], 'cafe', ctx(), { openNow: false, source: 'server', origin: here, radiusM: 1000, needs: ['wifi'] });
+    expect(r.text).toBe('Within 1 km:');
+    expect(r.bullets).toEqual(['Wired (600 m) · Wi-Fi listed: hours not listed, so it may or may not be open', 'Near (200 m): hours not listed, so it may or may not be open']);
+  });
+
+  it('never claims Wi-Fi the map does not list', () => {
+    const r = describePlaces([cafe('Near', 200)], 'cafe', ctx(), { openNow: false, source: 'server', origin: here, needs: ['wifi'] });
+    expect(r.bullets).toContain('None of these list Wi-Fi on the map, so check before you go.');
+  });
+
+  it('never shows made-up places', () => {
+    expect(describePlaces([{ ...cafe('Fake', 100), source: 'mock' }], 'cafe', ctx(), { openNow: false, source: 'device' }).text).toMatch(/^I couldn't find/);
+  });
+
+  it('orders options by travel when asked not to go far', () => {
+    const opt = (id: string, travelMinutes: number) => ({ id, kind: 'place', label: id, blockId: 'run', title: 'Run', category: 'gym', start: t(17), end: t(17, 45), minutes: 45, travelMinutes, why: 'Fits', facts: [], tradeoffs: [] }) as unknown as AlternativeOption;
+    const o = { result: { blockId: 'run', title: 'Run', trigger: 'manual', options: [opt('Far', 20), opt('Here', 0), opt('Mid', 8)], excluded: [], notes: [] }, warnings: [], source: 'server' } as unknown as AlternativesOutcome;
+    const r = describeOptions(o, ctx(), { prefer: 'near' });
+    expect(r.text).toBe("Here's what realistically works for Run, least travel first:");
+    expect(r.bullets!.slice(0, 3).map((b) => b.split(',')[0])).toEqual(['A. Here', 'B. Mid', 'C. Far']);
+  });
+});

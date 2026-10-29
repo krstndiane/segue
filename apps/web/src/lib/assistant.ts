@@ -8,19 +8,21 @@
  * place search) is returned as `run`, carried out by the panel, and described
  * with `describeOptions` / `describePlaces`.
  */
-import { openStatusAt, type AlternativeOption, type AlternativeTrigger, type Place, type PlaceCategory, type PlanItem } from '@segue/engine';
+import { openStatusAt, type AlternativeOption, type AlternativeTrigger, type LatLng, type Place, type PlaceCategory, type PlanItem } from '@segue/engine';
 import type { AlternativesOutcome } from './alternatives';
 import { calendarBlockId, isCalendarBlock, type CalendarEvent } from './calendar';
 import { clock, duration } from './format';
 import type { DayState, StoredBlock } from './model';
+import type { ReplanReason } from './replan';
 
 export type AssistantAction =
-  | { type: 'options'; blockId: string; trigger?: AlternativeTrigger; maxMinutes?: number }
+  | { type: 'options'; blockId: string; trigger?: AlternativeTrigger; maxMinutes?: number; /** "I don't want to travel far": closest first */ prefer?: 'near' }
   | { type: 'use-option'; optionId: string }
-  | { type: 'replan' }
+  /** opens the re-route proposal; `busyUntil` keeps until then blocked ("my meeting is running over until 4:30") */
+  | { type: 'replan'; reason?: ReplanReason; busyUntil?: string; busyTitle?: string }
   | { type: 'open-item'; blockId: string }
   | { type: 'move'; blockId: string; hhmm: string }
-  | { type: 'find-places'; category: Exclude<PlaceCategory, 'none'>; openNow: boolean };
+  | { type: 'find-places'; category: Exclude<PlaceCategory, 'none'>; openNow: boolean; radiusM?: number; needs?: ('wifi' | 'quiet' | 'power')[] };
 
 export interface AssistantButton {
   label: string;
@@ -45,6 +47,8 @@ export interface Topic {
   optionIds?: string[];
   /** the plan this was about; a new plan makes it stale */
   planStamp?: string;
+  /** a question we asked and are waiting on: "about when will it end?" */
+  awaiting?: 'busy-until';
 }
 
 export interface AssistantContext {
@@ -141,6 +145,35 @@ function timeIn(question: string, now: Date): string | undefined {
   return `${String(h).padStart(2, '0')}:${String(min).padStart(2, '0')}`;
 }
 
+/** A bare time in a follow-up: "4:30", "about 5 pm", "in 30 minutes", "half an hour". */
+function bareTime(question: string, now: Date): number | undefined {
+  const rel = /\bin\s+(\d{1,3})\s*(?:min|mins|minutes)\b/.exec(question)?.[1] ?? (/\b(in )?half an hour\b/.test(question) ? '30' : /\bin (an|one) hour\b/.test(question) ? '60' : undefined);
+  if (rel) return now.getTime() + Number(rel) * 60_000;
+  const hm = timeIn(question, now) ?? (() => {
+    const m = /(?:^|\s|about\s|around\s)(\d{1,2})(?:[:.](\d{2}))?\s*(am|pm)?\s*$/.exec(question.trim()) ?? /^(\d{1,2})(?:[:.](\d{2}))?\s*(am|pm)?\b/.exec(question.trim());
+    return m ? timeIn(`at ${m[1]}${m[2] ? `:${m[2]}` : ''}${m[3] ? ` ${m[3]}` : ''}`, now) : undefined;
+  })();
+  if (!hm) return undefined;
+  const d = new Date(now);
+  const [h, m] = hm.split(':').map(Number) as [number, number];
+  d.setHours(h, m, 0, 0);
+  return d.getTime();
+}
+
+/** "within 1 km", "500 m away", "not far", "walking distance": how far to search, in metres. */
+function radiusIn(q: string): number | undefined {
+  const m = /\b(?:within|under|less than|no more than|max(?:imum)?)?\s*(\d+(?:\.\d+)?)\s*(km|kilometers?|kilometres?|m|meters?|metres?)\b(?!\w)/.exec(q);
+  if (m && !/\b\d+\s*m\b\s*(?:min|minutes)/.test(q)) {
+    const n = Number(m[1]) * (/^k/.test(m[2]!) ? 1000 : 1);
+    if (n >= 100 && n <= 20000) return n;
+  }
+  if (/\b(not (too )?far|don'?t want to (travel|go|walk) far|walking distance|close by|nearby|nearest|closest|close to me)\b/.test(q)) return 1000;
+  return undefined;
+}
+
+const FIXED_WORDS = /\b(meeting|class|lecture|appointment|call|exam|interview|event|shift|session)\b/;
+const isSet = (i: PlanItem) => i.fixed || isCalendarBlock(i.blockId);
+
 function freeWindows(ctx: AssistantContext, from: number, to: number): [number, number][] {
   const busy = remaining(ctx)
     .map((i) => [Date.parse(i.start) - i.travelMinutesBefore * 60_000, Date.parse(i.end)] as [number, number])
@@ -196,6 +229,36 @@ export function answer(question: string, ctx: AssistantContext, topic: Topic = {
 
   if (/^(hi|hello|hey|help|what can you do)\b|\bhow do i use you\b/.test(q)) return reply(help());
 
+  // The answer to "about when will it end?".
+  if (topic.awaiting === 'busy-until' && plan) {
+    const until = bareTime(q, ctx.now);
+    const it = plan.items.find((i) => i.blockId === topic.blockId);
+    if (until !== undefined) return reply(runningOver(it, until, ctx));
+  }
+
+  // "My meeting is running late. Fix my schedule." A set time is never moved: keep the overrun blocked and rebuild the rest.
+  const overrun = /\b(running|run|ran|going|went) (late|over|long|overtime)\b|\b(overran|overrunning|took longer|taking longer|delayed)\b/.test(q);
+  if (overrun && plan && !/\b(move|reschedule|push|shift)\b/.test(q)) {
+    const t = ctx.now.getTime();
+    const named = target.item && isSet(target.item) ? target.item : undefined;
+    const word = FIXED_WORDS.exec(q)?.[1];
+    const byWord = word ? rest.find((i) => isSet(i) && norm(i.title).includes(word)) : undefined;
+    // What's running over is usually the set-time thing happening now or that just ended.
+    const current = (ctx.day.plan?.items ?? []).filter((i) => isSet(i) && Date.parse(i.start) <= t && Date.parse(i.end) >= t - 30 * 60_000).at(-1);
+    const it = named ?? byWord ?? current;
+    const isMe = /^i'?m\b|\bi am\b/.test(q) && !word;
+    if (isMe) {
+      return reply({ text: "I can start the rest of today 15 minutes from now. Set-time commitments stay where they are, and you'll see the proposal before anything changes.", buttons: [{ label: 'Rebuild from 15 min from now', action: { type: 'replan', reason: 'late' } }] });
+    }
+    const until = bareTime(q.replace(/^.*?\b(until|till|to|ends? at|finish(es)? at|done (at|by))\b/, 'until'), ctx.now);
+    if (until !== undefined && /\b(until|till|ends? at|finish(es)? at|done (at|by)|another|more|in)\b/.test(q)) return reply(runningOver(it, until, ctx));
+    const thing = it ? it.title : word ? `your ${word}` : 'it';
+    return reply({
+      text: `About when will ${thing} end? For example “4:30” or “in 30 minutes”. I'll keep that time free and fit the rest around it.${word && !it ? ` (I don't see a ${word} in today's plan, so I'll just keep the time free.)` : ''}`,
+      topic: { blockId: it?.blockId, awaiting: 'busy-until' },
+    });
+  }
+
   // Sync and calendar.
   if (/\b(sync|synced|syncing|connected|connection)\b/.test(q)) {
     const cal = ctx.calendarConnected ? `Google Calendar is connected, read-only: today's timed events are in your plan as set times.` : `Google Calendar isn't connected, so no calendar events are in your plan.`;
@@ -207,10 +270,24 @@ export function answer(question: string, ctx: AssistantContext, topic: Topic = {
   if (/\b(weather|forecast|umbrella|will it rain|is it raining|going to rain)\b/.test(q) && !/\binstead\b/.test(q)) return reply(weather(ctx));
 
   // Find a kind of place ("a gym near me that's open now", "somewhere quiet"): always a search, even if the plan has one.
-  const kindAsked = /\bsomewhere quiet|quiet place|place to study\b/.test(q) ? ('library' as const) : CATEGORY_WORDS.find(([re]) => re.test(q))?.[1];
-  if (kindAsked && /\b(find|search|look for|looking for|show me|any|which|where|somewhere)\b/.test(q) && /\b(open|near|nearby|around|closest|quiet|somewhere)\b/.test(q)) {
+  const wantsWifi = /\bwi-?fi|wifi|internet\b/.test(q);
+  const wantsQuiet = /\bquiet|silent|focus\b/.test(q);
+  const studyish = /\b(study|studying|read|reading|review|reviewing|work on|get work done)\b/.test(q);
+  const kindAsked =
+    CATEGORY_WORDS.find(([re]) => re.test(q))?.[1] ??
+    (wantsQuiet || (studyish && /\b(place|somewhere|spot)\b/.test(q)) ? ('library' as const) : wantsWifi ? ('cafe' as const) : undefined);
+  const radiusM = radiusIn(q);
+  const searchVerb = /\b(find|search|look for|looking for|show me|any|which|where|somewhere|i need a|need a place|a place)\b/.test(q);
+  if (kindAsked && searchVerb && (/\b(open|near|nearby|around|closest|quiet|somewhere|place|spot|indoors?)\b/.test(q) || radiusM !== undefined)) {
     const word = kindAsked === 'cafe' ? 'cafés' : kindAsked === 'library' ? 'libraries' : `${kindAsked}s`;
-    return reply({ text: `Looking for ${word} near you…`, run: { type: 'find-places', category: kindAsked, openNow: /\bopen\b/.test(q) } });
+    const needs = [...(wantsWifi ? (['wifi'] as const) : []), ...(wantsQuiet ? (['quiet'] as const) : [])];
+    // Raining with something outdoors still planned: offer to swap that too.
+    const outdoor = /\brain/.test(q) ? rest.find((i) => { const b = ctx.blocks.find((x) => x.id === i.blockId); return !!b && !isSet(i) && (b.category === 'park' || b.requirements.includes('outdoor')); }) : undefined;
+    return reply({
+      text: `Looking for ${word}${radiusM ? ` within ${radiusM >= 1000 ? `${radiusM / 1000} km` : `${radiusM} m`}` : ' near you'}…`,
+      run: { type: 'find-places', category: kindAsked, openNow: /\bopen\b/.test(q), radiusM, needs: needs.length ? needs : undefined },
+      buttons: outdoor ? [{ label: `Rain options for ${outdoor.title}`, action: { type: 'options', blockId: outdoor.blockId, trigger: 'rain' } }] : undefined,
+    });
   }
 
   if (!plan) {
@@ -232,6 +309,28 @@ export function answer(question: string, ctx: AssistantContext, topic: Topic = {
     if (to) return reply({ text: `Move ${it.title} to ${clockHm(to)} and pin it there? Other things won't move until you re-route.`, buttons: [{ label: `Yes, move to ${clockHm(to)}`, action: { type: 'move', blockId: it.blockId, hhmm: to }, confirm: `Move ${it.title} to ${clockHm(to)}?` }], topic: { blockId: it.blockId } });
     const late = /\b(late|running over|ran over|delayed)\b/.test(q);
     return reply({ text: `Let me check realistic times${late ? ' after the delay' : ''} for ${it.title}…`, run: { type: 'options', blockId: it.blockId, trigger: late ? 'late' : 'manual' }, topic: { blockId: it.blockId } });
+  }
+
+  // "That place is closed. Find another one." / "I don't want to travel far.": about the place we were talking about, or the next one.
+  const placeItem = () => (target.item?.place ? target.item : undefined) ?? (fresh.blockId ? rest.find((i) => i.blockId === fresh.blockId && i.place) : undefined) ?? rest.find((i) => i.place && !isSet(i));
+  if (/\b(closed|shut|not open|isn'?t open|another (one|place|spot)|somewhere else|different place)\b/.test(q) && !target.unscheduled) {
+    const it = target.item && !target.item.place && !isSet(target.item) ? target.item : placeItem();
+    if (it && !isSet(it)) {
+      const closed = /\b(closed|shut|not open|isn'?t open)\b/.test(q);
+      return reply({ text: `${closed && it.place ? `Leaving out ${it.place.name}. ` : ''}Checking other realistic options for ${it.title}…`, run: { type: 'options', blockId: it.blockId, trigger: closed ? 'closed' : 'manual' }, topic: { blockId: it.blockId } });
+    }
+  }
+  if (/\b(don'?t|do not|rather not) want to (travel|go|walk|drive) far\b|\btoo far\b|\bstay (close|nearby|near)\b|\bless travel\b/.test(q) && !opts.length) {
+    const it = placeItem();
+    if (!it) return reply({ text: 'Nothing left today needs a trip, so there is nothing to bring closer.' });
+    return reply({ text: `Checking options for ${it.title} with the least travel…`, run: { type: 'options', blockId: it.blockId, prefer: 'near' }, topic: { blockId: it.blockId } });
+  }
+
+  // "Why did you recommend this place?"
+  if (/\bwhy\b/.test(q) && /\b(place|spot|venue|location|there|recommend\w*|pick\w*|chose|choose|suggest\w*)\b/.test(q) && !/\b(move|moved|fit)\b/.test(q)) {
+    const it = placeItem();
+    if (it?.place) return reply({ text: whyPlace(it, ctx), buttons: [{ label: 'See other options', action: { type: 'options', blockId: it.blockId } }], topic: { blockId: it.blockId } });
+    if (!opts.length) return reply({ text: "Nothing left in today's plan has a place picked, so there's no recommendation to explain." });
   }
 
   // Instead / other options / rain / closed.
@@ -261,7 +360,7 @@ export function answer(question: string, ctx: AssistantContext, topic: Topic = {
   }
 
   // Can I still make it / finish before …?
-  if (/\bcan i (still )?(make|finish|get|do|fit|go)\b|\bwill i (make|finish)\b|\benough time\b|\b(need|have|got|want) to (finish|do|get|complete)\b.*\b(before|by)\b/.test(q)) {
+  if (/\bcan i (still )?(make|finish|get|do|fit|go)\b|\bwill i (make|finish)\b|\benough time\b|\b(need|have|got|want) to (finish|do|get|complete)\b.*\b(before|by)\b|^(please )?(finish|complete|get)\b.*\b(before|by)\b/.test(q)) {
     if (target.unscheduled) return reply({ text: `Not as things stand: ${lower(target.unscheduled.reason)}.`, buttons: [{ label: 'Look for a way', action: { type: 'options', blockId: target.unscheduled.blockId, trigger: 'manual' } }], topic: { blockId: target.unscheduled.blockId } });
     if (target.item) {
       const it = target.item;
@@ -290,6 +389,8 @@ export function answer(question: string, ctx: AssistantContext, topic: Topic = {
   if (onlyMins) {
     const named = rest.find((i) => (i.fixed || isCalendarBlock(i.blockId)) && words(q).some((w) => words(i.title).includes(w)));
     const nextFixed = named ?? rest.find((i) => i.fixed || isCalendarBlock(i.blockId));
+    const askedFor = FIXED_WORDS.exec(q)?.[1];
+    const missing = askedFor && !named ? `I don't see a ${askedFor} in today's plan. ` : '';
     const mins = Number(onlyMins[1]);
     const t = ctx.now.getTime();
     const until = nextFixed ? Math.round((Date.parse(nextFixed.start) - t) / 60_000) : undefined;
@@ -306,7 +407,7 @@ export function answer(question: string, ctx: AssistantContext, topic: Topic = {
         : `${before.map((i) => i.title).join(', ')} ${before.length === 1 ? 'is' : 'are'} planned before it but take${before.length === 1 ? 's' : ''} longer than ${duration(mins)}.`
       : `Nothing else is planned before it, so the ${duration(mins)} is free.`;
     return reply({
-      text: `${head} ${body}`,
+      text: `${missing}${head} ${body}`,
       buttons: before.length && !fits.length ? [{ label: `Options for ${before[0]!.title} in ${duration(mins)}`, action: { type: 'options', blockId: before[0]!.blockId, maxMinutes: mins } }] : undefined,
       topic: nextFixed ? { blockId: nextFixed.blockId } : undefined,
     });
@@ -359,6 +460,35 @@ export function answer(question: string, ctx: AssistantContext, topic: Topic = {
   return reply({ ...help(), text: "I can only answer from your plan, and I didn't catch what you're asking. Try one of these:" });
 }
 
+function runningOver(it: PlanItem | undefined, until: number, ctx: AssistantContext): AssistantReply {
+  const t = ctx.now.getTime();
+  if (until <= t + 4 * 60_000) return { text: "That's already now, so there's nothing to keep free. Tap Re-route if the rest of the day needs rebuilding.", buttons: [{ label: 'Show me the proposal', action: { type: 'replan' } }] };
+  const end = Date.parse(ctx.endOfDay);
+  if (until >= end) return { text: `That runs past the end of your day (${clock(ctx.endOfDay)}), so nothing else would fit today.` };
+  const title = it ? `${it.title} running over` : 'Running over';
+  const hit = remaining(ctx).filter((i) => i.blockId !== it?.blockId && Date.parse(i.start) < until);
+  const setHit = hit.filter(isSet).map((i) => i.title);
+  return {
+    text: `Keep ${clock(iso(t))}–${clock(iso(until))} free for ${it ? it.title : 'that'} and rebuild the rest? ${setHit.length ? `${setHit.join(', ')} ${setHit.length === 1 ? 'stays' : 'stay'} at ${setHit.length === 1 ? 'its' : 'their'} set time and will show as overlapping. ` : ''}${hit.length - setHit.length ? `${hit.filter((i) => !isSet(i)).map((i) => i.title).join(', ')} will move later or say why it can't. ` : ''}You'll see the proposal first.`,
+    buttons: [{ label: `Keep until ${clock(iso(until))} free`, action: { type: 'replan', busyUntil: iso(until), busyTitle: title } }],
+    topic: { blockId: it?.blockId },
+  };
+}
+
+/** Why the plan picked this place, from what the planner knows (never more). */
+function whyPlace(it: PlanItem, ctx: AssistantContext): string {
+  const b = ctx.blocks.find((x) => x.id === it.blockId);
+  const kind = b && b.category !== 'none' ? ({ cafe: 'a café', cowork: 'a coworking space', library: 'a library', restaurant: 'a place to eat', gym: 'a gym', park: 'a park', grocery: 'a grocery', mall: 'a mall' } as Record<string, string>)[b.category] : undefined;
+  const needs = b?.requirements.filter((r) => r !== 'outdoor' && r !== 'indoor') ?? [];
+  const parts = [
+    kind ? `${it.title} needs ${kind}${needs.length ? ` with ${needs.join(' and ').replace('wifi', 'Wi-Fi')}` : ''}, and ${it.place!.name} is one` : `${it.place!.name} fits ${it.title}`,
+    it.travelMinutesBefore ? `about ${it.travelMinutesBefore} min to get there (an estimate, not live traffic)` : 'no trip from where you are before it',
+    it.confidence === 'verified' ? 'open then by its listed hours' : "its opening hours aren't listed, so check before you go",
+  ];
+  const others = it.fallbacks.filter((f) => f.kind === 'place' && f.place).map((f) => f.place!.name).slice(0, 2);
+  return `${parts.join('; ')}.${it.explanation ? ` ${it.explanation}.` : ''}${others.length ? ` Backups if it doesn't work out: ${others.join(', ')}.` : ''}`;
+}
+
 function help(): AssistantReply {
   return {
     text: 'I answer from your plan, its reasons and live checks on places and weather. Things I can do:',
@@ -377,6 +507,12 @@ function weather(ctx: AssistantContext): AssistantReply {
   return { text: `As of ${clock(w.fetchedAt)} it's ${nowWord}.${later}` };
 }
 
+function metres(a: LatLng, b: LatLng): number {
+  const dLat = (a.lat - b.lat) * 111_320;
+  const dLng = (a.lng - b.lng) * 111_320 * Math.cos((((a.lat + b.lat) / 2) * Math.PI) / 180);
+  return Math.hypot(dLat, dLng);
+}
+
 const lower = (s: string) => s.charAt(0).toLowerCase() + s.slice(1);
 function clockHm(hm: string) {
   const [h, m] = hm.split(':').map(Number) as [number, number];
@@ -390,8 +526,8 @@ function describeOne(o: AlternativeOption, ctx: AssistantContext): string {
 }
 
 /** Say what the alternatives engine found, in the chat. */
-export function describeOptions(o: AlternativesOutcome, ctx: AssistantContext): AssistantReply {
-  const r = o.result;
+export function describeOptions(o: AlternativesOutcome, ctx: AssistantContext, how: { prefer?: 'near' } = {}): AssistantReply {
+  const r = how.prefer === 'near' ? { ...o.result, options: [...o.result.options].sort((a, b) => a.travelMinutes - b.travelMinutes) } : o.result;
   const stamp = planStamp(ctx.day);
   const head = [o.warnings.join(' '), r.problem ? `${r.problem.text}.` : '', r.nextCommitment ? `Everything here leaves room for ${r.nextCommitment.title} at ${clock(r.nextCommitment.start)}.` : ''].filter(Boolean).join(' ');
   if (!r.options.length) {
@@ -403,9 +539,9 @@ export function describeOptions(o: AlternativesOutcome, ctx: AssistantContext): 
   }
   const letters = ['A', 'B', 'C', 'D'];
   return {
-    text: `${head ? `${head} ` : ''}Here's what realistically works for ${r.title}:`,
+    text: `${head ? `${head} ` : ''}Here's what realistically works for ${r.title}${how.prefer === 'near' ? ', least travel first' : ''}:`,
     bullets: [
-      ...r.options.map((x, i) => `${letters[i]}. ${x.label}, ${clock(x.start)}–${clock(x.end)}: ${lower(x.why)}${x.tradeoffs.length ? ` (trade-off: ${x.tradeoffs.join('; ').toLowerCase()})` : ''}`),
+      ...r.options.map((x, i) => `${letters[i]}. ${x.label}, ${clock(x.start)}–${clock(x.end)}${how.prefer === 'near' ? (x.travelMinutes ? ` (about ${x.travelMinutes} min away)` : ' (no trip)') : ''}: ${lower(x.why)}${x.tradeoffs.length ? ` (trade-off: ${x.tradeoffs.join('; ').toLowerCase()})` : ''}`),
       ...r.notes.filter((n) => n.kind === 'unknown').map((n) => `Not confirmed: ${lower(n.text)}`),
     ],
     buttons: r.options.map((x, i) => ({ label: `Use ${letters[i]}`, action: { type: 'use-option' as const, optionId: x.id }, confirm: `Change ${x.title} to ${x.label}, ${clock(x.start)}–${clock(x.end)}?` })),
@@ -414,23 +550,37 @@ export function describeOptions(o: AlternativesOutcome, ctx: AssistantContext): 
 }
 
 /** Say what a place search found, only claiming "open" from listed hours. */
-export function describePlaces(places: Place[], category: PlaceCategory, ctx: AssistantContext, opts: { openNow: boolean; source: 'server' | 'device' }): AssistantReply {
+export function describePlaces(
+  places: Place[],
+  category: PlaceCategory,
+  ctx: AssistantContext,
+  opts: { openNow: boolean; source: 'server' | 'device'; origin?: LatLng; radiusM?: number; needs?: ('wifi' | 'quiet' | 'power')[] },
+): AssistantReply {
   const t = ctx.now.getTime();
   const tz = -ctx.now.getTimezoneOffset();
   const word = category === 'cafe' ? 'cafés' : category === 'library' ? 'libraries' : `${category}s`;
+  const away = (p: Place) => (opts.origin ? metres(opts.origin, p.location) : undefined);
+  const needs = opts.needs ?? [];
+  const listed = (p: Place) => needs.filter((n) => p.attributes?.[n]).length;
+  const within = opts.radiusM ? ` within ${opts.radiusM >= 1000 ? `${opts.radiusM / 1000} km` : `${opts.radiusM} m`}` : ' near you';
   const rows = places
     .filter((p) => p.source !== 'mock' || opts.source === 'server')
-    .map((p) => ({ p, st: openStatusAt(p, t, tz) }))
+    .map((p) => ({ p, st: openStatusAt(p, t, tz), d: away(p) }))
+    .filter((x) => !opts.radiusM || x.d === undefined || x.d <= opts.radiusM)
     .filter((x) => !opts.openNow || x.st.status !== 'closed')
     .filter((x) => x.st.status !== 'temporarily-closed')
-    .sort((a, b) => (a.st.status === 'open' ? 0 : 1) - (b.st.status === 'open' ? 0 : 1))
+    // Listed as having what you asked for first, then open by listed hours, then nearest.
+    .sort((a, b) => listed(b.p) - listed(a.p) || (a.st.status === 'open' ? 0 : 1) - (b.st.status === 'open' ? 0 : 1) || (a.d ?? 0) - (b.d ?? 0))
     .slice(0, 5);
-  if (!rows.length) return { text: `I couldn't find ${opts.openNow ? 'any ' : ''}${word}${opts.openNow ? ' open now' : ''} near you${opts.source === 'device' ? " among the places saved on this phone (you're offline)" : ''}.` };
+  if (!rows.length) return { text: `I couldn't find ${opts.openNow ? 'any ' : ''}${word}${opts.openNow ? ' open now' : ''}${within}${opts.source === 'device' ? " among the places saved on this phone (you're offline)" : ''}.` };
+  const needWords = needs.map((n) => (n === 'wifi' ? 'Wi-Fi' : n === 'power' ? 'outlets' : 'quiet'));
+  const noneListed = needs.length && !rows.some((x) => listed(x.p));
   const age = places[0]?.fetchedAt ? Math.round((t - Date.parse(places[0].fetchedAt)) / 60_000) : undefined;
   return {
-    text: `${opts.source === 'device' ? "You're offline, so these are places saved earlier. " : ''}Near you${opts.openNow ? ', by their listed hours' : ''}:`,
+    text: `${opts.source === 'device' ? "You're offline, so these are places saved earlier. " : ''}${within.trim().replace(/^./, (c) => c.toUpperCase())}${opts.openNow ? ', by their listed hours' : ''}:`,
     bullets: [
-      ...rows.map(({ p, st }) => `${p.name}: ${st.status === 'open' ? (st.closesAt === null ? 'open 24 hours (listed)' : `open until ${clock(iso(st.closesAt!))} (listed hours)`) : st.status === 'closed' ? `closed now${st.opensAt ? `, opens ${clock(iso(st.opensAt))}` : ''} (listed hours)` : "hours not listed, so it may or may not be open"}`),
+      ...rows.map(({ p, st, d }) => `${p.name}${d !== undefined ? ` (${d < 1000 ? `${Math.round(d / 10) * 10} m` : `${(d / 1000).toFixed(1)} km`})` : ''}${needs.length && listed(p) ? ` · ${needWords.filter((_, i) => p.attributes?.[needs[i]!]).join(', ')} listed` : ''}: ${st.status === 'open' ? (st.closesAt === null ? 'open 24 hours (listed)' : `open until ${clock(iso(st.closesAt!))} (listed hours)`) : st.status === 'closed' ? `closed now${st.opensAt ? `, opens ${clock(iso(st.opensAt))}` : ''} (listed hours)` : "hours not listed, so it may or may not be open"}`),
+      ...(noneListed ? [`None of these list ${needWords.join(' or ')} on the map, so check before you go.`] : []),
       ...(age !== undefined && age > 60 ? [`Map data from about ${duration(Math.min(age, 24 * 60))} ago.`] : []),
     ],
   };

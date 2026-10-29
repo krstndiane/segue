@@ -29,7 +29,13 @@ export interface ReplanAdjustments {
   refreshLocation: boolean;
 }
 
-export function adjustFor(reason: ReplanReason | null, now: Date, energy: Energy, endOfDay: string): ReplanAdjustments {
+/** "My meeting is running over until 4:30": keep that time blocked instead of the default hour. */
+export interface BusyDetails {
+  until?: Date;
+  title?: string;
+}
+
+export function adjustFor(reason: ReplanReason | null, now: Date, energy: Energy, endOfDay: string, busy: BusyDetails = {}): ReplanAdjustments {
   const out: ReplanAdjustments = { start: now, energy, extraBlocks: [], refreshLocation: false };
   switch (reason) {
     case 'late':
@@ -51,18 +57,23 @@ export function adjustFor(reason: ReplanReason | null, now: Date, energy: Energy
       out.weather = hours;
       break;
     }
-    case 'busy':
+    case 'busy': {
+      // Between 5 minutes from now and the end of the day; otherwise the usual hour.
+      const until = busy.until?.getTime();
+      const end = until && until >= now.getTime() + 5 * 60_000 ? Math.min(until, Date.parse(endOfDay)) : now.getTime() + BUSY_MINUTES * 60_000;
+      const minutes = Math.max(5, Math.round((end - now.getTime()) / 60_000));
       out.extraBlocks.push({
         id: BUSY_BLOCK_ID,
-        title: 'Something came up',
-        minMinutes: BUSY_MINUTES,
-        maxMinutes: BUSY_MINUTES,
+        title: busy.title?.slice(0, 80) || 'Something came up',
+        minMinutes: minutes,
+        maxMinutes: minutes,
         priority: 'must',
         category: 'none',
         requirements: [],
-        fixed: { start: now.toISOString(), end: new Date(now.getTime() + BUSY_MINUTES * 60_000).toISOString() },
+        fixed: { start: now.toISOString(), end: new Date(now.getTime() + minutes * 60_000).toISOString() },
       });
       break;
+    }
   }
   return out;
 }
