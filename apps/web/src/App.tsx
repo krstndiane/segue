@@ -163,7 +163,7 @@ export function App() {
       live = false;
     };
   }, [me.userId]);
-  const [togetherTab, setTogetherTab] = useState<TogetherTab>('notes');
+  const [togetherTab, setTogetherTab] = useState<TogetherTab>('overview');
   // Segue finds and follows the location on its own. A real fix (now or saved) is the user's own;
   // otherwise the time zone's main city stands in, and the pin says so. The user never picks the sky.
   const where = useWhereabouts(ready, { location: settings.lastLocation, at: settings.lastLocatedAt });
