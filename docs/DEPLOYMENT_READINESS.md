@@ -1,6 +1,25 @@
 # Deployment readiness — 29 October 2026
 
-**Release decision: READY AFTER SPECIFIC FIXES.** No code-level release blockers remain on the release candidate, and Vercel's real production build of the final code succeeded. Three verification and configuration steps (below) must be done before or right after deploying, because they can't be done from the audit environment.
+## Release status (updated 30 October 2026)
+
+| Check | Result | Evidence |
+| --- | --- | --- |
+| Pull request | **PASS** | [#2](https://github.com/krstndiane/segue/pull/2), `reroute-intelligence` at `f5505a1` into `main` |
+| CI on the release | **PASS** | Every step green: install, typecheck, `pnpm test` (real vitest, so the 2 sky-preview tests that failed in the audit sandbox pass), `pnpm build`, engine bench |
+| Merged | **PASS** | `main` = `c6817f2` (merge commit), on the owner's instruction ("push everything in main") |
+| Vercel production | **PASS** | Commit status "Deployment has completed" for `c6817f2`. The live bundle calls `https://segue-api-qhgc.onrender.com`, never `localhost` |
+| Render API | **PASS** | `/health` now reports `places: cached(osm→nominatim)`, `assistant: basic` and `placesStatus`, which only the new code produces |
+| Real places in production | **PASS WITH LIMITATIONS** | 30 Oct: Makati gyms (Gold's Gym 287 m, Anytime Fitness 439 m, Fitness First 511 m), Makati cafés, Quezon City groceries (Savemore, Puregold, Robinsons) and parks, Manila libraries (Manila City Library, National Library of the Philippines). All `source: "osm"`, within 2 km, nearest first, unique ids. `placesStatus.lastAnswer.provider` = `nominatim` (Overpass still failing). Most places have no listed hours. |
+| Provider failure in production | **PASS** | Right after deploy (29 Oct), every search got "[nominatim] search returned 429". The API answered 503 "Live map data isn't available right now" and showed no made-up places. It recovered by itself. Follow-up fix: back off after a refusal (pull request #3). |
+| Live rerouting | **PASS WITH LIMITATIONS** | See MAP_AND_REROUTING_AUDIT, "Production checks". Real weather wasn't raining, so rain was tested with "you said it's raining" |
+| `NOMINATIM_USER_AGENT` on Render | **UNVERIFIED** | Needs the owner's contact email; the code default names the site but no contact |
+| zod advisory | **Open, accepted for release** | Still `zod@3.25.76`; body caps limit the risk. Upgrade to zod 4 is follow-up work |
+
+**Rollback:** in Render and Vercel, redeploy the previous production deployment (`e89d550`). No database change to undo. Note that rolling back brings the made-up places back.
+
+---
+
+**Release decision at audit time (29 October): READY AFTER SPECIFIC FIXES.** No code-level release blockers remain on the release candidate, and Vercel's real production build of the final code succeeded. Three verification and configuration steps (below) must be done before or right after deploying, because they can't be done from the audit environment.
 
 Companion reports: [MAP_AND_REROUTING_AUDIT.md](MAP_AND_REROUTING_AUDIT.md) (providers, map data, rerouting scenarios) and [RELEASE_BLOCKERS.md](RELEASE_BLOCKERS.md) (every issue, its status and acceptance criteria). Earlier rounds: [AUDIT.md](AUDIT.md), [REROUTE_INTELLIGENCE.md](REROUTE_INTELLIGENCE.md).
 
