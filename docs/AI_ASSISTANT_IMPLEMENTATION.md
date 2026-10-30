@@ -1,6 +1,6 @@
 # AI assistant — implementation report (branch `ai-assistant`)
 
-**Not merged or deployed.** This branch starts at `main` = `c6817f2` (the rerouting release) and is for review only. Release documentation is separate: [DEPLOYMENT_READINESS.md](DEPLOYMENT_READINESS.md).
+**Not merged or deployed.** This branch started at `main` = `c6817f2` (the rerouting release) and was brought up to date with `main` = `f0a67f6` on 30 October (calendar, Together, one-tap done). It is for review only. Release documentation is separate: [DEPLOYMENT_READINESS.md](DEPLOYMENT_READINESS.md).
 
 ## How the assistant works
 
@@ -54,12 +54,14 @@ Code: `apps/web/src/lib/assistant.ts`, `apps/web/src/components/AssistantPanel.t
 
 ## Configuration
 
-| Environment | To enable AI wording | Otherwise |
-| --- | --- | --- |
-| Development | `ANTHROPIC_API_KEY` in `apps/api` env; optional `ASSISTANT_MODEL` (default `claude-haiku-5-5`) | Plain answers |
-| Preview / production (Render) | `ANTHROPIC_API_KEY` secret; optional `ASSISTANT_RATE_LIMIT` (default 60 per user per hour), `ASSISTANT_DAILY_CAP` (default 500 a day overall) | `/health` shows `assistant: "basic"` |
+Since `main` = `f0a67f6` (pull request #5), the assistant is kept out of production builds, and this branch carries that change:
 
-Production currently has no Anthropic key (`/health`: `assistant: "basic"`, `smartAdd: false`), so **AI wording is not live**. Everything on this branch works without it.
+| Switch | Where | Effect |
+| --- | --- | --- |
+| `VITE_ASSISTANT=on` | Build time (web) | Builds the panel in. On this branch, `apps/web/.env.development` turns it on for `pnpm dev:web` only. For a Vercel preview of this branch, set it on the **Preview** environment for branch `ai-assistant` only. Never in Production: the build check (`scripts/check-build.mjs`) fails a production build that contains it. |
+| `ASSISTANT_AI=on` | API (Render) | Lets `/v1/assistant` reword answers with AI. Also needs `ANTHROPIC_API_KEY`; optional `ASSISTANT_MODEL` (default `claude-haiku-5-5`), `ASSISTANT_RATE_LIMIT` (60 per user per hour), `ASSISTANT_DAILY_CAP` (500 a day). Off by default, even with a key. |
+
+Production today: `/health` reports `assistant: "basic"` and `/v1/assistant` answers 404, so **AI wording is not live**. The panel isn't in the production build (checked in the live bundle on 30 Oct). Everything on this branch works without AI.
 
 ## Not done yet
 
