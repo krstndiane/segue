@@ -58,7 +58,7 @@ import { activeNudges, nudgesFor, type Nudge } from './lib/nudges';
 import { applyPageTheme, pageTheme } from './lib/pageTheme';
 import { precautionsFor } from './lib/precautions';
 import { toneAt } from './lib/skyRenderer';
-import { BUSY_BLOCK_ID, adjustFor, type ReplanReason } from './lib/replan';
+import { BUSY_BLOCK_ID, adjustFor, type BusyDetails, type ReplanReason } from './lib/replan';
 import { API_URL, rerouteDay, trustedPlaces, type RerouteOutcome } from './lib/reroute';
 import { applyAlternative, findAlternatives, forecastFromSky, refine, type AlternativesOutcome } from './lib/alternatives';
 import { navigate, useRoute } from './lib/router';
@@ -317,7 +317,7 @@ export function App() {
 
   /** Rebuild the rest of the day. One tap, no form; `why` tweaks what the engine is told. */
   const replan = useCallback(
-    async (why: ReplanReason | null, opts: { autoAccept?: boolean } = {}) => {
+    async (why: ReplanReason | null, opts: { autoAccept?: boolean; busy?: BusyDetails } = {}) => {
       setReplanBusy(true);
       setReplanError(null);
       setReason(why);
@@ -330,7 +330,7 @@ export function App() {
           setReplanError(`Your day is set to end at ${clock(endOfDay)}. Change it in Settings to plan more.`);
           return;
         }
-        const adj = adjustFor(why, start, settings.energy, endOfDay);
+        const adj = adjustFor(why, start, settings.energy, endOfDay, opts.busy);
         const located = await currentLocation(8000, adj.refreshLocation);
         if (located) where.remember(located);
         const area = areaForZone(deviceZone());
@@ -584,20 +584,22 @@ export function App() {
   }
 
   /** Nearby places of one kind for the assistant; the phone's saved places when offline. */
-  async function nearbyPlaces(category: Exclude<Place['category'], 'none'>): Promise<{ places: Place[]; source: 'server' | 'device' }> {
+  async function nearbyPlaces(category: Exclude<Place['category'], 'none'>, radiusM = 2000): Promise<{ places: Place[]; source: 'server' | 'device'; origin: { lat: number; lng: number } }> {
     const at = planningLocation();
+    const radius = Math.min(5000, Math.max(300, Math.round(radiusM)));
     try {
       const ctrl = new AbortController();
       const timer = setTimeout(() => ctrl.abort(), 10_000);
-      const res = await fetch(`${API_URL}/v1/places/nearby?lat=${at.lat.toFixed(4)}&lng=${at.lng.toFixed(4)}&category=${category}&radius=2000&limit=12`, { signal: ctrl.signal }).finally(() => clearTimeout(timer));
-      if (res.ok) return { places: ((await res.json()) as { places: Place[] }).places, source: 'server' };
+      const res = await fetch(`${API_URL}/v1/places/nearby?lat=${at.lat.toFixed(4)}&lng=${at.lng.toFixed(4)}&category=${category}&radius=${radius}&limit=12`, { signal: ctrl.signal }).finally(() => clearTimeout(timer));
+      if (res.ok) return { places: ((await res.json()) as { places: Place[] }).places, source: 'server', origin: at };
     } catch {
       // fall through to what the phone has
     }
     const near = !!placeCache && haversineMeters(placeCache.location, at) <= 8000;
     const mine = favorites.filter((f) => f.category === category);
     const saved = near ? trustedPlaces(placeCache!.byCategory[category] ?? [], placeCache) : [];
-    return { places: [...mine, ...saved.filter((p) => !mine.some((m) => m.id === p.id))], source: 'device' };
+    const all = [...mine, ...saved.filter((p) => !mine.some((m) => m.id === p.id))];
+    return { places: all.filter((p) => haversineMeters(p.location, at) <= radius), source: 'device', origin: at };
   }
 
   function chooseAlternative(option: AlternativeOption) {
@@ -1194,7 +1196,7 @@ export function App() {
               moveItem(id, hhmm);
               return `Done: ${title} moved to ${clock(hhmmToIso(hhmm))} and pinned. Re-route to fit the rest around it.`;
             }}
-            replan={() => void replan(null)}
+            replan={(o) => void replan(o?.reason ?? null, { busy: o?.busy })}
             openItem={(id) => setSheet({ kind: 'item', id })}
             askAi={(body) => askAssistantAi(body)}
           />
