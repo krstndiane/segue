@@ -1,14 +1,16 @@
 /**
- * Notes: yours, shared with you, discoverable, and the ones you hearted.
- * A heart on someone's note means "I'd like to be invited". It never adds
- * anything to your plan.
+ * Notes: yours, shared with you, discoverable, and the ones you asked to join.
+ * "Can I join?" (the heart) asks; only the author's "Say yes" makes it a plan
+ * you're both in. Neither ever changes anyone's own day.
  */
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
-import type { InterestStatus, InterestView, NoteScope, NoteView, PublicProfile, Visibility } from '@segue/schemas';
+import type { InterestStatus, InterestView, InvitationView, NoteScope, NoteView, PublicProfile, Visibility } from '@segue/schemas';
 import {
   ApiError,
+  acceptJoin,
   clientId,
   createNote,
+  declineJoin,
   deleteNote,
   heartNote,
   listNotes,
@@ -25,22 +27,23 @@ const SCOPES: { value: NoteScope; label: string }[] = [
   { value: 'mine', label: 'Mine' },
   { value: 'shared', label: 'Shared with me' },
   { value: 'discover', label: 'Discover' },
-  { value: 'hearted', label: 'Hearted' },
+  { value: 'hearted', label: 'Asked' },
 ];
 
 const EMPTY: Record<NoteScope, string> = {
   mine: 'No notes yet. Jot down an idea, a plan, or something you’d like company for.',
   shared: 'Nothing shared with you yet. When someone shares a note with you, it shows up here.',
   discover: 'Nothing to discover right now. People who make notes discoverable show up here.',
-  hearted: "Notes you heart show up here, so you can see if you've been invited.",
+  hearted: 'Plans you asked to join show up here, with their answer.',
 };
 
 export const INTEREST_WORDS: Record<InterestStatus, string> = {
-  interested: 'Interested',
+  interested: 'Asked to join',
   invited: 'Invited',
   accepted: 'Going',
   declined: 'Declined',
-  withdrawn: 'No longer interested',
+  withdrawn: 'No longer asking',
+  not_now: 'Not this time',
 };
 
 const VISIBILITY_WORDS = (n: NoteView): string =>
@@ -93,7 +96,7 @@ function NoteCard({
           <>
             {(note.heartCount ?? 0) > 0 && (
               <button type="button" className="ghost small-button" onClick={onInterests}>
-                <Heart on /> {note.heartCount} interested
+                <Heart on /> {note.heartCount} asked to join
               </button>
             )}
             <button type="button" className="text-button" onClick={onEdit}>
@@ -102,19 +105,22 @@ function NoteCard({
           </>
         ) : (
           <>
-            {note.interest && note.interest !== 'interested' && note.interest !== 'withdrawn' && (
+            {note.interest && note.interest !== 'interested' && note.interest !== 'withdrawn' ? (
               <span className="chip static">{INTEREST_WORDS[note.interest]}</span>
+            ) : !note.openToJoin && !note.hearted ? (
+              <span className="muted small">Not open to join</span>
+            ) : (
+              <button
+                type="button"
+                className={`heart${note.hearted ? ' on' : ''}`}
+                aria-pressed={!!note.hearted}
+                aria-label={note.hearted ? `You asked to join ${note.title}. Tap to take it back` : `Ask ${note.author.displayName} if you can join ${note.title}`}
+                onClick={onHeart}
+              >
+                <Heart on={!!note.hearted} />
+                <span>{note.hearted ? `Asked · waiting for ${note.author.displayName}` : 'Can I join?'}</span>
+              </button>
             )}
-            <button
-              type="button"
-              className={`heart${note.hearted ? ' on' : ''}`}
-              aria-pressed={!!note.hearted}
-              aria-label={note.hearted ? `Interested in ${note.title}. Tap to take it back` : `I'd like to join ${note.title}`}
-              onClick={onHeart}
-            >
-              <Heart on={!!note.hearted} />
-              <span>{note.hearted ? "I'm interested" : 'Interested'}</span>
-            </button>
           </>
         )}
       </div>
@@ -127,11 +133,14 @@ export function NotesSection({
   blocks,
   notify,
   onInvite,
+  onJoined,
   focus,
 }: {
   today: string;
   blocks: StoredBlock[];
   notify: (text: string) => void;
+  /** someone's request was accepted: the new shared plan */
+  onJoined?: (invitations: InvitationView[]) => void;
   /** start an invitation from a note, to these people */
   onInvite: (note: NoteView, people: PublicProfile[]) => void;
   /** open a scope (and maybe one note's interests) from a notification */
@@ -265,6 +274,8 @@ export function NotesSection({
             setInterestsOf(null);
             onInvite(interestsOf, people);
           }}
+          onJoined={onJoined}
+          notify={notify}
         />
       )}
     </section>
@@ -294,6 +305,7 @@ export function NoteSheet({
   const [visibility, setVisibility] = useState<Visibility>(note?.visibility ?? 'private');
   const [people, setPeople] = useState<PublicProfile[]>(note?.sharedWith ?? []);
   const [pinned, setPinned] = useState(!!note?.pinned);
+  const [openToJoin, setOpenToJoin] = useState(note?.openToJoin ?? true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -316,6 +328,7 @@ export function NoteSheet({
       blockId: blockId || null,
       visibility,
       pinned,
+      openToJoin,
       shareWith: people.map((p) => p.id),
     };
     try {
@@ -397,12 +410,23 @@ export function NoteSheet({
         />
         <p className="muted small">
           {visibility === 'private'
-            ? 'Nobody else can see or heart it.'
+            ? 'Nobody else can see it.'
             : visibility === 'selected'
-              ? 'Only the people you choose can see it, and heart it to say they’d like to join.'
-              : 'People who can find you can see it and heart it. Your plans and location stay private.'}
+              ? 'Only the people you choose can see it. Your other plans, notes and location stay private.'
+              : 'People who can find you can see it. Your other plans, notes and location stay private.'}
         </p>
         {visibility === 'selected' && <PeoplePicker label="Share with" selected={people} onChange={setPeople} />}
+        {visibility !== 'private' && (
+          <label className="check">
+            <input type="checkbox" checked={openToJoin} onChange={(e) => setOpenToJoin(e.target.checked)} />
+            <span>
+              Open to join requests
+              <span className="muted small block">
+                {openToJoin ? 'They can ask “Can I join?”. Nothing is agreed until you say yes.' : 'They can see it, but not ask to join.'}
+              </span>
+            </span>
+          </label>
+        )}
         <label className="check">
           <input type="checkbox" checked={pinned} onChange={(e) => setPinned(e.target.checked)} />
           <span>Pin to the top</span>
@@ -431,39 +455,146 @@ export function NoteSheet({
             )}
           </div>
         )}
-        {note && confirmDelete && <p className="muted small">Hearts on this note go too. Invitations you already sent stay.</p>}
+        {note && confirmDelete && <p className="muted small">Requests to join go too. Plans you already agreed stay.</p>}
       </form>
     </Sheet>
   );
 }
 
-function InterestsSheet({ note, onClose, onInvite }: { note: NoteView; onClose: () => void; onInvite: (people: PublicProfile[]) => void }) {
+/** Someone asked "Can I join?": say yes (with a time if you like) or not this time. Nothing changes anyone's day. */
+export function InterestsSheet({
+  note,
+  onClose,
+  onInvite,
+  onJoined,
+  notify,
+}: {
+  note: NoteView;
+  onClose: () => void;
+  onInvite: (people: PublicProfile[]) => void;
+  onJoined?: (invitations: InvitationView[]) => void;
+  notify?: (text: string) => void;
+}) {
   const [list, setList] = useState<InterestView[] | null>(null);
-  const [error, setError] = useState(false);
-  useEffect(() => {
+  const [error, setError] = useState<string | null>(null);
+  const [yesFor, setYesFor] = useState<InterestView | null>(null);
+  const [noFor, setNoFor] = useState<InterestView | null>(null);
+  const [date, setDate] = useState(note.onDate ?? '');
+  const [start, setStart] = useState('');
+  const [end, setEnd] = useState('');
+  const [busy, setBusy] = useState(false);
+  const load = useCallback(() => {
     noteInterests(note.id)
       .then((r) => setList(r.interests))
-      .catch(() => setError(true));
+      .catch(() => setError("Couldn't load this just now."));
   }, [note.id]);
-  const invitable = (list ?? []).filter((i) => i.status === 'interested' || i.status === 'declined');
+  useEffect(load, [load]);
+  const invitable = (list ?? []).filter((i) => i.status === 'declined');
+  const at = (hhmm: string) => (date && hhmm ? new Date(`${date}T${hhmm}`).toISOString() : null);
+
+  async function sayYes(i: InterestView, e: FormEvent) {
+    e.preventDefault();
+    if (end && !start) return setError('Add a start time before an end time.');
+    setBusy(true);
+    setError(null);
+    try {
+      const r = await acceptJoin(note.id, i.id, { startsAt: at(start), endsAt: at(end), timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC', placeName: note.placeName });
+      onJoined?.(r.invitations);
+      notify?.(`You and ${i.user.displayName} are both in for “${note.title}”.`);
+      setYesFor(null);
+      load();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Couldn't send that just now. Try again.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function notThisTime(i: InterestView) {
+    setBusy(true);
+    setError(null);
+    try {
+      await declineJoin(note.id, i.id);
+      notify?.(`${i.user.displayName} will see “not this time”.`);
+      setNoFor(null);
+      load();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Couldn't send that just now. Try again.");
+    } finally {
+      setBusy(false);
+    }
+  }
 
   return (
-    <Sheet title="Who's interested" onClose={onClose}>
+    <Sheet title="Asked to join" onClose={onClose}>
       <div className="form">
         <p className="muted small">
-          They hearted “{note.title}”. A heart means they'd like to be invited, not that they're coming. Invite them to set a time and place.
+          They asked to join “{note.title}”. Asking isn’t agreeing: say yes to make it a plan you’re both in, or not this time. Neither changes anyone’s own
+          day.
         </p>
-        {error && <p className="error">Couldn't load this just now.</p>}
+        {error && (
+          <p className="error" role="alert">
+            {error}
+          </p>
+        )}
         {!list && !error && <p className="muted">Loading…</p>}
         {list && list.length === 0 && <p className="muted">Nobody yet.</p>}
         {list && list.length > 0 && (
           <ul className="people-list">
             {list.map((i) => (
-              <li key={i.id}>
+              <li key={i.id} className="join-request">
                 <PersonLine person={i.user} extra={INTEREST_WORDS[i.status]} />
-                {(i.status === 'interested' || i.status === 'declined') && (
+                {i.status === 'interested' && yesFor?.id !== i.id && noFor?.id !== i.id && (
+                  <div className="row-actions">
+                    <button type="button" className="primary small-button" disabled={busy} onClick={() => setYesFor(i)}>
+                      Say yes
+                    </button>
+                    <button type="button" className="ghost small-button" disabled={busy} onClick={() => setNoFor(i)}>
+                      Not this time
+                    </button>
+                  </div>
+                )}
+                {yesFor?.id === i.id && (
+                  <form className="join-yes" onSubmit={(e) => void sayYes(i, e)}>
+                    <p className="small">When? (optional: you can agree first and settle the time later)</p>
+                    <div className="pair">
+                      <label className="field">
+                        <span>Day</span>
+                        <input type="date" value={date} onChange={(e) => setDate(e.target.value)} />
+                      </label>
+                      <label className="field">
+                        <span>From</span>
+                        <input type="time" value={start} onChange={(e) => setStart(e.target.value)} disabled={!date} />
+                      </label>
+                      <label className="field">
+                        <span>Until</span>
+                        <input type="time" value={end} onChange={(e) => setEnd(e.target.value)} disabled={!date || !start} />
+                      </label>
+                    </div>
+                    <div className="row-actions">
+                      <button type="submit" className="primary small-button" disabled={busy}>
+                        {busy ? 'Saving…' : `Yes, ${i.user.displayName} can join`}
+                      </button>
+                      <button type="button" className="ghost small-button" disabled={busy} onClick={() => setYesFor(null)}>
+                        Back
+                      </button>
+                    </div>
+                  </form>
+                )}
+                {noFor?.id === i.id && (
+                  <div className="row-actions">
+                    <span className="small">Tell {i.user.displayName} not this time?</span>
+                    <button type="button" className="danger small-button" disabled={busy} onClick={() => void notThisTime(i)}>
+                      Yes, not this time
+                    </button>
+                    <button type="button" className="ghost small-button" disabled={busy} onClick={() => setNoFor(null)}>
+                      Back
+                    </button>
+                  </div>
+                )}
+                {i.status === 'declined' && (
                   <button type="button" className="ghost small-button" onClick={() => onInvite([i.user])}>
-                    Invite
+                    Invite again
                   </button>
                 )}
               </li>
@@ -471,8 +602,8 @@ function InterestsSheet({ note, onClose, onInvite }: { note: NoteView; onClose: 
           </ul>
         )}
         {invitable.length > 1 && (
-          <button type="button" className="primary wide" onClick={() => onInvite(invitable.map((i) => i.user))}>
-            Invite all {invitable.length}
+          <button type="button" className="ghost wide" onClick={() => onInvite(invitable.map((i) => i.user))}>
+            Invite all {invitable.length} again
           </button>
         )}
       </div>

@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { EMPTY_CALENDAR, calendarBlocks, type CalendarState } from './calendar';
 import { EMPTY_DAYS, addDays, mergeDays, rangeBounds, type CalendarDays } from './days';
 import { clock } from './format';
@@ -20,6 +20,8 @@ import { localDate } from './model';
 const CALENDAR_STALE_MS = 3 * 60 * 60_000;
 /** The same days aren't fetched again sooner than this, unless you tap Sync. */
 const RANGE_FRESH_MS = 5 * 60_000;
+/** Today's events are refreshed on their own this often while the app is open (when Google's sign-in is still live). */
+export const CALENDAR_REFRESH_MS = 15 * 60_000;
 
 /** Google Calendar: connect, sync, disconnect, blocks for a re-route, and events for the days you open. */
 export function useCalendar(ready: boolean, notify: (message: string) => void) {
@@ -29,7 +31,10 @@ export function useCalendar(ready: boolean, notify: (message: string) => void) {
   const [error, setError] = useState<string | null>(null);
   const [rangeBusy, setRangeBusy] = useState(false);
   const [rangeError, setRangeError] = useState<string | null>(null);
+  /** Today's events are due a refresh but Google needs a tap to sign in again (its token lives in memory only). */
+  const [needsTap, setNeedsTap] = useState(false);
   const lastRange = useRef<{ key: string; at: number } | null>(null);
+  const refreshing = useRef(false);
 
   /**
    * Fetch today's events. Runs from a tap: if a new Google token is needed,
@@ -42,9 +47,10 @@ export function useCalendar(ready: boolean, notify: (message: string) => void) {
       let token = currentToken();
       if (prompt === 'consent' || !tokenValid(token)) token = await requestToken(prompt);
       const now = new Date();
-      const events = await fetchTodayEvents(token, now);
+      const { events, allDay } = await fetchTodayEvents(token, now);
       const wasConnected = calendar.connected;
-      setCalendar({ connected: true, date: localDate(now), events, syncedAt: now.toISOString() });
+      setCalendar({ connected: true, date: localDate(now), events, allDay, syncedAt: now.toISOString() });
+      setNeedsTap(false);
       const today = localDate(now);
       setDays((d) => mergeDays(d, today, addDays(today, 1), events, now.toISOString()));
       const count = events.length === 1 ? '1 event' : `${events.length} events`;
@@ -88,6 +94,54 @@ export function useCalendar(ready: boolean, notify: (message: string) => void) {
     }
   }
 
+  /**
+   * Refresh today's events without opening anything: on opening the app,
+   * coming back to it, and every 15 minutes. Without a live Google token it
+   * can't, so it flags that a tap is needed instead of showing stale events as today's.
+   */
+  async function refresh(force = false) {
+    if (!calendar.connected || refreshing.current) return;
+    const now = new Date();
+    const due = force || calendar.date !== localDate(now) || !calendar.syncedAt || now.getTime() - Date.parse(calendar.syncedAt) > CALENDAR_REFRESH_MS;
+    if (!due) return;
+    const token = currentToken();
+    if (!tokenValid(token)) {
+      setNeedsTap(true);
+      return;
+    }
+    refreshing.current = true;
+    try {
+      const { events, allDay } = await fetchTodayEvents(token, now);
+      setCalendar({ connected: true, date: localDate(now), events, allDay, syncedAt: now.toISOString() });
+      setDays((d) => mergeDays(d, localDate(now), addDays(localDate(now), 1), events, now.toISOString()));
+      setNeedsTap(false);
+      setError(null);
+    } catch (e) {
+      // Keep the last events; say what went wrong.
+      if (e instanceof CalendarError && e.kind === 'expired') {
+        forgetToken();
+        setNeedsTap(true);
+      } else setError(calendarErrorMessage(e));
+    } finally {
+      refreshing.current = false;
+    }
+  }
+
+  // On opening, on coming back to the app, and every 15 minutes while it's open.
+  const refreshRef = useRef(refresh);
+  refreshRef.current = refresh;
+  useEffect(() => {
+    if (!ready || !calendar.connected) return;
+    void refreshRef.current();
+    const onVisible = () => document.visibilityState === 'visible' && void refreshRef.current();
+    document.addEventListener('visibilitychange', onVisible);
+    const timer = setInterval(() => document.visibilityState === 'visible' && void refreshRef.current(), CALENDAR_REFRESH_MS);
+    return () => {
+      document.removeEventListener('visibilitychange', onVisible);
+      clearInterval(timer);
+    };
+  }, [ready, calendar.connected]);
+
   function disconnect() {
     revokeToken(currentToken());
     setCalendar(EMPTY_CALENDAR);
@@ -95,6 +149,7 @@ export function useCalendar(ready: boolean, notify: (message: string) => void) {
     lastRange.current = null;
     setError(null);
     setRangeError(null);
+    setNeedsTap(false);
     notify('Google Calendar disconnected. Re-route to take its events out of your plan.');
   }
 
@@ -105,8 +160,8 @@ export function useCalendar(ready: boolean, notify: (message: string) => void) {
     const token = currentToken();
     if (tokenValid(token)) {
       try {
-        const events = await fetchTodayEvents(token, start);
-        cal = { connected: true, date: localDate(start), events, syncedAt: start.toISOString() };
+        const { events, allDay } = await fetchTodayEvents(token, start);
+        cal = { connected: true, date: localDate(start), events, allDay, syncedAt: start.toISOString() };
         setCalendar(cal);
         const today = localDate(start);
         setDays((d) => mergeDays(d, today, addDays(today, 1), events, start.toISOString()));
@@ -128,6 +183,6 @@ export function useCalendar(ready: boolean, notify: (message: string) => void) {
     return { extra: calendarBlocks(cal.events, room), warnings };
   }
 
-  return { calendar, setCalendar, days, setDays, busy, error, sync, disconnect, forReroute, loadRange, rangeBusy, rangeError };
+  return { calendar, setCalendar, days, setDays, busy, error, needsTap, sync, refresh, disconnect, forReroute, loadRange, rangeBusy, rangeError };
 }
 

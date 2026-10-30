@@ -72,10 +72,10 @@ export function invitationStatus(status: unknown, expiresAt: unknown, now = Date
   return s;
 }
 
-/** A heart's status follows the invitation it led to, if any. */
-export function interestStatus(withdrawnAt: unknown, invStatus: unknown, invExpires: unknown): InterestStatus {
+/** A heart's status follows the invitation it led to, if any; otherwise whether the author said not this time. */
+export function interestStatus(withdrawnAt: unknown, invStatus: unknown, invExpires: unknown, declinedAt: unknown = null): InterestStatus {
   if (withdrawnAt != null) return 'withdrawn';
-  if (invStatus == null) return 'interested';
+  if (invStatus == null) return declinedAt != null ? 'not_now' : 'interested';
   switch (invitationStatus(invStatus, invExpires)) {
     case 'pending':
       return 'invited';

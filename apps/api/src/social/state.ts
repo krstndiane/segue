@@ -7,7 +7,7 @@
  *
  * Google Calendar events are never sent here: they stay on the device.
  */
-import { StatePutSchema, SyncKeySchema, type StateItem } from '@segue/schemas';
+import { StatePutSchema, SyncKeySchema, TodayProgressSchema, type StateItem } from '@segue/schemas';
 import { HttpError } from '../http';
 import { parse, path, type Route } from './core';
 import { isoReq, type Row } from './views';
@@ -24,8 +24,13 @@ function clean(key: string, value: unknown): unknown {
   return rest;
 }
 
-/** Past days: anything that came from Google Calendar stays on the device. */
+/** Past days and today's progress: anything that came from Google Calendar stays on the device. */
 function withoutCalendar(key: string, value: unknown): unknown {
+  if (key === 'today' && value && typeof value === 'object' && !Array.isArray(value)) {
+    const v = value as Record<string, unknown>;
+    const ids = (x: unknown) => (Array.isArray(x) ? x.filter((id) => typeof id === 'string' && !id.startsWith('gcal_')) : []);
+    return { ...v, done: ids(v.done), skipped: ids(v.skipped) };
+  }
   if (key !== 'dayArchive' || !value || typeof value !== 'object') return value;
   const out: Record<string, unknown> = {};
   for (const [date, day] of Object.entries(value as Record<string, { items?: { blockId?: string }[] }>)) {
@@ -53,6 +58,7 @@ export const stateRoutes: Route[] = [
       ctx.limit('sync');
       const key = parse(SyncKeySchema, ctx.url.pathname.split('/').pop());
       const { value, baseVersion } = parse(StatePutSchema, await ctx.body({ limit: MAX_STATE_BYTES + 1024 }));
+      if (key === 'today') parse(TodayProgressSchema, value);
       const stored = withoutCalendar(key, clean(key, value));
       const json = JSON.stringify(stored);
       if (Buffer.byteLength(json) > MAX_STATE_BYTES) throw new HttpError(413, 'That is more than Segue can sync for one device');

@@ -9,8 +9,10 @@
  * - Place history: the higher counts.
  * - Past days: every day from both; this device's copy of a day wins.
  * - Settings: the account's, apart from anything only this device knows.
+ * - Today's done and skipped: the latest day wins, and on the same day the
+ *   latest change wins (so an undo on one device sticks on the others).
  */
-import type { SyncKey } from '@segue/schemas';
+import type { SyncKey, TodayProgress } from '@segue/schemas';
 import type { DayArchive } from './days';
 import type { FavoritePlace, PlaceHistory, Settings, StoredBlock } from './model';
 
@@ -20,15 +22,22 @@ export interface Synced {
   favorites: FavoritePlace[];
   placeHistory: PlaceHistory;
   dayArchive: DayArchive;
+  today: TodayProgress | null;
 }
 
-export const SYNC_KEYS: SyncKey[] = ['blocks', 'settings', 'favorites', 'placeHistory', 'dayArchive'];
+export const SYNC_KEYS: SyncKey[] = ['blocks', 'settings', 'favorites', 'placeHistory', 'dayArchive', 'today'];
+
+const notCalendar = (ids: string[]) => ids.filter((id) => !id.startsWith('gcal_'));
 
 /** What goes to the server: never a precise position, never Google Calendar events. */
 export function forServer<K extends SyncKey>(key: K, value: Synced[K]): Synced[K] {
   if (key === 'settings') {
     const { lastLocation: _a, lastLocationLabel: _b, lastLocatedAt: _c, ...rest } = value as Settings;
     return rest as Synced[K];
+  }
+  if (key === 'today') {
+    const t = value as TodayProgress | null;
+    return (t ? { ...t, done: notCalendar(t.done), skipped: notCalendar(t.skipped) } : t) as Synced[K];
   }
   if (key === 'dayArchive') {
     const out: DayArchive = {};
@@ -44,6 +53,7 @@ export const fingerprint = <K extends SyncKey>(key: K, value: Synced[K]) => JSON
 export function isEmpty<K extends SyncKey>(key: K, value: Synced[K] | undefined): boolean {
   if (value == null) return true;
   if (key === 'settings') return !(value as Settings).onboarded;
+  if (key === 'today') return !(value as TodayProgress).updatedAt;
   if (Array.isArray(value)) return value.length === 0;
   return Object.keys(value as object).length === 0;
 }
@@ -72,6 +82,8 @@ export function merge<K extends SyncKey>(key: K, local: Synced[K], server: Synce
     }
     case 'dayArchive':
       return { ...(server as DayArchive), ...(local as DayArchive) } as Synced[K];
+    case 'today':
+      return newerProgress(local as TodayProgress | null, server as TodayProgress | null) as Synced[K];
     case 'settings': {
       const l = local as Settings;
       const s = server as Settings;
@@ -80,6 +92,14 @@ export function merge<K extends SyncKey>(key: K, local: Synced[K], server: Synce
     }
   }
   return server;
+}
+
+/** The later day, and on the same day the later change. Ties keep this device's. */
+export function newerProgress(local: TodayProgress | null, server: TodayProgress | null): TodayProgress | null {
+  if (!local) return server;
+  if (!server) return local;
+  if (local.date !== server.date) return local.date > server.date ? local : server;
+  return Date.parse(server.updatedAt) > Date.parse(local.updatedAt) ? server : local;
 }
 
 /** Applying the server's settings keeps this device's own position fields. */

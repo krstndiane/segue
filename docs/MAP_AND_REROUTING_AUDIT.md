@@ -106,3 +106,22 @@ All scenarios run in `packages/engine/test/realWorld.test.ts` on the real Makati
 | "Reorganize my day without moving my meetings." | Opens the proposal; set times never move | same |
 
 Quick add keeps activity, duration, deadline ("before 7 PM" → latest 19:00), fixed time and requirements apart, and only asks for a place when one is named or needed. Parsed blocks go through the same schema validation as everything else before planning.
+
+## Production checks (30 October 2026, after the release)
+
+Run against the live API (`main` = `c6817f2`) from a browser, with its real place searches and live weather, Friday 30 Oct, Ayala Ave Makati, dinner at Greenbelt 6:30 PM.
+
+| # | Scenario | Result | What the live API produced |
+| --- | --- | --- | --- |
+| — | Fixed meeting, "Something came up" at 2:40 PM | **PASS** | Client meeting kept 3:00–4:00 PM with "Overlaps Something came up"; report 4:00–6:00 PM; nothing dropped |
+| 1–2 | Rain before a 5 PM run | **PASS WITH LIMITATIONS** | "You said it's raining, and Run is outdoors" → walk indoors at Greenbelt 4 (41 min spare before dinner), The Shops Ayala Triangle Gardens, work out at Fitness First, or indoors where you are. All real (`osm`), none late. It wasn't actually raining, so the forecast path wasn't exercised live |
+| 3 | Planned gym unavailable / hours unknown | **PASS** | "You said Movement in Play isn't available" → Elorde Top Team, Torre Yoga and Wellness, a bodyweight workout, or a shorter Fitness First visit before dinner. Hours "unknown" for all, said as such |
+| 4 | 30 minutes before class | **PASS** | "A shorter version where you are (30 min)" 5:00–5:30 PM, then options after class. Nothing overlaps the class |
+| 5 | Deadline | **PASS** | "Needs 120 min, but only 90 min left before 7:00 PM" |
+| 6 | Meeting runs late | **PASS** | Report moved to 4:30–6:00 PM, dinner unchanged |
+| 7 | Nothing feasible | **PASS** | "Not enough time left before 10:00 PM" |
+| 8 | Map source unavailable | **PASS** | Observed for real on 29 Oct (Nominatim 429): 503 with a plain message, no made-up places |
+| 9 | Rejected suggestion | **PASS** | Elorde Top Team rejected → not offered again |
+| 10 | Offline | **UNVERIFIED live** | Covered by browser tests only |
+
+Opening hours: none of the places offered in these checks had listed hours, so every suggestion said to check before going. That's the main quality limit of OpenStreetMap data here.

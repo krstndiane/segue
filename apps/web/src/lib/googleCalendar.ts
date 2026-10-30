@@ -3,7 +3,8 @@
  * Identity Services. The access token is short-lived (about an hour), stays
  * in memory, and never reaches the Segue API. Scope is read-only.
  */
-import { dayBounds, parseEvents, type CalendarEvent, type GoogleEvent } from './calendar';
+import { dayBounds, parseAllDay, parseEvents, type AllDayEvent, type CalendarEvent, type GoogleEvent, type GoogleEventPage } from './calendar';
+import { keyOf } from './days';
 
 export const GOOGLE_CLIENT_ID: string | undefined = import.meta.env?.VITE_GOOGLE_CLIENT_ID || undefined;
 const EVENTS_SCOPE = 'https://www.googleapis.com/auth/calendar.events.readonly';
@@ -15,6 +16,8 @@ const PROFILE_SCOPE = 'openid email profile';
 const API = 'https://www.googleapis.com/calendar/v3';
 /** Enough for work, personal and a few shared calendars without slowing sync down. */
 const MAX_CALENDARS = 10;
+/** Pages of 250 events per calendar: plenty for a day or a month. */
+const MAX_PAGES = 4;
 const GIS_SRC = 'https://accounts.google.com/gsi/client';
 
 interface TokenResponse {
@@ -52,7 +55,7 @@ export interface GoogleToken {
 
 /** Why a calendar action failed, so the UI can say what to do. */
 export class CalendarError extends Error {
-  constructor(readonly kind: 'cancelled' | 'denied' | 'expired' | 'network' | 'unavailable') {
+  constructor(readonly kind: 'cancelled' | 'denied' | 'expired' | 'network' | 'unavailable' | 'busy') {
     super(kind);
   }
 }
@@ -144,7 +147,15 @@ async function getJson<T>(token: GoogleToken, url: string): Promise<T> {
     throw new CalendarError('network');
   }
   if (res.status === 401) throw new CalendarError('expired');
-  if (res.status === 403) throw new CalendarError('denied');
+  if (res.status === 429) throw new CalendarError('busy');
+  if (res.status === 403) {
+    // Google also answers 403 when it's rate limiting, which isn't a permission problem.
+    const reason = await res
+      .json()
+      .then((b: { error?: { errors?: { reason?: string }[] } }) => b.error?.errors?.[0]?.reason ?? '')
+      .catch(() => '');
+    throw new CalendarError(/rateLimit|quotaExceeded/i.test(reason) ? 'busy' : 'denied');
+  }
   if (!res.ok) throw new CalendarError('network');
   return (await res.json()) as T;
 }
@@ -165,10 +176,11 @@ async function calendarIds(token: GoogleToken): Promise<string[]> {
   }
 }
 
-/** Today's busy events from every calendar that's switched on. */
-export async function fetchTodayEvents(token: GoogleToken, day: Date): Promise<CalendarEvent[]> {
+/** Today's busy events, and its all-day events, from every calendar that's switched on. */
+export async function fetchTodayEvents(token: GoogleToken, day: Date): Promise<{ events: CalendarEvent[]; allDay: AllDayEvent[] }> {
   const { start, end } = dayBounds(day);
-  return fetchEvents(token, start, end);
+  const items = await fetchItems(token, start, end);
+  return { events: parseEvents(items, start, end), allDay: parseAllDay(items, keyOf(day)) };
 }
 
 /**
@@ -176,21 +188,36 @@ export async function fetchTodayEvents(token: GoogleToken, day: Date): Promise<C
  * Used for today and for the days you open on the calendar.
  */
 export async function fetchEvents(token: GoogleToken, start: string, end: string): Promise<CalendarEvent[]> {
-  const params = new URLSearchParams({ timeMin: start, timeMax: end, singleEvents: 'true', orderBy: 'startTime', maxResults: '250' });
+  return parseEvents(await fetchItems(token, start, end), start, end);
+}
+
+/** Every page of one calendar's events in the window (recurring events expanded). */
+async function calendarItems(token: GoogleToken, id: string, start: string, end: string): Promise<GoogleEvent[]> {
+  const out: GoogleEvent[] = [];
+  let page: string | undefined;
+  for (let i = 0; i < MAX_PAGES; i++) {
+    const params = new URLSearchParams({ timeMin: start, timeMax: end, singleEvents: 'true', orderBy: 'startTime', maxResults: '250' });
+    if (page) params.set('pageToken', page);
+    const body = await getJson<GoogleEventPage>(token, `${API}/calendars/${encodeURIComponent(id)}/events?${params}`);
+    out.push(...(body.items ?? []));
+    page = body.nextPageToken;
+    if (!page) break;
+  }
+  return out;
+}
+
+async function fetchItems(token: GoogleToken, start: string, end: string): Promise<GoogleEvent[]> {
   const ids = await calendarIds(token);
   const lists = await Promise.all(
     ids.map((id) =>
-      getJson<{ items?: GoogleEvent[] }>(token, `${API}/calendars/${encodeURIComponent(id)}/events?${params}`).then(
-        (b) => b.items ?? [],
-        (e) => {
-          // The main calendar must work; a shared one that fails is skipped.
-          if (id === 'primary' || (e instanceof CalendarError && e.kind === 'expired')) throw e;
-          return [] as GoogleEvent[];
-        },
-      ),
+      calendarItems(token, id, start, end).catch((e) => {
+        // The main calendar must work; a shared one that fails is skipped.
+        if (id === 'primary' || (e instanceof CalendarError && e.kind === 'expired')) throw e;
+        return [] as GoogleEvent[];
+      }),
     ),
   );
-  return parseEvents(lists.flat(), start, end);
+  return lists.flat();
 }
 
 export function revokeToken(token: GoogleToken | null): void {
@@ -210,6 +237,8 @@ export function calendarErrorMessage(e: unknown): string {
       return 'Your Google sign-in has expired. Tap Sync now to sign in again.';
     case 'unavailable':
       return "Couldn't open Google sign-in. Allow pop-ups for this site, then try again.";
+    case 'busy':
+      return 'Google Calendar is busy right now. Try again in a minute.';
     default:
       return "Couldn't reach Google Calendar. Check your connection and try again.";
   }

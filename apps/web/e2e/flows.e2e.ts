@@ -183,3 +183,82 @@ test('other options for an item: checked offline, and keeping the plan changes n
   await sheet.getByRole('button', { name: 'Keep my plan' }).click();
   await expect(sheet).toHaveCount(0);
 });
+
+test('one tap on ✓ marks done, by mouse or keyboard, survives a reload, and can be brought back', async ({ page }) => {
+  await onboard(page, ['Read 1h', 'Call mom 20 min', 'Stretch 15 min']);
+  const rows = page.locator('.timeline .swipe');
+  const first = rows.first();
+  const title = (await first.locator('.tl-title').innerText()).split('\n')[0]!.trim();
+  const done = first.getByRole('button', { name: `Mark ${title} as done` });
+  await expect(done).toBeVisible();
+  // A double tap still counts once.
+  await done.dblclick();
+  await expect(page.locator('.toast')).toContainText('Nice, marked done.');
+  await expect(page.locator('.timeline')).not.toContainText(title);
+  await expect(page.locator('.finished summary')).toHaveText('1 done today');
+
+  // Keyboard: tab to the next ✓ and press Enter.
+  const second = page.locator('.timeline .swipe').first();
+  const title2 = (await second.locator('.tl-title').innerText()).split('\n')[0]!.trim();
+  await second.locator('.tl-card').focus();
+  await page.keyboard.press('Tab');
+  await expect(page.getByRole('button', { name: `Mark ${title2} as done` })).toBeFocused();
+  await page.keyboard.press('Enter');
+  await expect(page.locator('.finished summary')).toHaveText('2 done today');
+
+  await page.reload();
+  await expect(page.locator('.finished summary')).toHaveText('2 done today');
+  await page.locator('.finished summary').click();
+  await page.locator('.finished li', { hasText: title }).getByRole('button', { name: 'Bring back' }).click();
+  await expect(page.locator('main')).toContainText(title);
+  await expect(page.locator('.finished summary')).toHaveText('1 done today');
+});
+
+test('skipping keeps the rest of the day where it was; moving up happens only after a preview and Apply', async ({ page }) => {
+  await onboard(page, ['Study programming 1h after 9am', 'Review notes 1h after 9am', 'Work on a project 1h after 9am']);
+  const times = async () => Object.fromEntries(await page.locator('.next, .timeline .swipe').evaluateAll((els) => els.map((e) => [e.querySelector('.next-title, .tl-title')!.childNodes[0]!.textContent!.trim(), (e.querySelector('.tl-time') ?? e.querySelector('.next-when'))!.textContent!.trim()])));
+  const before = await times();
+  const firstTitle = (await page.locator('.next-title').innerText()).trim();
+
+  // Skip the first: nothing else moves.
+  await page.locator('.next').getByRole('button', { name: 'Skip' }).click();
+  await expect(page.locator('.toast')).toContainText('Skipped. The rest of your day stays as it is.');
+  const afterSkip = await times();
+  for (const [t, at] of Object.entries(afterSkip)) if (t !== firstTitle && before[t] && !/in \d/.test(at)) expect(at).toBe(before[t]);
+
+  // Ignoring the offer changes nothing, even after a reload.
+  await page.reload();
+  await expect(page.locator('.finished summary')).toHaveText('1 skipped today'.replace(/^/, '0 done, '));
+  expect(await times()).toEqual(afterSkip);
+
+  // Ask, look, keep: nothing changes.
+  await page.locator('.finished summary').click();
+  await page.locator('.finished li', { hasText: firstTitle }).getByRole('button', { name: 'Bring back' }).click();
+  await page.locator('.next').getByRole('button', { name: 'Skip' }).click();
+  await page.locator('.toast').getByRole('button', { name: 'Move tasks up' }).click();
+  const sheet = page.getByRole('dialog', { name: 'Suggested schedule adjustment' });
+  await expect(sheet.locator('.moveup-list li').first()).toContainText('→');
+  const listed = await sheet.locator('.moveup-list li').allInnerTexts();
+  await sheet.getByRole('button', { name: 'Keep current schedule' }).click();
+  await expect(sheet).toHaveCount(0);
+  expect(await times()).toEqual(afterSkip);
+
+  // Ask again and apply: exactly what was shown happens.
+  await page.locator('.finished summary').click();
+  await page.locator('.finished li', { hasText: firstTitle }).getByRole('button', { name: 'Bring back' }).click();
+  await page.locator('.next').getByRole('button', { name: 'Skip' }).click();
+  await page.locator('.toast').getByRole('button', { name: 'Move tasks up' }).click();
+  await expect(sheet.locator('.moveup-list li')).toHaveText(listed);
+  await sheet.getByRole('button', { name: 'Apply changes' }).click();
+  await expect(page.locator('.toast')).toContainText(/moved up/);
+  // Exactly what the preview listed: each moved item now starts at its new time (or is happening now).
+  const applied = await times();
+  for (const line of listed) {
+    const [title, change] = line.split(': ') as [string, string];
+    const to = change.split('→')[1]!.trim();
+    expect(applied[title.trim()]).toMatch(new RegExp(`^(${to.replace(/\s/g, '\\s*')}|Now)`));
+  }
+  await page.reload();
+  await expect(page.locator('.next')).toBeVisible();
+  expect(await times()).toEqual(applied);
+});

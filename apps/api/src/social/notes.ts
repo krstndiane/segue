@@ -6,12 +6,13 @@
  * be invited": it records interest and tells the author, nothing more. It
  * never adds anything to anyone's plan.
  */
-import { NOTE_SCOPES, NoteCreateSchema, NoteUpdateSchema, type InterestView, type NoteView, type PublicProfile } from '@segue/schemas';
+import { JoinAcceptSchema, NOTE_SCOPES, NoteCreateSchema, NoteUpdateSchema, type InterestView, type NoteView, type PublicProfile } from '@segue/schemas';
 import { z } from 'zod';
 import type { Db } from '../db';
 import { HttpError } from '../http';
 import { notify, parse, path, type Ctx, type Route } from './core';
 import { blockedBetween, canSeeNote, interestStatus, interestStillVisible, isoReq, likeEscape, profileCols, publicProfile, type Row } from './views';
+import { loadInvitations } from './invitations';
 
 const ListSchema = z.object({
   scope: z.enum(NOTE_SCOPES).default('mine'),
@@ -29,7 +30,7 @@ const NOTE_SELECT = `
   case when n.author_id = $1 then (
     select count(*) from segue.note_interests hi where hi.note_id = n.id and hi.withdrawn_at is null and ${interestStillVisible('n', 'hi')}
   ) end as heart_count,
-  mi.withdrawn_at as mi_withdrawn, inv.status as inv_status, inv.expires_at as inv_expires, mi.id as mi_id
+  mi.withdrawn_at as mi_withdrawn, mi.declined_at as mi_declined, inv.status as inv_status, inv.expires_at as inv_expires, mi.id as mi_id
   from segue.notes n
   join segue.profiles a on a.id = n.author_id
   left join segue.note_interests mi on mi.note_id = n.id and mi.user_id = $1
@@ -49,6 +50,7 @@ function noteView(r: Row, viewer: string, shares?: PublicProfile[]): NoteView {
     updatedAt: isoReq(r.updated_at),
     archived: r.archived_at != null,
     mine,
+    openToJoin: r.open_to_join !== false,
   };
   if (mine) {
     view.pinned = !!r.pinned;
@@ -57,7 +59,7 @@ function noteView(r: Row, viewer: string, shares?: PublicProfile[]): NoteView {
     view.sharedWith = shares ?? [];
   } else {
     view.hearted = r.mi_id != null && r.mi_withdrawn == null;
-    if (r.mi_id != null) view.interest = interestStatus(r.mi_withdrawn, r.inv_status, r.inv_expires);
+    if (r.mi_id != null) view.interest = interestStatus(r.mi_withdrawn, r.inv_status, r.inv_expires, r.mi_declined);
   }
   return view;
 }
@@ -163,10 +165,10 @@ export const noteRoutes: Route[] = [
       const visibility = n.visibility ?? 'private';
       const id = await ctx.db.tx(async (q) => {
         const inserted = await q<{ id: string }>(
-          `insert into segue.notes (author_id, title, body, visibility, on_date, place_name, block_id, pinned, archived_at, client_id)
-           values ($1, $2, $3, $4, $5, $6, $7, $8, case when $9 then now() end, $10)
+          `insert into segue.notes (author_id, title, body, visibility, on_date, place_name, block_id, pinned, archived_at, client_id, open_to_join)
+           values ($1, $2, $3, $4, $5, $6, $7, $8, case when $9 then now() end, $10, $11)
            on conflict (author_id, client_id) do nothing returning id`,
-          [ctx.user.id, n.title, n.body ?? '', visibility, n.onDate ?? null, n.placeName ?? null, n.blockId ?? null, n.pinned ?? false, n.archived ?? false, n.clientId ?? null],
+          [ctx.user.id, n.title, n.body ?? '', visibility, n.onDate ?? null, n.placeName ?? null, n.blockId ?? null, n.pinned ?? false, n.archived ?? false, n.clientId ?? null, n.openToJoin ?? true],
         );
         // A retry of the same create: hand back the note that was already made.
         if (!inserted[0]) {
@@ -209,6 +211,7 @@ export const noteRoutes: Route[] = [
         if (u.placeName !== undefined) set('place_name', u.placeName);
         if (u.blockId !== undefined) set('block_id', u.blockId);
         if (u.pinned !== undefined) set('pinned', u.pinned);
+        if (u.openToJoin !== undefined) set('open_to_join', u.openToJoin);
         if (u.archived !== undefined) sets.push(u.archived ? 'archived_at = coalesce(archived_at, now())' : 'archived_at = null');
         if (sets.length) await q(`update segue.notes set ${sets.join(', ')}, updated_at = now() where id = $1`, params);
         const visibility = u.visibility ?? note.visibility;
@@ -245,10 +248,13 @@ export const noteRoutes: Route[] = [
       ctx.limit('write');
       const [id] = ctx.params as [string];
       await ctx.db.tx(async (q) => {
-        const note = (await q<{ author_id: string; archived_at: unknown }>(`select n.author_id, n.archived_at from segue.notes n where n.id = $2 and ${canSeeNote('n', '$1')}`, [ctx.user.id, id]))[0];
+        const note = (await q<{ author_id: string; archived_at: unknown; open_to_join: boolean }>(`select n.author_id, n.archived_at, n.open_to_join from segue.notes n where n.id = $2 and ${canSeeNote('n', '$1')}`, [ctx.user.id, id]))[0];
         if (!note) throw new HttpError(404, "Couldn't find that note");
-        if (note.author_id === ctx.user.id) throw new HttpError(400, "You can't heart your own note");
+        if (note.author_id === ctx.user.id) throw new HttpError(400, "You can't ask to join your own plan");
         if (note.archived_at) throw new HttpError(409, 'This note is archived');
+        if (!note.open_to_join) throw new HttpError(409, "This plan isn't open to join requests", undefined, {}, 'not_open');
+        const before = (await q<{ declined_at: unknown }>('select declined_at from segue.note_interests where note_id = $1 and user_id = $2', [id, ctx.user.id]))[0];
+        if (before?.declined_at) throw new HttpError(409, 'They said not this time for this plan', undefined, {}, 'not_now');
         // One heart per person per note: a second tap is harmless, and a withdrawn heart comes back.
         await q(
           `insert into segue.note_interests (note_id, user_id) values ($1, $2)
@@ -291,7 +297,7 @@ export const noteRoutes: Route[] = [
       if (!note) throw new HttpError(404, "Couldn't find that note");
       if (note.author_id !== ctx.user.id) throw new HttpError(403, 'Only the person who wrote this note can see who is interested');
       const rows = await ctx.db.query(
-        `select i.id, i.created_at, i.withdrawn_at, i.invitation_id, v.status as inv_status, v.expires_at as inv_expires, ${profileCols('p')}
+        `select i.id, i.created_at, i.withdrawn_at, i.declined_at, i.invitation_id, v.status as inv_status, v.expires_at as inv_expires, ${profileCols('p')}
          from segue.note_interests i
          join segue.notes n on n.id = i.note_id
          join segue.profiles p on p.id = i.user_id
@@ -303,11 +309,88 @@ export const noteRoutes: Route[] = [
       const interests: InterestView[] = rows.map((r) => ({
         id: String(r.id),
         user: publicProfile(r, 'p'),
-        status: interestStatus(r.withdrawn_at, r.inv_status, r.inv_expires),
+        status: interestStatus(r.withdrawn_at, r.inv_status, r.inv_expires, r.declined_at),
         invitationId: (r.invitation_id as string | null) ?? null,
         createdAt: isoReq(r.created_at),
       }));
       return { status: 200, body: { interests } };
+    },
+  },
+  {
+    // "Yes, join me": the author says yes to a request. It becomes a plan you're both in (the person asked, so there's
+    // nothing more for them to accept). It never changes either person's own day.
+    method: 'POST',
+    path: path('/v1/notes/:id/interests/:id/accept'),
+    async handler(ctx) {
+      await ctx.profile();
+      ctx.limit('write');
+      const [id, interestId] = ctx.params as [string, string];
+      const b = parse(JoinAcceptSchema, await ctx.body());
+      const now = ctx.deps.now?.() ?? Date.now();
+      if (b.endsAt && !b.startsAt) throw new HttpError(400, 'Add a start time before an end time');
+      if (b.startsAt && Date.parse(b.startsAt) < now - 60 * 60_000) throw new HttpError(400, 'That time has already passed');
+      if (b.startsAt && b.endsAt && (Date.parse(b.endsAt) <= Date.parse(b.startsAt) || Date.parse(b.endsAt) - Date.parse(b.startsAt) > 24 * 60 * 60_000)) {
+        throw new HttpError(400, 'The end has to be after the start, within a day');
+      }
+      const activityId = await ctx.db.tx(async (q) => {
+        const r = (
+          await q<{ author_id: string; title: string; body: string; place_name: string | null; archived_at: unknown; user_id: string; withdrawn_at: unknown; declined_at: unknown; inv_status: string | null; inv_expires: unknown; can_see: boolean; blocked: boolean }>(
+            `select n.author_id, n.title, n.body, n.place_name, n.archived_at, i.user_id, i.withdrawn_at, i.declined_at,
+                    v.status as inv_status, v.expires_at as inv_expires,
+                    ${canSeeNote('n', 'i.user_id')} as can_see, ${blockedBetween('i.user_id', 'n.author_id')} as blocked
+             from segue.note_interests i join segue.notes n on n.id = i.note_id left join segue.invitations v on v.id = i.invitation_id
+             where n.id = $1 and i.id = $2 for update of i`,
+            [id, interestId],
+          )
+        )[0];
+        if (!r || r.author_id !== ctx.user.id) throw new HttpError(404, "Couldn't find that request");
+        if (r.archived_at) throw new HttpError(409, 'This note is archived');
+        const status = interestStatus(r.withdrawn_at, r.inv_status, r.inv_expires, r.declined_at);
+        if (status === 'accepted' || status === 'invited') throw new HttpError(409, "You've already answered this request", undefined, {}, 'already_answered');
+        if (status !== 'interested') throw new HttpError(409, "This request isn't open any more", undefined, {}, 'not_open');
+        // They must still be allowed to see the plan (sharing can be taken back), and nobody blocked anybody.
+        if (!r.can_see || r.blocked) throw new HttpError(409, "This request isn't open any more", undefined, {}, 'not_open');
+        const act = await q<{ id: string }>(
+          `insert into segue.activities (created_by, title, description, starts_at, ends_at, timezone, place_name, meeting_notes, source_note_id)
+           values ($1, $2, $3, $4, $5, $6, $7, $8, $9) returning id`,
+          [ctx.user.id, r.title, String(r.body).slice(0, 2000), b.startsAt ?? null, b.endsAt ?? null, b.timezone, b.placeName === undefined ? r.place_name : b.placeName, b.meetingNotes ?? '', id],
+        );
+        const inv = await q<{ id: string }>(
+          `insert into segue.invitations (activity_id, sender_id, recipient_id, status, responded_at) values ($1, $2, $3, 'accepted', now()) returning id`,
+          [act[0]!.id, ctx.user.id, r.user_id],
+        );
+        await q('update segue.note_interests set invitation_id = $1, updated_at = now() where id = $2', [inv[0]!.id, interestId]);
+        await notify(q, { recipient: r.user_id, actor: ctx.user.id, type: 'join_accepted', entityType: 'invitation', entityId: inv[0]!.id, dedupe: `join_accepted:${inv[0]!.id}`, pref: 'invitations' });
+        return act[0]!.id;
+      });
+      return { status: 201, body: { invitations: await loadInvitations(ctx.db.query, ctx.user.id, 'v.activity_id = $2', [activityId]) } };
+    },
+  },
+  {
+    // "Not this time": the request is closed and they're told kindly. They can't ask again for this plan.
+    method: 'POST',
+    path: path('/v1/notes/:id/interests/:id/decline'),
+    async handler(ctx) {
+      await ctx.profile();
+      ctx.limit('write');
+      const [id, interestId] = ctx.params as [string, string];
+      await ctx.db.tx(async (q) => {
+        const r = (
+          await q<{ author_id: string; user_id: string; withdrawn_at: unknown; declined_at: unknown; inv_status: string | null; inv_expires: unknown }>(
+            `select n.author_id, i.user_id, i.withdrawn_at, i.declined_at, v.status as inv_status, v.expires_at as inv_expires
+             from segue.note_interests i join segue.notes n on n.id = i.note_id left join segue.invitations v on v.id = i.invitation_id
+             where n.id = $1 and i.id = $2 for update of i`,
+            [id, interestId],
+          )
+        )[0];
+        if (!r || r.author_id !== ctx.user.id) throw new HttpError(404, "Couldn't find that request");
+        const status = interestStatus(r.withdrawn_at, r.inv_status, r.inv_expires, r.declined_at);
+        if (status === 'not_now') return; // already said; a second tap is harmless
+        if (status !== 'interested') throw new HttpError(409, "This request isn't open any more", undefined, {}, 'not_open');
+        await q('update segue.note_interests set declined_at = now(), updated_at = now() where id = $1', [interestId]);
+        await notify(q, { recipient: r.user_id, actor: ctx.user.id, type: 'join_declined', entityType: 'note', entityId: id, dedupe: `join_declined:${interestId}`, pref: 'invitations' });
+      });
+      return { status: 200, body: { declined: true } };
     },
   },
 ];

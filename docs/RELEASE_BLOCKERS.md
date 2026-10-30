@@ -1,12 +1,12 @@
 # Release blockers and issues — 29 October 2026
 
-Status is for the release candidate (`reroute-intelligence`). "Fixed" means fixed in code and covered by the named test, and **not yet deployed**. Full evidence: [DEPLOYMENT_READINESS.md](DEPLOYMENT_READINESS.md), [MAP_AND_REROUTING_AUDIT.md](MAP_AND_REROUTING_AUDIT.md).
+Status as of 30 October 2026: the release (`reroute-intelligence`) is merged (`main` = `c6817f2`) and deployed. "Fixed" means fixed in code, covered by the named test, and live unless noted. Full evidence: [DEPLOYMENT_READINESS.md](DEPLOYMENT_READINESS.md), [MAP_AND_REROUTING_AUDIT.md](MAP_AND_REROUTING_AUDIT.md).
 
 ## P0 — release blockers
 
 | ID | Issue | Status |
 | --- | --- | --- |
-| RB-1 | **The live site serves invented places.** | Fixed in candidate; resolved when deployed |
+| RB-1 | **The live site serves invented places.** | Fixed and verified live on 30 Oct (`source: "osm"` everywhere) |
 | RB-2 | **Public Overpass servers are at capacity, so without mock there'd be no places.** | Fixed |
 | RB-3 | Commitments disappearing on re-route (audit `ENG-1`). | Fixed (audit branch); re-verified |
 
@@ -37,9 +37,10 @@ Status is for the release candidate (`reroute-intelligence`). "Fixed" means fixe
 | RB-6 | Rain options offered two mall walks at the same complex (Glorietta, Glorietta 3), not the 24/7 gym 300 m away | Fixed |
 | RB-7 | Wrong reasons for excluded places | Fixed |
 | RB-8 | Assistant: "Find a gym near me that's open now" described the planned gym instead of searching | Fixed |
-| RB-9 | CI has never run on the candidate | Open |
-| RB-10 | `zod@3.25.76` has advisory GHSA-mrhx-c7xc-m3w5 (HIGH): memory exhaustion from oversized arrays | Open, mitigated |
-| RB-11 | Nominatim search from Render's own network is unverified | Open |
+| RB-9 | CI has never run on the candidate | Fixed: CI green on pull request #2 |
+| RB-10 | `zod@3.25.76` has advisory GHSA-mrhx-c7xc-m3w5 (HIGH): memory exhaustion from oversized arrays | Open, mitigated; shipped with the release |
+| RB-11 | Nominatim search from Render's own network is unverified | Verified live on 30 Oct |
+| RB-22 | Nominatim refused every search with 429 right after deploy (29 Oct), and Segue kept asking | Fix in pull request #3 (back off for `retry-after`, 5–30 min); not merged yet. `NOMINATIM_USER_AGENT` with a contact email still to set |
 
 **RB-4.** Now **503** `places_unavailable` with a plain message, and `/health.placesStatus` shows the failure.
 - *Test:* `api.test.ts` "when no map source answers".
