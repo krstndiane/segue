@@ -45,16 +45,36 @@ async function onboard(page: Page, things: string[]) {
   await expect(page.locator('.next')).toBeVisible();
 }
 
-test('the landing page explains Segue and opens the app', async ({ page }) => {
+test('the landing page explains Segue, shows the rain example on the real planner, and opens the demo or the app', async ({ page }) => {
   // "before 8" means 8 PM in the morning and 8 AM before dawn, so fix the clock.
   await page.clock.setFixedTime(MORNING);
   await page.goto('/');
-  await expect(page.getByRole('heading', { level: 1 })).toContainText('Re-route your day in one tap');
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText('Your day changes. Segue knows what to do next.');
+  // The hero shows the real Today screen on the sample day, and says it's a sample.
+  await expect(page.locator('.lp-preview')).toContainText('Outdoor workout');
+  await expect(page.locator('.lp-preview figcaption')).toHaveText('Segue’s Today screen, on a sample day');
+  // Step 1 is the real plain-words reader.
   await page.locator('#lp-try').fill('Groceries before 8');
   await expect(page.locator('.lp-try-result')).toContainText('Before 8 PM');
-  await page.getByRole('button', { name: 'Storm' }).click();
-  await expect(page.locator('.lp-phone')).toContainText("It's raining");
-  await page.getByRole('link', { name: 'Try it without signing up' }).first().click();
+  // The example: nothing until it rains; then real options that keep Class at 3:30.
+  const example = page.locator('.lp-scenario');
+  await expect(example).toContainText('Press “Make it rain”');
+  await example.getByRole('button', { name: 'Make it rain' }).click();
+  await expect(example).toContainText('Keeps Class at 3:30 PM exactly where it is');
+  await expect(example.locator('.lp-sc-list.after')).toContainText('3:30 PM Class');
+  await expect(example.locator('.lp-sc-list.after')).toContainText('Unchanged');
+  await expect(example).toContainText('Sample scenario');
+  const picks = example.getByRole('radio');
+  expect(await picks.count()).toBeGreaterThanOrEqual(2);
+  await picks.nth(1).click();
+  await expect(picks.nth(1)).toHaveAttribute('aria-checked', 'true');
+  await expect(example.locator('.lp-sc-list.after li').first()).toContainText(/Leaves \d+ min before Class/);
+  // Into the demo, and back; then into the app without an account.
+  await page.getByRole('link', { name: 'See how it works' }).first().click();
+  await expect(page).toHaveURL(/\/demo$/);
+  await expect(page.getByRole('heading', { name: 'This is a planned day in Segue' })).toBeVisible();
+  await page.goto('/');
+  await page.getByRole('link', { name: 'start without signing up' }).first().click();
   await expect(page).toHaveURL(/\/app(\?|$)/);
   await expect(page.getByRole('heading', { name: 'Plan your day around real life' })).toBeVisible();
 });
@@ -164,7 +184,7 @@ test('sign up with Google on the landing page: greeted by name, calendar already
   await fakeGoogle(page);
   await page.clock.setFixedTime(MORNING);
   await page.goto('/');
-  await expect(page.getByRole('link', { name: 'Try it without signing up' }).first()).toBeVisible();
+  await expect(page.getByRole('link', { name: 'start without signing up' }).first()).toBeVisible();
   await page.getByRole('button', { name: 'Continue with Google' }).first().click();
 
   await expect(page).toHaveURL(/\/app(\?|$)/);

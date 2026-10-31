@@ -230,9 +230,10 @@ export function calendarErrorMessage(e: unknown): string {
   const kind = e instanceof CalendarError ? e.kind : 'network';
   switch (kind) {
     case 'cancelled':
-      return 'Google sign-in was closed before it finished. Try again when you are ready.';
+      // Also what happens when Google shows "Access blocked" (an address or account the Google project doesn't allow yet) and the window is closed.
+      return "Google sign-in didn't finish. If Google said “Access blocked”, Segue's Google sign-in isn't open to your account yet. You can still use Segue without Google, or try the demo.";
     case 'denied':
-      return 'Segue needs permission to see your calendar events. Try again and allow access.';
+      return "Google didn't give Segue access to your calendar. Try again and allow access, or use Segue without Google.";
     case 'expired':
       return 'Your Google sign-in has expired. Tap Sync now to sign in again.';
     case 'unavailable':

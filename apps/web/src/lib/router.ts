@@ -17,6 +17,9 @@ const PATHS: Record<Route, string> = {
 
 export const isAppPath = (path: string) => path === '/app' || path.startsWith('/app/');
 
+/** The guided demo with sample data. */
+export const isDemoPath = (path: string) => path.replace(/\/+$/, '') === '/demo';
+
 /** The privacy policy page. */
 export const isPrivacyPath = (path: string) => path.replace(/\/+$/, '') === '/privacy';
 
