@@ -125,6 +125,13 @@ export function refine(o: AlternativesOutcome, change: Partial<Pick<Alternatives
 }
 
 /** Today's plan with the chosen option in place of the item, pinned there. */
+/** What to call the item after a swap to another kind of place: a run that became a gym visit is a workout now. */
+export function titleAfter(option: AlternativeOption, current: string): string {
+  if (option.kind === 'substitute') return option.category === 'gym' ? 'Workout' : option.category === 'mall' ? 'Indoor walk' : current;
+  if (option.kind === 'no-place' && /^Indoor workout/.test(option.label)) return 'Indoor workout';
+  return current;
+}
+
 export function applyAlternative(day: DayState, option: AlternativeOption): DayState {
   if (!day.plan) return day;
   const items: PlanItem[] = day.plan.items
@@ -133,6 +140,7 @@ export function applyAlternative(day: DayState, option: AlternativeOption): DayS
         ? i
         : {
             ...i,
+            title: titleAfter(option, i.title),
             start: option.start,
             end: option.end,
             place: option.place ? { id: option.place.id, name: option.place.name, location: option.place.location, address: option.place.address } : undefined,

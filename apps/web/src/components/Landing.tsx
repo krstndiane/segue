@@ -1,139 +1,142 @@
 import { useEffect, useMemo, useState, type MouseEvent } from 'react';
 import { firstName, loadAccount, signUpWithGoogle, type Account } from '../lib/account';
+import { DEMO_IDS, demoOptions, demoStart } from '../lib/demo';
+import { clock } from '../lib/format';
 import { GOOGLE_CLIENT_ID, calendarErrorMessage, preloadGoogle } from '../lib/googleCalendar';
 import { parseQuickAdd } from '../lib/quickAdd';
 import { enterApp } from '../lib/router';
-import { REASONS } from '../lib/replan';
-import type { SkyCondition } from '../lib/weather';
 import { GoogleButton } from './GoogleButton';
 import { EXAMPLES } from './QuickAdd';
 import { Sky, sceneFor } from './Sky';
+import { Timeline } from './Timeline';
 import '../landing.css';
 
-const SKIES: { id: SkyCondition; label: string }[] = [
-  { id: 'clear', label: 'Sunny' },
-  { id: 'partly-cloudy', label: 'Partly cloudy' },
-  { id: 'cloudy', label: 'Cloudy' },
-  { id: 'fog', label: 'Fog' },
-  { id: 'rain', label: 'Rain' },
-  { id: 'heavy-rain', label: 'Heavy rain' },
-  { id: 'storm', label: 'Storm' },
+const PROBLEMS = [
+  ['It starts raining', 'and your run is outdoors.'],
+  ['A meeting runs late', 'and everything after it is now wrong.'],
+  ['The place is closed', 'or too far to reach before your class.'],
 ];
 
-const STEPS = [
-  {
-    title: "Say what's on today",
-    body: 'Gym 1h after 5pm. Lunch with Ana 12:30 at Greenbelt. Groceries before 8. Type it the way you would text a friend.',
-  },
-  {
-    title: 'Segue fits it together',
-    body: 'It picks a time and a place for each one, checks opening hours and travel, and puts your must-dos first.',
-  },
-  {
-    title: 'Re-route when plans change',
-    body: 'Running late or caught in the rain? One tap rebuilds the rest of the day, and you see what moved before you accept it.',
-  },
-];
+const CONTEXT = ['Your Google Calendar, kept exactly where it is', 'The weather, hour by hour', 'Real places nearby and their listed opening hours', 'Travel time, rush hour included', 'What has to happen before what'];
 
-const FEATURES = [
-  {
-    title: 'The weather outside',
-    body: 'When it rains, outdoor plans move inside and Segue tells you to bring an umbrella. On hot days it says when to wear sunscreen and find shade, and in heavy rain, to drive safely.',
-    icon: 'M7 18h10a4 4 0 0 0 .5-8 5.5 5.5 0 0 0-10.6 1.5A3.3 3.3 0 0 0 7 18zM9 21l1-2M13 21l1-2',
-  },
-  {
-    title: 'Your Google Calendar',
-    body: 'Meetings and classes stay exactly where they are, and Segue plans the gaps between them. It only reads your calendar.',
-    icon: 'M5 6h14v13H5zM5 10h14M9 3v4M15 3v4',
-  },
-  {
-    title: 'Jeepneys, trikes and rush hour',
-    body: 'Travel time includes waiting for a ride, and rides take longer from 7 to 10 AM and 5 to 8 PM on weekdays.',
-    icon: 'M4 16V8a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v8M4 12h16M7 19a1.5 1.5 0 1 0 0-.1M17 19a1.5 1.5 0 1 0 0-.1',
-  },
-  {
-    title: "What's open",
-    body: "Segue checks opening hours before it sends you somewhere, and says so when a place's hours aren't confirmed.",
-    icon: 'M12 7v5l3 2M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18z',
-  },
-  {
-    title: 'A nudge at the right time',
-    body: '"Leave by 1:16 PM." "Still on deep work?" "It\'s raining and your run is outside." Each one comes with the next step.',
-    icon: 'M6 16V11a6 6 0 1 1 12 0v5l2 2H4zM10 21h4',
-  },
-  {
-    title: 'Your usual spots',
-    body: 'Save the café with good Wi-Fi or the gym near home, and Segue picks them whenever they fit.',
-    icon: 'M12 21s-6.5-5.6-6.5-11a6.5 6.5 0 0 1 13 0c0 5.4-6.5 11-6.5 11zM12 12.3a2.3 2.3 0 1 0 0-4.6 2.3 2.3 0 0 0 0 4.6z',
-  },
+const CAPABILITIES: { title: string; body: string }[] = [
+  { title: 'Google Calendar', body: 'Meetings and classes come in as set times that Segue plans around. It only reads your calendar; it never changes it.' },
+  { title: 'Real places nearby', body: 'Gyms, cafés, libraries and parks from OpenStreetMap, with their listed hours. When hours aren’t listed, Segue says so instead of guessing.' },
+  { title: 'Weather-aware', body: 'Outdoor plans get an indoor option or a drier time when the forecast turns. Umbrella and heat reminders when they matter.' },
+  { title: 'One tap to finish', body: 'Tick things off as you go. Skipping one never reshuffles the rest; Segue offers to move things up and waits for your yes.' },
+  { title: 'Together', body: 'Share a plan with the people you choose, let them ask to join, and agree on a time. Private plans stay private.' },
 ];
 
 const PRIVACY = [
-  'Your plans, routines and history are saved on your phone. Signing up with Google keeps your name and calendar on this device too.',
-  'A Segue account is optional. With one, your plans follow you to every device, but never your location or calendar events, and nothing you write is shared unless you choose to.',
-  'Planning works with no signal, using the places from your last connection.',
-  "Your location is sent only when Segue plans your day, looks for other options, checks the weather or names where you are. The weather and name use a spot rounded to about 1 km. Segue's server doesn't save it.",
-  "Google Calendar is read in your browser, and Segue's server never sees your Google sign-in. When you re-route, your event titles and times go to the server so it can plan around them. They aren't saved.",
+  'Your plans are saved on your phone. A Segue account is optional and only syncs your plans between your devices.',
+  'Google Calendar is read in your browser. Segue never writes to it.',
+  'Your location is used to plan and check the weather; the weather uses a spot rounded to about 1 km. The server doesn’t store it.',
 ];
 
-function Icon({ d }: { d: string }) {
+/** The real Today screen on the sample day, at the moment the rain starts. Not interactive here. */
+function TodayPreview() {
+  const s = useMemo(() => ({ ...demoStart(), raining: true }), []);
+  const workout = s.day.plan!.items.find((i) => i.blockId === DEMO_IDS.workout)!;
   return (
-    <svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true">
-      <path d={d} fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
+    <figure className="lp-preview">
+      <div className="lp-phone" inert>
+        <div className="lp-phone-sky rain">
+          <img src="/wordmark-light.svg" alt="" />
+          <span>26° · Rain · {clock(s.now.toISOString())}</span>
+        </div>
+        <div className="lp-phone-app">
+          <Timeline
+            day={s.day}
+            now={s.now}
+            mode="local"
+            calendarEvents={s.calendarEvents}
+            nudges={[{ id: 'rain', kind: 'rain', title: `It's raining, and ${workout.title} is outdoors`, body: 'See options that still leave time for Class.', action: 'options', item: workout, at: 0 }]}
+            adder={null}
+            onOpen={() => {}}
+            onDone={() => {}}
+            onSkip={() => {}}
+            onReopen={() => {}}
+            onReplan={() => {}}
+            onOptions={() => {}}
+            onFillGap={() => {}}
+            onDismissNudge={() => {}}
+          />
+        </div>
+      </div>
+      <figcaption>Segue’s Today screen, on a sample day</figcaption>
+    </figure>
   );
 }
 
-/** A static picture of the app's Today screen. */
-function PhoneMock({ condition }: { condition: SkyCondition }) {
-  const wet = condition === 'rain' || condition === 'heavy-rain' || condition === 'storm';
+/** The core idea, live: the real engine on the sample day, before and after the rain. */
+function Scenario() {
+  const [raining, setRaining] = useState(false);
+  const [pick, setPick] = useState(0);
+  const base = useMemo(() => demoStart(), []);
+  const result = useMemo(() => (raining ? demoOptions({ ...base, raining: true }) : null), [raining, base]);
+  const options = result?.options.filter((o) => o.kind !== 'later').slice(0, 3) ?? [];
+  const o = options[Math.min(pick, options.length - 1)];
+  const workout = base.day.plan!.items.find((i) => i.blockId === DEMO_IDS.workout)!;
+  const t = (iso: string) => clock(iso);
   return (
-    <div className="lp-phone" aria-hidden="true">
-      <div className={`lp-phone-sky ${condition}`}>
-        <img src="/wordmark-light.svg" alt="" />
-        <span>
-          {wet
-            ? '26° · Rain'
-            : condition === 'cloudy'
-              ? '28° · Cloudy'
-              : condition === 'fog'
-                ? '24° · Foggy'
-                : condition === 'partly-cloudy'
-                  ? '30° · Partly cloudy'
-                  : '31° · Clear and sunny'}
-        </span>
-      </div>
-      <div className="lp-phone-body">
-        <div className="lp-phone-input">Add something… e.g. Gym 1h after 5pm</div>
-        {wet && (
-          <div className="lp-phone-nudge">
-            <strong>It's raining: Run is outside</strong>
-            <span>Re-route to move it indoors or to later.</span>
-          </div>
-        )}
-        <div className="lp-phone-next">
-          <span className="lp-phone-time">
-            1:40 <em>PM</em>
-            <small>in 25 min</small>
-          </span>
-          <strong>Coffee and emails</strong>
-          <span>Tasa Café · 12 min walk</span>
-          <span className="lp-phone-open">Open then</span>
-        </div>
-        <ol className="lp-phone-list">
-          <li>
-            <b>3:00 PM</b> Standup <i>Calendar</i>
+    <div className="lp-scenario">
+      <div className="lp-sc-col">
+        <p className="lp-sc-head">Your plan</p>
+        <ol className="lp-sc-list">
+          <li className={raining ? 'hit' : ''}>
+            <b>{t(workout.start)}</b> Outdoor workout <span>Ayala Triangle Gardens</span>
           </li>
-          <li className="gap">1 h 30 min free · Add something</li>
-          <li>
-            <b>5:30 PM</b> {wet ? 'Gym instead of run' : 'Run'} <span>{wet ? 'Pulse Fitness' : 'Ayala Triangle'}</span>
-          </li>
-          <li>
-            <b>7:15 PM</b> Groceries <span>Daily Mart</span>
+          <li className="set">
+            <b>3:30 PM</b> Class <span className="tag">Calendar</span>
           </li>
         </ol>
-        <div className="lp-phone-cta">Re-route from here</div>
+        {!raining ? (
+          <button type="button" className="lp-rain" onClick={() => setRaining(true)}>
+            Make it rain
+          </button>
+        ) : (
+          <p className="lp-sc-alert">
+            <strong>It starts raining.</strong> 90% chance until about 5 PM, and the workout is outdoors.
+          </p>
+        )}
       </div>
+
+      <div className={`lp-sc-col lp-sc-after${raining ? ' on' : ''}`} aria-live="polite">
+        <p className="lp-sc-head">What Segue does</p>
+        {!raining || !o ? (
+          <p className="lp-sc-wait">Press “Make it rain” to see what Segue checks and suggests.</p>
+        ) : (
+          <>
+            <ul className="lp-sc-checks">
+              <li>Sees the workout is outdoors and it’s going to rain</li>
+              <li>Looks for indoor places nearby and checks their listed hours</li>
+              <li>Counts the trip there and the time before Class</li>
+              <li>Keeps Class at 3:30 PM exactly where it is</li>
+            </ul>
+            <div className="lp-sc-pick" role="radiogroup" aria-label="Options Segue found">
+              {options.map((x, i) => (
+                <button key={x.id} type="button" role="radio" aria-checked={i === pick} className={i === pick ? 'on' : ''} onClick={() => setPick(i)}>
+                  {x.label.replace(/ instead$/, '')}
+                </button>
+              ))}
+            </div>
+            <ol className="lp-sc-list after">
+              <li className="changed">
+                <b>{t(o.start)}</b> {o.label.replace(/ instead$/, '')}
+                <span>{o.facts.map((f) => f.text).filter((x) => /Open|Leaves|No trip|min to get/.test(x)).join(' · ')}</span>
+              </li>
+              <li className="set">
+                <b>3:30 PM</b> Class <span>Unchanged</span>
+              </li>
+            </ol>
+            <p className="lp-sc-note">Nothing changes until you choose “Use this”.</p>
+          </>
+        )}
+      </div>
+      <p className="lp-sc-foot">
+        Sample scenario: sample weather and real places from an OpenStreetMap snapshot of Makati, run through Segue’s actual planner.{' '}
+        <a href="/demo">Try the full demo</a>
+      </p>
     </div>
   );
 }
@@ -181,46 +184,45 @@ function openApp(e: MouseEvent) {
   enterApp('');
 }
 
-/** Sign up with Google (connects the calendar), or go in without an account. */
+/** The demo first; then Google (brings in the calendar) or planning without an account. */
 function SignUp({ account, busy, error, onSignUp, place }: { account: Account | null; busy: boolean; error: string | null; onSignUp: () => void; place: 'hero' | 'final' }) {
-  if (account) {
-    return (
-      <div className="lp-ctas">
-        <a className="lp-primary" href="/app" onClick={openApp}>
-          Continue as {firstName(account)}
-        </a>
-      </div>
-    );
-  }
-  if (!GOOGLE_CLIENT_ID) {
-    return (
-      <>
-        <div className="lp-ctas">
-          <a className="lp-primary" href="/app" onClick={openApp}>
-            Plan my day
-          </a>
-          {place === 'hero' && (
-            <a className="lp-secondary" href="#how">
-              See how it works
-            </a>
-          )}
-        </div>
-        {place === 'hero' && <p className="lp-micro">Free. No account needed. Works offline.</p>}
-      </>
-    );
-  }
   return (
     <>
       <div className="lp-ctas">
-        <GoogleButton className="lp-google" busy={busy} onClick={onSignUp} />
-        <a className={place === 'hero' ? 'lp-secondary' : 'lp-secondary dark'} href="/app" onClick={openApp}>
-          Try it without signing up
+        <a className="lp-primary" href="/demo">
+          See how it works
         </a>
+        {account ? (
+          <a className={place === 'hero' ? 'lp-secondary' : 'lp-secondary dark'} href="/app" onClick={openApp}>
+            Continue as {firstName(account)}
+          </a>
+        ) : GOOGLE_CLIENT_ID ? (
+          <GoogleButton className="lp-google" busy={busy} onClick={onSignUp} />
+        ) : (
+          <a className={place === 'hero' ? 'lp-secondary' : 'lp-secondary dark'} href="/app" onClick={openApp}>
+            Start planning
+          </a>
+        )}
       </div>
-      <p className="lp-micro">Free. Signing up with Google brings in your calendar, so Segue plans around your meetings. It only ever reads it.</p>
+      <p className="lp-micro">
+        Free. The demo is a sample day and needs no account.{' '}
+        {GOOGLE_CLIENT_ID && !account && (
+          <>
+            Or{' '}
+            <a href="/app" onClick={openApp}>
+              start without signing up
+            </a>
+            .
+          </>
+        )}
+      </p>
       {error && (
         <p className="lp-error" role="alert">
-          {error}
+          {error}{' '}
+          <a href="/demo">Try the demo</a> ·{' '}
+          <a href="/app" onClick={openApp}>
+            Use Segue without Google
+          </a>
         </p>
       )}
     </>
@@ -269,24 +271,21 @@ export function Landing() {
     }
   }
 
-  const [sky, setSky] = useState<SkyCondition>('clear');
-
   useEffect(() => {
-    document.title = 'Segue · A day planner that re-routes when plans change';
+    document.title = 'Segue · A day planner that adapts when plans change';
   }, []);
 
   return (
     <div className="landing">
       <header className="lp-hero">
-        {/* Always the daytime sky here, so the chips match what you see. */}
-        <Sky scene={sceneFor({ condition: sky })} />
+        <Sky scene={sceneFor({ condition: 'partly-cloudy' })} />
         <nav className="lp-nav" aria-label="Segue">
           <a href="/" className="lp-logo">
             <img src="/wordmark-light.svg" alt="Segue" />
           </a>
           <div className="lp-links">
             <a href="#how">How it works</a>
-            <a href="#features">Features</a>
+            <a href="/demo">Demo</a>
             <a href="#privacy">Privacy</a>
           </div>
           <a className="lp-open" href="/app" onClick={openApp}>
@@ -296,96 +295,96 @@ export function Landing() {
 
         <div className="lp-hero-inner">
           <div className="lp-copy">
-            <h1>Missed the jeep? Café closed? Re-route your day in one tap.</h1>
+            <p className="lp-kicker">A day planner for days that don’t go to plan</p>
+            <h1>Your day changes. Segue knows what to do next.</h1>
             <p className="lp-sub">
-              Tell Segue what you want to get done, the way you'd say it. It finds the time and the place around what's open, the weather, rush hour
-              and your Google Calendar.
+              Tell Segue what you want to get done. It plans around your calendar, the weather, travel time and what’s open. When it rains, a meeting runs
+              late or a place is closed, it suggests a realistic new plan, and you decide.
             </p>
             <SignUp account={account} busy={busy} error={error} onSignUp={() => void signUp()} place="hero" />
-            <div className="lp-sky-switch" role="group" aria-label="Change the sky">
-              <span>The sky follows your weather. Try it:</span>
-              {SKIES.map((s) => (
-                <button key={s.id} type="button" aria-pressed={sky === s.id} className={sky === s.id ? 'on' : ''} onClick={() => setSky(s.id)}>
-                  {s.label}
-                </button>
-              ))}
-            </div>
           </div>
-          <PhoneMock condition={sky} />
+          <TodayPreview />
         </div>
       </header>
 
       <main>
-        <section id="try" className="lp-section lp-try" aria-labelledby="try-title">
-          <div className="lp-split">
-            <div>
-              <p className="lp-eyebrow">Plain words in</p>
-              <h2 id="try-title">Type it the way you'd say it</h2>
-              <p>
-                Segue reads times, how long things take, and the kind of place you need. Anything it doesn't recognize stays in the title, so nothing
-                you typed is lost. Try one.
-              </p>
-            </div>
-            <TryIt />
-          </div>
+        <section className="lp-section lp-problem" aria-labelledby="problem-title">
+          <p className="lp-eyebrow">The problem</p>
+          <h2 id="problem-title">You planned your day. Then the day happened.</h2>
+          <ul className="lp-problems">
+            {PROBLEMS.map(([a, b]) => (
+              <li key={a}>
+                <strong>{a}</strong> {b}
+              </li>
+            ))}
+          </ul>
+          <p className="lp-big">
+            A calendar keeps your plan. It doesn’t tell you what to do when the plan stops working. That’s the part Segue is for.
+          </p>
         </section>
 
         <section id="how" className="lp-section" aria-labelledby="how-title">
           <p className="lp-eyebrow">How it works</p>
-          <h2 id="how-title">From a list in your head to a plan you can follow</h2>
-          <ol className="lp-steps">
-            {STEPS.map((s, i) => (
-              <li key={s.title}>
-                <span className="lp-step-n">{i + 1}</span>
-                <h3>{s.title}</h3>
-                <p>{s.body}</p>
-              </li>
-            ))}
+          <h2 id="how-title">Three steps, and the third is the point</h2>
+          <ol className="lp-how">
+            <li>
+              <span className="lp-step-n">01</span>
+              <div>
+                <h3>Plan your day</h3>
+                <p>Type what you want to do the way you’d say it. Segue reads the time, how long it takes and the kind of place you need. Try one:</p>
+                <TryIt />
+              </div>
+            </li>
+            <li>
+              <span className="lp-step-n">02</span>
+              <div>
+                <h3>Segue works around your day</h3>
+                <p>It finds a time and a place for each thing, checking:</p>
+                <ul className="lp-checks">
+                  {CONTEXT.map((c) => (
+                    <li key={c}>{c}</li>
+                  ))}
+                </ul>
+              </div>
+            </li>
+            <li>
+              <span className="lp-step-n">03</span>
+              <div>
+                <h3>Adapt when something changes</h3>
+                <p>
+                  When rain, a late meeting or a closed door gets in the way, Segue offers realistic alternatives for the part of your day that’s affected. You see
+                  what would change, and nothing moves until you say yes.
+                </p>
+              </div>
+            </li>
           </ol>
         </section>
 
-        <section id="reasons" className="lp-section lp-reasons" aria-labelledby="reasons-title">
-          <div className="lp-split">
-            <div>
-              <p className="lp-eyebrow">When the day goes sideways</p>
-              <h2 id="reasons-title">Tell it what happened</h2>
-              <p>
-                Tap Re-route and Segue plans from where you are now. If you say why, it knows what to change. You always see the new plan before it
-                replaces the old one, and you can undo it.
-              </p>
-            </div>
-            <ul className="lp-reason-list">
-              {REASONS.map((r) => (
-                <li key={r.id}>
-                  <span className="chip on">{r.label}</span>
-                  <span>{r.hint}</span>
-                </li>
-              ))}
-            </ul>
-          </div>
+        <section id="example" className="lp-section lp-example" aria-labelledby="example-title">
+          <p className="lp-eyebrow">See the difference</p>
+          <h2 id="example-title">A workout at 2, class at 3:30, and then it rains</h2>
+          <p className="lp-lead">Press the button. Segue’s real planner works out what still fits.</p>
+          <Scenario />
         </section>
 
         <section id="features" className="lp-section" aria-labelledby="features-title">
-          <p className="lp-eyebrow">What it plans around</p>
-          <h2 id="features-title">The things that usually wreck a plan</h2>
-          <ul className="lp-features">
-            {FEATURES.map((f) => (
-              <li key={f.title}>
-                <span className="lp-feature-icon">
-                  <Icon d={f.icon} />
-                </span>
-                <h3>{f.title}</h3>
-                <p>{f.body}</p>
-              </li>
+          <p className="lp-eyebrow">What’s inside</p>
+          <h2 id="features-title">Built around one idea: a plan that keeps up with you</h2>
+          <dl className="lp-caps">
+            {CAPABILITIES.map((c) => (
+              <div key={c.title}>
+                <dt>{c.title}</dt>
+                <dd>{c.body}</dd>
+              </div>
             ))}
-          </ul>
+          </dl>
         </section>
 
         <section id="privacy" className="lp-section lp-privacy" aria-labelledby="privacy-title">
           <div className="lp-split">
             <div>
               <p className="lp-eyebrow">Privacy</p>
-              <h2 id="privacy-title">Your day stays on your phone</h2>
+              <h2 id="privacy-title">Your day stays yours</h2>
             </div>
             <ul className="lp-checks">
               {PRIVACY.map((p) => (
@@ -400,12 +399,8 @@ export function Landing() {
 
         <section className="lp-final" aria-labelledby="final-title">
           <img src="/icon.svg" alt="" width="88" height="88" />
-          <h2 id="final-title">Start with what's on today</h2>
-          <p>
-            {GOOGLE_CLIENT_ID && !account
-              ? 'Sign up with Google and your meetings are already in your plan. Add it to your home screen and it opens like an app.'
-              : 'Add a few things, and Segue plans the rest of your day. Add it to your home screen and it opens like an app.'}
-          </p>
+          <h2 id="final-title">See a day go sideways, and how Segue handles it</h2>
+          <p>The demo takes about a minute. Then plan your own day, with or without your Google Calendar.</p>
           <SignUp account={account} busy={busy} error={error} onSignUp={() => void signUp()} place="final" />
         </section>
       </main>
@@ -418,17 +413,16 @@ export function Landing() {
               <img src="/wordmark.svg" alt="Segue" className="lp-footer-mark" />
             </picture>
             <p>
-              <em>Segue</em> (n.): in music, moving from one piece into the next without a pause. A day planner that
-              re-routes itself when life goes off-script.
+              <em>Segue</em> (n.): in music, moving from one piece into the next without a pause. A day planner that adapts when your day changes.
             </p>
           </div>
 
           <nav className="lp-footer-col" aria-labelledby="ft-explore">
             <h2 id="ft-explore">Explore</h2>
             <ul>
-              <li><a href="#try">Try it</a></li>
+              <li><a href="/demo">Demo</a></li>
               <li><a href="#how">How it works</a></li>
-              <li><a href="#reasons">Re-route with a reason</a></li>
+              <li><a href="#example">The rain example</a></li>
               <li><a href="#features">Features</a></li>
             </ul>
           </nav>
