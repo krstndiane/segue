@@ -17,7 +17,7 @@ import {
   type DayArchive,
 } from '../lib/days';
 import { clock, duration, minutesBetween } from '../lib/format';
-import { CATEGORY_LABEL, todayAt, type DayState, type StoredBlock } from '../lib/model';
+import { CATEGORY_LABEL, plannedToday, todayAt, type DayState, type StoredBlock } from '../lib/model';
 
 /** What a day holds, for the dots under its number. */
 export interface DayMarks {
@@ -265,7 +265,7 @@ export function DaysPage(props: Props) {
   const events = isToday ? props.todayEvents : props.events[selected];
   const loadedHere = isToday || selected in props.events;
   const ahead = oneOffsOn(blocks, selected);
-  const routineCount = blocks.filter((b) => !b.date && b.active).length;
+  const routineCount = blocks.filter((b) => !b.date && plannedToday(b, selected)).length;
   const past = archive[selected];
   const finished = new Set([...day.doneIds, ...day.skippedIds]);
 
@@ -339,7 +339,7 @@ export function DaysPage(props: Props) {
 
         <h4 className="sub-title">From Google Calendar</h4>
         {!connected ? (
-          <p className="muted small">Connect Google Calendar to see your meetings and classes here. Segue only reads them.</p>
+          <p className="muted small">Connect your calendar or add your first commitment. Segue only reads your Google Calendar, never changes it.</p>
         ) : !loadedHere ? (
           <p className="muted small">
             Not loaded yet.{' '}

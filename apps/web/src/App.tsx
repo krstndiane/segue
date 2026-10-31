@@ -20,10 +20,11 @@ import { ReplanSheet } from './components/ReplanSheet';
 import { MoveUpSheet } from './components/MoveUpSheet';
 import { SettingsSheet } from './components/SettingsSheet';
 import { LocationBanner } from './components/LocationBanner';
-import { SkyHeader, type View } from './components/SkyHeader';
+import { SkyHeader } from './components/SkyHeader';
 import { Timeline } from './components/Timeline';
 import { CalendarNotice } from './components/CalendarNotice';
 import { TogetherCard, TogetherPage, type TogetherTab } from './components/together/TogetherPage';
+import { BottomNav } from './components/BottomNav';
 import { useAccount } from './lib/useAccount';
 import { useSync } from './lib/useSync';
 import { useTogether } from './lib/useTogether';
@@ -61,8 +62,9 @@ import { toneAt } from './lib/skyRenderer';
 import { BUSY_BLOCK_ID, adjustFor, type ReplanReason } from './lib/replan';
 import { API_URL, rerouteDay, trustedPlaces, type RerouteOutcome } from './lib/reroute';
 import { applyAlternative, findAlternatives, forecastFromSky, refine, type AlternativesOutcome } from './lib/alternatives';
-import { navigate, useRoute } from './lib/router';
-import { DEFAULT_LOCATION, DEFAULT_SETTINGS, SEED_BLOCKS } from './lib/seed';
+import { navigate, useRoute, type Route } from './lib/router';
+import { postpone } from './lib/postpone';
+import { DEFAULT_LOCATION, DEFAULT_SETTINGS } from './lib/seed';
 import { clearAll, getItem } from './lib/store';
 import { useCalendar } from './lib/useCalendar';
 import { askNotificationPermission, useReminders } from './lib/useReminders';
@@ -111,7 +113,7 @@ export function App() {
   const [undoStack, setUndoStack] = useState<DayState[]>([]);
   const route = useRoute();
   // Where Back on the calendar screen returns to.
-  const lastRoute = useRef<View>('today');
+  const lastRoute = useRef<Route>('today');
   useEffect(() => {
     if (route !== 'calendar') lastRoute.current = route;
   }, [route]);
@@ -437,6 +439,29 @@ export function App() {
       });
     }
     navigator.vibrate?.(8);
+  }
+
+  /** "Move to tomorrow" (one-offs) or "Not today" (routines). Nothing else in today's plan moves. */
+  function postponeItem(id: string) {
+    const r = postpone(blocks, day, id, new Date());
+    if (!r) return;
+    const title = itemById(id)?.title ?? blocks.find((b) => b.id === id)?.title ?? 'It';
+    const before = blocks;
+    const dayBefore = day;
+    setBlocks(r.blocks);
+    changeDay(() => r.day);
+    setSheet(null);
+    setToast({
+      text: r.kind === 'moved' ? `${title} moved to tomorrow. Nothing else changed.` : `${title} is left out today. It's back tomorrow.`,
+      action: {
+        label: 'Undo',
+        run: () => {
+          setBlocks(before);
+          setDay(dayBefore);
+          setToast({ text: 'Undone.' });
+        },
+      },
+    });
   }
 
   /** Bring a done or skipped item back to the plan, where it was. */
@@ -798,17 +823,15 @@ export function App() {
     <SkyHeader
       sky={sky}
       now={now}
-      view={route === 'calendar' ? lastRoute.current : route}
-      onView={(r) => navigate(r)}
       location={status}
       onSettings={() => setSheet({ kind: 'settings' })}
       onAssistant={ASSISTANT_ENABLED && settings.onboarded ? () => setAssistantOpen(true) : undefined}
       tempUnit={settings.tempUnit ?? 'C'}
       showNav={!!settings.onboarded}
-      together={me.enabled}
-      badge={together.unread + together.waiting.filter((i) => !together.notifications.some((n) => !n.readAt && n.entityId === i.id)).length}
     />
   );
+
+  const togetherBadge = together.unread + together.waiting.filter((i) => !together.notifications.some((n) => !n.readAt && n.entityId === i.id)).length;
 
   const eventsOn = (date: string) => (date === today ? calendarEvents : (cal.days.days[date] ?? []));
 
@@ -869,10 +892,6 @@ export function App() {
             onRemove={(id) => setBlocks((list) => list.filter((b) => b.id !== id))}
             calendar={GOOGLE_CLIENT_ID ? calendarCard : null}
             calendarConnected={cal.calendar.connected}
-            onExampleDay={() => {
-              setBlocks((list) => [...list, ...SEED_BLOCKS.filter((s) => !list.some((b) => b.id === s.id))]);
-              setSettings((s) => ({ ...s, onboarded: true }));
-            }}
             onFinish={() => setSettings((s) => ({ ...s, onboarded: true }))}
             account={
               me.enabled && me.state === 'signed-out' ? (
@@ -1083,6 +1102,8 @@ export function App() {
           )}
         </main>
 
+        <BottomNav route={route} together={me.enabled} badge={togetherBadge} onGo={(r) => navigate(r)} />
+
         {(route === 'today' || route === 'routines') && (
         <div className="dock">
           <button type="button" className="reroute" disabled={replanBusy} onClick={() => void replan(null)}>
@@ -1159,6 +1180,7 @@ export function App() {
             onClose={() => setSheet(null)}
             onDone={() => mark('doneIds', openItem.blockId)}
             onSkip={() => mark('skippedIds', openItem.blockId)}
+            onPostpone={blocks.some((b) => b.id === openItem.blockId) ? () => postponeItem(openItem.blockId) : undefined}
             onTogglePin={() => toggleLock(openItem.blockId)}
             onMove={(t) => moveItem(openItem.blockId, t)}
             onUseFallback={(f) => useFallback(openItem.blockId, f)}

@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import type { Energy, PlaceCategory, Priority, Requirement, TimePref } from '@segue/engine';
 import { duration } from '../lib/format';
-import { CATEGORY_LABEL, PRIORITY_LABEL, REQUIREMENT_LABEL, localDate, newId, type StoredBlock } from '../lib/model';
+import { CATEGORY_LABEL, PRIORITY_LABEL, REQUIREMENT_LABEL, WEEKDAY_SHORT, localDate, newId, repeatLabel, type StoredBlock } from '../lib/model';
 import { Segmented, Sheet } from './Sheet';
 
 function BlockRow({ b, onEdit, onToggle }: { b: StoredBlock; onEdit: (id: string) => void; onToggle: (id: string) => void }) {
@@ -10,6 +10,7 @@ function BlockRow({ b, onEdit, onToggle }: { b: StoredBlock; onEdit: (id: string
       <button type="button" className="block-main" onClick={() => onEdit(b.id)}>
         <span className="stave-title">{b.title}</span>
         <span className="stave-sub">
+          {!b.date && b.days?.length && b.days.length < 7 ? `${repeatLabel(b.days)} · ` : ''}
           {b.fixedStart ? `${b.fixedStart}–${b.fixedEnd}` : duration(b.maxMinutes)} · {CATEGORY_LABEL[b.category]}
           {b.priority !== 'should' && ` · ${PRIORITY_LABEL[b.priority]}`}
         </span>
@@ -41,7 +42,7 @@ export function RoutinesView({
   const routines = blocks.filter((b) => !b.date);
   return (
     <>
-      <p className="muted intro">Routines repeat every day; switch one off to skip it for a while. Segue finds the time and place each time you re-route.</p>
+      <p className="muted intro">Routines repeat on the days you choose. Switch one off to pause it; switch it back on to resume. Segue finds the time and place each day.</p>
       {oneOffs.length > 0 && (
         <section aria-label="Today only">
           <h3 className="section-title">Today only</h3>
@@ -52,10 +53,13 @@ export function RoutinesView({
           </ul>
         </section>
       )}
-      <section aria-label="Every day">
-        <h3 className="section-title">Every day</h3>
+      <section aria-label="Routines">
+        <h3 className="section-title">Routines</h3>
         {routines.length === 0 ? (
-          <p className="muted small">No routines yet. Add the things you do most days, like a workout or deep work.</p>
+          <div className="empty-state">
+            <p>Build a routine around something you want to do regularly.</p>
+            <p className="muted small">A morning read, a workout on weekdays, a weekly call home: Segue fits it into each of those days.</p>
+          </div>
         ) : (
           <ul className="blocks">
             {routines.map((b) => (
@@ -145,9 +149,39 @@ export function BlockForm({
           onChange={(v) => set({ date: v === 'today' ? localDate() : undefined })}
           options={[
             { value: 'today', label: 'Today only' },
-            { value: 'daily', label: 'Every day' },
+            { value: 'daily', label: 'Repeats' },
           ]}
         />
+
+        {!b.date && (
+          <fieldset className="field repeat-days">
+            <legend>
+              On <span className="muted">· {repeatLabel(b.days)}</span>
+            </legend>
+            <div className="chips">
+              {[1, 2, 3, 4, 5, 6, 0].map((d) => {
+                const all = b.days?.length ? b.days : [0, 1, 2, 3, 4, 5, 6];
+                const on = all.includes(d);
+                return (
+                  <button
+                    key={d}
+                    type="button"
+                    className={`chip${on ? ' on' : ''}`}
+                    aria-pressed={on}
+                    // A routine repeats on at least one day.
+                    disabled={on && all.length === 1}
+                    onClick={() => {
+                      const next = on ? all.filter((x) => x !== d) : [...all, d];
+                      set({ days: next.length === 7 ? undefined : next.sort() });
+                    }}
+                  >
+                    {WEEKDAY_SHORT[d]}
+                  </button>
+                );
+              })}
+            </div>
+          </fieldset>
+        )}
 
         <Segmented
           label="How important"

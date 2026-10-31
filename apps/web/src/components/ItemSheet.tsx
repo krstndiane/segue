@@ -15,6 +15,8 @@ interface Props {
   onClose: () => void;
   onDone: () => void;
   onSkip: () => void;
+  /** one-offs move to tomorrow; routines are left out today (missing for calendar events) */
+  onPostpone?: () => void;
   onTogglePin: () => void;
   onMove: (hhmm: string) => void;
   onUseFallback: (f: FallbackOption) => void;
@@ -132,6 +134,11 @@ export function ItemSheet(props: Props) {
           <button type="button" className="ghost tall" onClick={props.onSkip}>
             Skip today
           </button>
+          {props.onPostpone && (
+            <button type="button" className="ghost tall" onClick={props.onPostpone}>
+              {props.block?.date ? 'Move to tomorrow' : 'Not today'}
+            </button>
+          )}
           {directions && (
             <a className="ghost tall" href={directions} target="_blank" rel="noreferrer">
               Directions

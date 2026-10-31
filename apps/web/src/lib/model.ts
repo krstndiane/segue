@@ -35,8 +35,10 @@ export interface StoredBlock {
   fallback?: string;
   /** false = paused, not planned */
   active: boolean;
-  /** Local "YYYY-MM-DD" for a one-off: planned that day only. Missing = a routine that repeats every day. */
+  /** Local "YYYY-MM-DD" for a one-off: planned that day only. Missing = a routine. */
   date?: string;
+  /** A routine's days of the week, 0 = Sunday. Missing (or all seven) = every day. */
+  days?: number[];
 }
 
 export interface Settings {
@@ -168,9 +170,33 @@ export function toEngineBlock(b: StoredBlock, now = new Date()): Block {
   return block;
 }
 
-/** Blocks that count today: routines, plus one-offs dated today. */
+/** Day of the week (0 = Sunday) of a local "YYYY-MM-DD". */
+export function weekdayOf(date: string): number {
+  const [y, m, d] = date.split('-').map(Number);
+  return new Date(y!, m! - 1, d!).getDay();
+}
+
+/** Does this routine repeat on that date? (One-offs: only on their own date.) */
+export function repeatsOn(b: StoredBlock, date: string): boolean {
+  if (b.date) return b.date === date;
+  return !b.days || b.days.length === 0 || b.days.includes(weekdayOf(date));
+}
+
+/** Blocks that count on a date: routines that repeat that day, plus one-offs dated that day. Paused ones don't. */
 export function plannedToday(b: StoredBlock, date: string): boolean {
-  return b.active && (!b.date || b.date === date);
+  return b.active && repeatsOn(b, date);
+}
+
+export const WEEKDAY_SHORT = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'] as const;
+
+/** "Every day", "Weekdays", "Weekends" or "Mon, Wed, Fri". */
+export function repeatLabel(days: number[] | undefined): string {
+  const set = [...new Set(days ?? [])].sort();
+  if (set.length === 0 || set.length === 7) return 'Every day';
+  if (set.join() === '1,2,3,4,5') return 'Weekdays';
+  if (set.join() === '0,6') return 'Weekends';
+  // Monday first, the way most calendars here read.
+  return [1, 2, 3, 4, 5, 6, 0].filter((d) => set.includes(d)).map((d) => WEEKDAY_SHORT[d]).join(', ');
 }
 
 /** A saved favourite place: preferred whenever a block needs that kind of place. */

@@ -7,6 +7,7 @@ import {
   ENERGY_LABEL,
   MODE_LABEL,
   PRIORITY_LABEL,
+  repeatsOn,
   todayAt,
   type DayState,
   type Settings,
@@ -63,7 +64,8 @@ function fixedPoints(events: CalendarEvent[], blocks: StoredBlock[], now: Date):
 export function PlanPage(props: Props) {
   const { now, today, day, blocks, settings, excluded } = props;
   const oneOffs = blocks.filter((b) => b.date === today);
-  const routines = blocks.filter((b) => !b.date);
+  // Routines that repeat today (a weekdays-only routine isn't part of a Saturday).
+  const routines = blocks.filter((b) => !b.date && repeatsOn(b, today));
   const inToday = [...oneOffs.filter((b) => b.active), ...routines.filter((b) => b.active && !excluded.has(b.id))];
   const events = props.calendarEvents.filter((e) => !excluded.has(calendarBlockId(e.id)));
 
@@ -242,7 +244,7 @@ export function PlanPage(props: Props) {
 
         <h4 className="sub-title">Routines</h4>
         {routines.length === 0 ? (
-          <p className="muted small">No routines yet. Add things you do most days in Routines.</p>
+          <p className="muted small">{blocks.some((b) => !b.date) ? 'None of your routines repeat today.' : 'No routines yet. Add things you do regularly in Routines.'}</p>
         ) : (
           <ul className="pick-list">
             {routines.map((b) => {
@@ -270,7 +272,7 @@ export function PlanPage(props: Props) {
       <div className="plan-bar">
         <p className={tooMuch ? 'plan-sum warn-text' : 'plan-sum'}>
           {count === 0
-            ? 'Add something to plan.'
+            ? 'Start with something you want to get done.'
             : `${count} ${count === 1 ? 'thing' : 'things'} · about ${duration(Math.max(5, wanted))} of ${duration(available)} left`}
           {tooMuch && count > 0 && <span className="block small">More than fits. Must-dos go first.</span>}
         </p>

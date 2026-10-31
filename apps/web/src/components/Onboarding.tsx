@@ -19,7 +19,6 @@ interface Props {
   /** the Google Calendar card, when it's set up */
   calendar: ReactNode;
   calendarConnected: boolean;
-  onExampleDay: () => void;
   onFinish: () => void;
   /** "Already have a Segue account? Sign in" */
   account?: ReactNode;
@@ -148,10 +147,13 @@ export function Onboarding(props: Props) {
             <button type="button" className="text-button" onClick={() => setStep(1)}>
               Back
             </button>
-            <button type="button" className="text-button" onClick={props.onExampleDay}>
-              Try an example day
+            <button type="button" className="text-button" onClick={props.onFinish}>
+              Skip for now
             </button>
           </div>
+          <p className="muted small center">
+            Want to see Segue handle a busy day first? <a href="/demo">Watch a sample day</a> (it doesn&apos;t touch your plans).
+          </p>
         </section>
       )}
     </div>
