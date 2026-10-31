@@ -60,7 +60,7 @@ describe.skipIf(!DB_URL)('accounts and social (Postgres)', () => {
   beforeAll(async () => {
     db = connect({ url: DB_URL!, ssl: 'off', max: 4 });
     await db.query('drop schema if exists segue cascade');
-    expect(await migrate(db)).toEqual(['001_accounts_notes_invitations', '002_profile_settings_connections', '003_username_rules', '004_google_calendar_sync', '005_join_requests', '006_today_progress']);
+    expect(await migrate(db)).toEqual(['001_accounts_notes_invitations', '002_profile_settings_connections', '003_username_rules', '004_google_calendar_sync', '005_join_requests', '006_today_progress', '007_plan_times_and_request_messages']);
     expect(await migrate(db)).toEqual([]);
     server = createServer(
       createApp({
@@ -531,10 +531,11 @@ describe.skipIf(!DB_URL)('accounts and social (Postgres)', () => {
   });
 
   it('rolls back and re-applies the migrations', async () => {
+    expect(await rollback(db)).toBe('007_plan_times_and_request_messages');
     expect(await rollback(db)).toBe('006_today_progress');
     expect(await rollback(db)).toBe('005_join_requests');
     expect(await rollback(db)).toBe('004_google_calendar_sync');
-    expect(await migrate(db)).toEqual(['004_google_calendar_sync', '005_join_requests', '006_today_progress']);
+    expect(await migrate(db)).toEqual(['004_google_calendar_sync', '005_join_requests', '006_today_progress', '007_plan_times_and_request_messages']);
   });
 });
 

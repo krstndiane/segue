@@ -22,9 +22,9 @@ function words(type: NotificationType, who: string, title: string | null): strin
   const t = quote(title);
   switch (type) {
     case 'note_hearted':
-      return `${who} would like to join ${t}. Invite them when you're ready.`;
+      return `${who} asked to join ${t}. Say yes or not this time in Requests.`;
     case 'note_shared':
-      return `${who} shared a note with you: ${t}.`;
+      return `${who} shared a plan with you: ${t}.`;
     case 'invitation_received':
       return `${who} invited you to ${t}.`;
     case 'invitation_accepted':

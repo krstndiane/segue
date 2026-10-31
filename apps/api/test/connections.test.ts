@@ -302,6 +302,60 @@ describe.skipIf(!DB_URL)('profiles, connections and blocks (Postgres)', () => {
     });
   });
 
+  describe('shared plans with a time, and join requests with a message', () => {
+    it('keeps a plan’s time, checks its order, and clears the end with the start', async () => {
+      const a = await person('tim');
+      const bad = await a.as('POST', '/v1/notes', { title: 'Study', onDate: '2026-11-07', startTime: '16:00', endTime: '14:00' });
+      expect(bad.status).toBe(400);
+      expect((await a.as('POST', '/v1/notes', { title: 'Study', endTime: '14:00' })).status).toBe(400);
+      const note = (await a.as('POST', '/v1/notes', { title: 'Study', onDate: '2026-11-07', startTime: '14:00', endTime: '16:00', visibility: 'discoverable' })).body.note;
+      expect([note.startTime, note.endTime]).toEqual(['14:00', '16:00']);
+      const moved = (await a.as('PATCH', `/v1/notes/${note.id}`, { startTime: '15:00', endTime: '17:30' })).body.note;
+      expect([moved.startTime, moved.endTime]).toEqual(['15:00', '17:30']);
+      const cleared = (await a.as('PATCH', `/v1/notes/${note.id}`, { startTime: null })).body.note;
+      expect([cleared.startTime, cleared.endTime]).toEqual([null, null]);
+    });
+
+    it('carries a message to the author only, prevents duplicates, can be taken back, and counts who is going', async () => {
+      const a = await person('own');
+      const b = await person('ask');
+      const c = await person('see');
+      await connect2(a, b);
+      await connect2(a, c);
+      const note = (await a.as('POST', '/v1/notes', { title: 'Run', visibility: 'selected', shareWith: [b.id, c.id], onDate: '2026-11-07', startTime: '07:00' })).body.note;
+
+      expect((await b.as('POST', `/v1/notes/${note.id}/heart`, { message: 'I can bring water' })).status).toBe(200);
+      // Asking twice is one request, not two; the author is told once.
+      expect((await b.as('POST', `/v1/notes/${note.id}/heart`)).status).toBe(200);
+      const asked = (await a.as('GET', `/v1/notes/${note.id}/interests`)).body.interests;
+      expect(asked).toHaveLength(1);
+      expect(asked[0].message).toBe('I can bring water');
+      expect((await a.as('GET', '/v1/notifications')).body.notifications.filter((n: any) => n.type === 'note_hearted')).toHaveLength(1);
+      // Nobody else sees the request or its message.
+      expect((await c.as('GET', `/v1/notes/${note.id}/interests`)).status).toBe(403);
+      const seenByC = (await c.as('GET', `/v1/notes/${note.id}`)).body.note;
+      expect(seenByC.heartCount).toBeUndefined();
+      expect(seenByC.goingCount).toBeUndefined();
+      expect(JSON.stringify(seenByC)).not.toContain('bring water');
+      // Too long a message is refused.
+      expect((await c.as('POST', `/v1/notes/${note.id}/heart`, { message: 'x'.repeat(281) })).status).toBe(400);
+
+      // Yes: b is going, and the author sees the count.
+      const yes = await a.as('POST', `/v1/notes/${note.id}/interests/${asked[0].id}/accept`, { timezone: 'UTC' });
+      expect(yes.status).toBe(201);
+      const mine = (await a.as('GET', `/v1/notes/${note.id}`)).body.note;
+      expect([mine.heartCount, mine.goingCount, mine.pendingCount]).toEqual([1, 1, 0]);
+      expect((await b.as('GET', `/v1/notes/${note.id}`)).body.note.interest).toBe('accepted');
+
+      // c asks and takes it back: no longer listed for the author.
+      await c.as('POST', `/v1/notes/${note.id}/heart`, { message: 'Maybe?' });
+      expect((await a.as('GET', `/v1/notes/${note.id}/interests`)).body.interests).toHaveLength(2);
+      expect((await a.as('GET', `/v1/notes/${note.id}`)).body.note.pendingCount).toBe(1);
+      await c.as('DELETE', `/v1/notes/${note.id}/heart`);
+      expect((await a.as('GET', `/v1/notes/${note.id}/interests`)).body.interests.map((i: any) => i.user.id)).toEqual([b.id]);
+    });
+  });
+
   describe('blocking', () => {
     it('removes everything between two people and hides each from the other', async () => {
       const a = await person('blk');

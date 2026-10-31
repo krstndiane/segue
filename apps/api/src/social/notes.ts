@@ -6,7 +6,7 @@
  * be invited": it records interest and tells the author, nothing more. It
  * never adds anything to anyone's plan.
  */
-import { JoinAcceptSchema, NOTE_SCOPES, NoteCreateSchema, NoteUpdateSchema, type InterestView, type NoteView, type PublicProfile } from '@segue/schemas';
+import { JoinAcceptSchema, JoinRequestSchema, NOTE_SCOPES, NoteCreateSchema, NoteUpdateSchema, type InterestView, type NoteView, type PublicProfile } from '@segue/schemas';
 import { z } from 'zod';
 import type { Db } from '../db';
 import { HttpError } from '../http';
@@ -30,6 +30,14 @@ const NOTE_SELECT = `
   case when n.author_id = $1 then (
     select count(*) from segue.note_interests hi where hi.note_id = n.id and hi.withdrawn_at is null and ${interestStillVisible('n', 'hi')}
   ) end as heart_count,
+  case when n.author_id = $1 then (
+    select count(*) from segue.note_interests gi join segue.invitations gv on gv.id = gi.invitation_id
+    where gi.note_id = n.id and gi.withdrawn_at is null and gv.status = 'accepted'
+  ) end as going_count,
+  case when n.author_id = $1 then (
+    select count(*) from segue.note_interests pi where pi.note_id = n.id and pi.withdrawn_at is null and pi.declined_at is null
+      and pi.invitation_id is null and ${interestStillVisible('n', 'pi')}
+  ) end as pending_count,
   mi.withdrawn_at as mi_withdrawn, mi.declined_at as mi_declined, inv.status as inv_status, inv.expires_at as inv_expires, mi.id as mi_id
   from segue.notes n
   join segue.profiles a on a.id = n.author_id
@@ -45,6 +53,8 @@ function noteView(r: Row, viewer: string, shares?: PublicProfile[]): NoteView {
     body: String(r.body),
     visibility: r.visibility as NoteView['visibility'],
     onDate: (r.on_date as string | null) ?? null,
+    startTime: (r.start_time as string | null) ?? null,
+    endTime: (r.end_time as string | null) ?? null,
     placeName: (r.place_name as string | null) ?? null,
     createdAt: isoReq(r.created_at),
     updatedAt: isoReq(r.updated_at),
@@ -56,6 +66,8 @@ function noteView(r: Row, viewer: string, shares?: PublicProfile[]): NoteView {
     view.pinned = !!r.pinned;
     view.blockId = (r.block_id as string | null) ?? null;
     view.heartCount = Number(r.heart_count ?? 0);
+    view.goingCount = Number(r.going_count ?? 0);
+    view.pendingCount = Number(r.pending_count ?? 0);
     view.sharedWith = shares ?? [];
   } else {
     view.hearted = r.mi_id != null && r.mi_withdrawn == null;
@@ -165,10 +177,13 @@ export const noteRoutes: Route[] = [
       const visibility = n.visibility ?? 'private';
       const id = await ctx.db.tx(async (q) => {
         const inserted = await q<{ id: string }>(
-          `insert into segue.notes (author_id, title, body, visibility, on_date, place_name, block_id, pinned, archived_at, client_id, open_to_join)
-           values ($1, $2, $3, $4, $5, $6, $7, $8, case when $9 then now() end, $10, $11)
+          `insert into segue.notes (author_id, title, body, visibility, on_date, place_name, block_id, pinned, archived_at, client_id, open_to_join, start_time, end_time)
+           values ($1, $2, $3, $4, $5, $6, $7, $8, case when $9 then now() end, $10, $11, $12, $13)
            on conflict (author_id, client_id) do nothing returning id`,
-          [ctx.user.id, n.title, n.body ?? '', visibility, n.onDate ?? null, n.placeName ?? null, n.blockId ?? null, n.pinned ?? false, n.archived ?? false, n.clientId ?? null, n.openToJoin ?? true],
+          [
+            ctx.user.id, n.title, n.body ?? '', visibility, n.onDate ?? null, n.placeName ?? null, n.blockId ?? null, n.pinned ?? false, n.archived ?? false, n.clientId ?? null, n.openToJoin ?? true,
+            n.startTime ?? null, n.startTime ? (n.endTime ?? null) : null,
+          ],
         );
         // A retry of the same create: hand back the note that was already made.
         if (!inserted[0]) {
@@ -208,6 +223,9 @@ export const noteRoutes: Route[] = [
         if (u.body !== undefined) set('body', u.body);
         if (u.visibility !== undefined) set('visibility', u.visibility);
         if (u.onDate !== undefined) set('on_date', u.onDate);
+        // Times change together: clearing the start clears the end too.
+        if (u.startTime !== undefined) set('start_time', u.startTime);
+        if (u.endTime !== undefined || u.startTime === null) set('end_time', u.startTime === null ? null : (u.endTime ?? null));
         if (u.placeName !== undefined) set('place_name', u.placeName);
         if (u.blockId !== undefined) set('block_id', u.blockId);
         if (u.pinned !== undefined) set('pinned', u.pinned);
@@ -247,6 +265,7 @@ export const noteRoutes: Route[] = [
       await ctx.profile();
       ctx.limit('write');
       const [id] = ctx.params as [string];
+      const { message } = parse(JoinRequestSchema, (await ctx.body({ optional: true })) ?? {});
       await ctx.db.tx(async (q) => {
         const note = (await q<{ author_id: string; archived_at: unknown; open_to_join: boolean }>(`select n.author_id, n.archived_at, n.open_to_join from segue.notes n where n.id = $2 and ${canSeeNote('n', '$1')}`, [ctx.user.id, id]))[0];
         if (!note) throw new HttpError(404, "Couldn't find that note");
@@ -257,9 +276,10 @@ export const noteRoutes: Route[] = [
         if (before?.declined_at) throw new HttpError(409, 'They said not this time for this plan', undefined, {}, 'not_now');
         // One heart per person per note: a second tap is harmless, and a withdrawn heart comes back.
         await q(
-          `insert into segue.note_interests (note_id, user_id) values ($1, $2)
-           on conflict (note_id, user_id) do update set withdrawn_at = null, updated_at = now() where segue.note_interests.withdrawn_at is not null`,
-          [id, ctx.user.id],
+          `insert into segue.note_interests (note_id, user_id, message) values ($1, $2, $3)
+           on conflict (note_id, user_id) do update set withdrawn_at = null, message = coalesce(excluded.message, segue.note_interests.message), updated_at = now()
+           where segue.note_interests.withdrawn_at is not null or excluded.message is not null`,
+          [id, ctx.user.id, message?.trim() || null],
         );
         // Notified once per person per note, however often they heart and un-heart.
         await notify(q, { recipient: note.author_id, actor: ctx.user.id, type: 'note_hearted', entityType: 'note', entityId: id, dedupe: `heart:${id}:${ctx.user.id}`, pref: 'hearts' });
@@ -297,7 +317,7 @@ export const noteRoutes: Route[] = [
       if (!note) throw new HttpError(404, "Couldn't find that note");
       if (note.author_id !== ctx.user.id) throw new HttpError(403, 'Only the person who wrote this note can see who is interested');
       const rows = await ctx.db.query(
-        `select i.id, i.created_at, i.withdrawn_at, i.declined_at, i.invitation_id, v.status as inv_status, v.expires_at as inv_expires, ${profileCols('p')}
+        `select i.id, i.created_at, i.withdrawn_at, i.declined_at, i.invitation_id, i.message, v.status as inv_status, v.expires_at as inv_expires, ${profileCols('p')}
          from segue.note_interests i
          join segue.notes n on n.id = i.note_id
          join segue.profiles p on p.id = i.user_id
@@ -311,6 +331,7 @@ export const noteRoutes: Route[] = [
         user: publicProfile(r, 'p'),
         status: interestStatus(r.withdrawn_at, r.inv_status, r.inv_expires, r.declined_at),
         invitationId: (r.invitation_id as string | null) ?? null,
+        message: (r.message as string | null) ?? null,
         createdAt: isoReq(r.created_at),
       }));
       return { status: 200, body: { interests } };
