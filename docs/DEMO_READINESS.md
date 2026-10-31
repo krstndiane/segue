@@ -19,12 +19,13 @@
 | "Why this option" is explained | PASS (each option's reason, and "Leaves N min before Class") |
 | Reset / rehearsal | PASS |
 | Works with the API, weather and Google unavailable | PASS (tested with no API) |
-| Live places refresh | PASS WITH LIMITATIONS. Depends on Segue's API on Render. Otherwise it says so and keeps the snapshot. Render's free tier can take about a minute to wake up |
+| Live places refresh | PASS WITH LIMITATIONS. Depends on Segue's API on Render. Otherwise it says so and keeps the snapshot. Render's free tier can take about a minute to wake up. On Vercel preview links it always falls back, because the API's `CORS_ORIGINS` only allows `segue.pdyntech.com`. That was checked: from the live origin the API returned 15 park, gym and mall places in 0.1–1.1 s, and from the preview the request was refused and the fallback message showed |
 | No dead buttons or debug output | PASS (every control tested; 0 console errors) |
 | Desktop and phone (1280, 390, 360 px) | PASS |
 | Landing page explains the product | PASS |
 | Google sign-in for the owner on the live site | PASS |
 | Google sign-in for other accounts | **UNVERIFIED.** It depends on the Audience setting in Google Cloud (see GOOGLE_INTEGRATION_AUDIT.md). The demo doesn't need it |
+| Deployed demo on the Vercel preview (`segue-git-product-demo-…vercel.app/demo`) | PASS. It loads, rain and options work, the map draws, and the live-places fallback message shows. Checked in dark mode |
 | Deployed demo checked on the live site | **UNVERIFIED** until the owner merges |
 | First-time user evaluation | **UNVERIFIED.** Needs a person who hasn't seen Segue |
 
