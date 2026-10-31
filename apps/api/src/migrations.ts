@@ -466,4 +466,25 @@ alter table segue.user_state add constraint user_state_key_check check (key in (
 `,
 };
 
-export const MIGRATIONS: Migration[] = [social, profilesConnections, usernameRules, calendarSync, joinRequests, todayProgress];
+/**
+ * Shared plans get an optional time ("2:00–4:00 PM" on their day), and a request
+ * to join can carry a short message. Additive: two nullable columns on notes,
+ * one on note_interests; older code ignores them.
+ */
+const planTimesAndMessages: Migration = {
+  id: '007_plan_times_and_request_messages',
+  up: /* sql */ `
+alter table segue.notes add column start_time text check (start_time ~ '^([01][0-9]|2[0-3]):[0-5][0-9]$');
+alter table segue.notes add column end_time text check (end_time ~ '^([01][0-9]|2[0-3]):[0-5][0-9]$');
+alter table segue.notes add constraint notes_time_order_check check (end_time is null or (start_time is not null and end_time > start_time));
+alter table segue.note_interests add column message text check (char_length(message) <= 280);
+`,
+  down: /* sql */ `
+alter table segue.note_interests drop column if exists message;
+alter table segue.notes drop constraint if exists notes_time_order_check;
+alter table segue.notes drop column if exists end_time;
+alter table segue.notes drop column if exists start_time;
+`,
+};
+
+export const MIGRATIONS: Migration[] = [social, profilesConnections, usernameRules, calendarSync, joinRequests, todayProgress, planTimesAndMessages];

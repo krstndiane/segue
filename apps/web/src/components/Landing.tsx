@@ -5,6 +5,7 @@ import { clock } from '../lib/format';
 import { GOOGLE_CLIENT_ID, calendarErrorMessage, preloadGoogle } from '../lib/googleCalendar';
 import { parseQuickAdd } from '../lib/quickAdd';
 import { enterApp } from '../lib/router';
+import { NAV_ICONS, NAV_LABELS, type NavTab } from './BottomNav';
 import { GoogleButton } from './GoogleButton';
 import { EXAMPLES } from './QuickAdd';
 import { Sky, sceneFor } from './Sky';
@@ -19,12 +20,19 @@ const PROBLEMS = [
 
 const CONTEXT = ['Your Google Calendar, kept exactly where it is', 'The weather, hour by hour', 'Real places nearby and their listed opening hours', 'Travel time, rush hour included', 'What has to happen before what'];
 
-const CAPABILITIES: { title: string; body: string }[] = [
-  { title: 'Google Calendar', body: 'Meetings and classes come in as set times that Segue plans around. It only reads your calendar; it never changes it.' },
-  { title: 'Real places nearby', body: 'Gyms, cafés, libraries and parks from OpenStreetMap, with their listed hours. When hours aren’t listed, Segue says so instead of guessing.' },
-  { title: 'Weather-aware', body: 'Outdoor plans get an indoor option or a drier time when the forecast turns. Umbrella and heat reminders when they matter.' },
-  { title: 'One tap to finish', body: 'Tick things off as you go. Skipping one never reshuffles the rest; Segue offers to move things up and waits for your yes.' },
-  { title: 'Together', body: 'Share a plan with the people you choose, let them ask to join, and agree on a time. Private plans stay private.' },
+/** The app's five tabs, each in terms of what you can do there. Same icons as the app's bottom navigation. */
+const TOUR: { tab: NavTab; body: string }[] = [
+  { tab: 'today', body: 'See what’s next, tick things off, skip without reshuffling the rest, and get a suggestion when something gets in the way.' },
+  { tab: 'plan', body: 'Add what you want to get done the way you’d say it, choose what matters most, and let Segue fit it around your fixed times.' },
+  { tab: 'days', body: 'Your Google Calendar events and your own plans, day by day. Segue reads your calendar and never changes it.' },
+  { tab: 'routines', body: 'Things you do on certain days, like a weekday workout or a morning read. Segue fits them into each of those days.' },
+  { tab: 'together', body: 'Share a plan with people you choose, let them ask to join, and agree on a time. Everything else stays private.' },
+];
+
+const TOGETHER_POINTS = [
+  'Share one plan, not your whole schedule.',
+  '“Can I join?” only asks. You say yes or not this time.',
+  'An invitation never changes your day unless you add it.',
 ];
 
 const PRIVACY = [
@@ -184,38 +192,25 @@ function openApp(e: MouseEvent) {
   enterApp('');
 }
 
-/** The demo first; then Google (brings in the calendar) or planning without an account. */
+/** Start planning (the app, no account needed), or see the one-minute sample day; Google sign-up underneath. */
 function SignUp({ account, busy, error, onSignUp, place }: { account: Account | null; busy: boolean; error: string | null; onSignUp: () => void; place: 'hero' | 'final' }) {
   return (
     <>
       <div className="lp-ctas">
-        <a className="lp-primary" href="/demo">
+        <a className="lp-primary" href="/app" onClick={openApp}>
+          {account ? `Continue as ${firstName(account)}` : 'Get started'}
+        </a>
+        <a className={place === 'hero' ? 'lp-secondary' : 'lp-secondary dark'} href="/demo">
           See how it works
         </a>
-        {account ? (
-          <a className={place === 'hero' ? 'lp-secondary' : 'lp-secondary dark'} href="/app" onClick={openApp}>
-            Continue as {firstName(account)}
-          </a>
-        ) : GOOGLE_CLIENT_ID ? (
-          <GoogleButton className="lp-google" busy={busy} onClick={onSignUp} />
-        ) : (
-          <a className={place === 'hero' ? 'lp-secondary' : 'lp-secondary dark'} href="/app" onClick={openApp}>
-            Start planning
-          </a>
-        )}
       </div>
-      <p className="lp-micro">
-        Free. The demo is a sample day and needs no account.{' '}
-        {GOOGLE_CLIENT_ID && !account && (
-          <>
-            Or{' '}
-            <a href="/app" onClick={openApp}>
-              start without signing up
-            </a>
-            .
-          </>
-        )}
-      </p>
+      {!account && GOOGLE_CLIENT_ID && (
+        <div className="lp-google-row">
+          <span className="lp-micro">Use Google Calendar? Bring it in from the start:</span>
+          <GoogleButton className="lp-google" busy={busy} onClick={onSignUp} />
+        </div>
+      )}
+      <p className="lp-micro">Free. No account needed to start. “See how it works” is a sample day, not your data.</p>
       {error && (
         <p className="lp-error" role="alert">
           {error}{' '}
@@ -272,7 +267,7 @@ export function Landing() {
   }
 
   useEffect(() => {
-    document.title = 'Segue · A day planner that adapts when plans change';
+    document.title = 'Segue · Intelligent daily planner';
   }, []);
 
   return (
@@ -285,8 +280,8 @@ export function Landing() {
           </a>
           <div className="lp-links">
             <a href="#how">How it works</a>
+            <a href="#tour">Features</a>
             <a href="/demo">Demo</a>
-            <a href="#privacy">Privacy</a>
           </div>
           <a className="lp-open" href="/app" onClick={openApp}>
             Open Segue
@@ -295,11 +290,11 @@ export function Landing() {
 
         <div className="lp-hero-inner">
           <div className="lp-copy">
-            <p className="lp-kicker">A day planner for days that don’t go to plan</p>
-            <h1>Your day changes. Segue knows what to do next.</h1>
+            <p className="lp-kicker">Intelligent daily planner</p>
+            <h1>Your day, planned around real life.</h1>
             <p className="lp-sub">
-              Tell Segue what you want to get done. It plans around your calendar, the weather, travel time and what’s open. When it rains, a meeting runs
-              late or a place is closed, it suggests a realistic new plan, and you decide.
+              Segue organizes your tasks, routines and Google Calendar into one realistic day. When it rains, a meeting runs late or a place is closed, it
+              suggests what to do next, and you decide.
             </p>
             <SignUp account={account} busy={busy} error={error} onSignUp={() => void signUp()} place="hero" />
           </div>
@@ -319,27 +314,28 @@ export function Landing() {
             ))}
           </ul>
           <p className="lp-big">
-            A calendar keeps your plan. It doesn’t tell you what to do when the plan stops working. That’s the part Segue is for.
+            You planned to work out outside. Then it started raining, and your class is still at 3:30. Now what? A calendar shows what you planned. Segue
+            helps with what to do next.
           </p>
         </section>
 
         <section id="how" className="lp-section" aria-labelledby="how-title">
           <p className="lp-eyebrow">How it works</p>
-          <h2 id="how-title">Three steps, and the third is the point</h2>
+          <h2 id="how-title">Plan, understand, adapt</h2>
           <ol className="lp-how">
             <li>
               <span className="lp-step-n">01</span>
               <div>
-                <h3>Plan your day</h3>
-                <p>Type what you want to do the way you’d say it. Segue reads the time, how long it takes and the kind of place you need. Try one:</p>
+                <h3>Plan</h3>
+                <p>Add your tasks, routines and commitments, and say what matters most. Type them the way you’d say them. Try one:</p>
                 <TryIt />
               </div>
             </li>
             <li>
               <span className="lp-step-n">02</span>
               <div>
-                <h3>Segue works around your day</h3>
-                <p>It finds a time and a place for each thing, checking:</p>
+                <h3>Understand</h3>
+                <p>Segue finds a time and a place for each thing, checking:</p>
                 <ul className="lp-checks">
                   {CONTEXT.map((c) => (
                     <li key={c}>{c}</li>
@@ -350,7 +346,7 @@ export function Landing() {
             <li>
               <span className="lp-step-n">03</span>
               <div>
-                <h3>Adapt when something changes</h3>
+                <h3>Adapt</h3>
                 <p>
                   When rain, a late meeting or a closed door gets in the way, Segue offers realistic alternatives for the part of your day that’s affected. You see
                   what would change, and nothing moves until you say yes.
@@ -360,24 +356,50 @@ export function Landing() {
           </ol>
         </section>
 
+        <section id="tour" className="lp-section" aria-labelledby="tour-title">
+          <p className="lp-eyebrow">Inside Segue</p>
+          <h2 id="tour-title">Five places, one day</h2>
+          <p className="lp-lead">The same five tabs you’ll find along the bottom of the app.</p>
+          <ul className="lp-tour">
+            {TOUR.map((t) => (
+              <li key={t.tab}>
+                <span className="lp-tour-icon" aria-hidden="true">
+                  <svg viewBox="0 0 24 24" width="24" height="24">
+                    {NAV_ICONS[t.tab]}
+                  </svg>
+                </span>
+                <div>
+                  <h3>{NAV_LABELS[t.tab]}</h3>
+                  <p>{t.body}</p>
+                </div>
+              </li>
+            ))}
+          </ul>
+        </section>
+
         <section id="example" className="lp-section lp-example" aria-labelledby="example-title">
-          <p className="lp-eyebrow">See the difference</p>
+          <p className="lp-eyebrow">When plans change</p>
           <h2 id="example-title">A workout at 2, class at 3:30, and then it rains</h2>
-          <p className="lp-lead">Press the button. Segue’s real planner works out what still fits.</p>
+          <p className="lp-lead">
+            Segue spots the outdoor plan the rain affects, finds real places nearby that are open, checks there’s still time to reach your class, and lets you
+            choose. Press the button to see it on the real planner.
+          </p>
           <Scenario />
         </section>
 
-        <section id="features" className="lp-section" aria-labelledby="features-title">
-          <p className="lp-eyebrow">What’s inside</p>
-          <h2 id="features-title">Built around one idea: a plan that keeps up with you</h2>
-          <dl className="lp-caps">
-            {CAPABILITIES.map((c) => (
-              <div key={c.title}>
-                <dt>{c.title}</dt>
-                <dd>{c.body}</dd>
-              </div>
-            ))}
-          </dl>
+        <section id="together" className="lp-section lp-together" aria-labelledby="together-title">
+          <div className="lp-split">
+            <div>
+              <p className="lp-eyebrow">Plan together</p>
+              <h2 id="together-title">Make time for the people who matter</h2>
+              <p className="lp-lead">Share an activity with people you trust, invite them, and agree on a time, without handing over your whole calendar.</p>
+            </div>
+            <ul className="lp-checks">
+              {TOGETHER_POINTS.map((p) => (
+                <li key={p}>{p}</li>
+              ))}
+            </ul>
+          </div>
         </section>
 
         <section id="privacy" className="lp-section lp-privacy" aria-labelledby="privacy-title">
@@ -399,8 +421,8 @@ export function Landing() {
 
         <section className="lp-final" aria-labelledby="final-title">
           <img src="/icon.svg" alt="" width="88" height="88" />
-          <h2 id="final-title">See a day go sideways, and how Segue handles it</h2>
-          <p>The demo takes about a minute. Then plan your own day, with or without your Google Calendar.</p>
+          <h2 id="final-title">Start planning your day</h2>
+          <p>Free, and it works without an account. Bring in your Google Calendar whenever you like, or watch a one-minute sample day first.</p>
           <SignUp account={account} busy={busy} error={error} onSignUp={() => void signUp()} place="final" />
         </section>
       </main>
@@ -423,7 +445,8 @@ export function Landing() {
               <li><a href="/demo">Demo</a></li>
               <li><a href="#how">How it works</a></li>
               <li><a href="#example">The rain example</a></li>
-              <li><a href="#features">Features</a></li>
+              <li><a href="#tour">Features</a></li>
+              <li><a href="#together">Plan together</a></li>
             </ul>
           </nav>
 

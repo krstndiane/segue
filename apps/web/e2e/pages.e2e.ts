@@ -52,7 +52,16 @@ test('the landing page explains Segue, shows the rain example on the real planne
   // "before 8" means 8 PM in the morning and 8 AM before dawn, so fix the clock.
   await page.clock.setFixedTime(MORNING);
   await page.goto('/');
-  await expect(page.getByRole('heading', { level: 1 })).toHaveText('Your day changes. Segue knows what to do next.');
+  // Above the fold: what it is (a daily planner), what it does, and the two ways in.
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText('Your day, planned around real life.');
+  await expect(page.locator('.lp-kicker')).toHaveText('Intelligent daily planner');
+  await expect(page.locator('.lp-sub')).toContainText('tasks, routines and Google Calendar');
+  for (const name of ['Get started', 'See how it works']) {
+    const box = (await page.getByRole('link', { name }).first().boundingBox())!;
+    expect(box.y + box.height).toBeLessThanOrEqual((page.viewportSize()?.height ?? 800));
+  }
+  // The five tabs, by the names the app uses.
+  for (const name of ['Today', 'Plan', 'Calendar', 'Routines', 'Together']) await expect(page.locator('.lp-tour h3', { hasText: new RegExp(`^${name}$`) })).toBeVisible();
   // The hero shows the real Today screen on the sample day, and says it's a sample.
   await expect(page.locator('.lp-preview')).toContainText('Outdoor workout');
   await expect(page.locator('.lp-preview figcaption')).toHaveText('Segue’s Today screen, on a sample day');
@@ -77,7 +86,7 @@ test('the landing page explains Segue, shows the rain example on the real planne
   await expect(page).toHaveURL(/\/demo$/);
   await expect(page.getByRole('heading', { name: 'This is a planned day in Segue' })).toBeVisible();
   await page.goto('/');
-  await page.getByRole('link', { name: 'start without signing up' }).first().click();
+  await page.getByRole('link', { name: 'Get started' }).first().click();
   await expect(page).toHaveURL(/\/app(\?|$)/);
   await expect(page.getByRole('heading', { name: 'Plan your day around real life' })).toBeVisible();
 });
@@ -187,7 +196,7 @@ test('sign up with Google on the landing page: greeted by name, calendar already
   await fakeGoogle(page);
   await page.clock.setFixedTime(MORNING);
   await page.goto('/');
-  await expect(page.getByRole('link', { name: 'start without signing up' }).first()).toBeVisible();
+  await expect(page.getByRole('link', { name: 'Get started' }).first()).toBeVisible();
   await page.getByRole('button', { name: 'Continue with Google' }).first().click();
 
   await expect(page).toHaveURL(/\/app(\?|$)/);

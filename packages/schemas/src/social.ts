@@ -20,6 +20,8 @@ const text = (max: number) =>
     .transform((s) => s.replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, '').trim());
 const line = (min: number, max: number) => text(max).pipe(z.string().min(min, 'Required').max(max).refine((s) => !/[\r\n]/.test(s), 'One line only'));
 const timezone = z.string().min(1).max(64).regex(/^[A-Za-z0-9_+\-/]+$/);
+/** A wall-clock time on a plan's day, "14:00". */
+const hhmm = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, 'Expected HH:MM');
 
 /**
  * The name as typed (trimmed). The rules in username.ts are applied by the API when a name
@@ -84,6 +86,9 @@ const noteFields = {
   body: text(4000),
   visibility: VisibilitySchema,
   onDate: localDay.nullable(),
+  /** optional time on that day; an end needs a start */
+  startTime: hhmm.nullable(),
+  endTime: hhmm.nullable(),
   placeName: line(1, 120).nullable(),
   blockId: z.string().max(80).nullable(),
   pinned: z.boolean(),
@@ -93,8 +98,12 @@ const noteFields = {
   /** People a "selected" note is shared with. */
   shareWith: z.array(uuid).max(50),
 };
-export const NoteCreateSchema = z.object(noteFields).partial().required({ title: true }).extend({ clientId: clientId.optional() });
-export const NoteUpdateSchema = z.object(noteFields).partial();
+const timesInOrder = (n: { startTime?: string | null; endTime?: string | null }) => !n.endTime || (!!n.startTime && n.endTime > n.startTime);
+const TIMES_MESSAGE = { message: 'The end time needs a start time before it', path: ['endTime'] };
+export const NoteCreateSchema = z.object(noteFields).partial().required({ title: true }).extend({ clientId: clientId.optional() }).refine(timesInOrder, TIMES_MESSAGE);
+export const NoteUpdateSchema = z.object(noteFields).partial().refine(timesInOrder, TIMES_MESSAGE);
+/** "Can I join?", with an optional short message for the author. */
+export const JoinRequestSchema = z.object({ message: text(280).optional() });
 
 export const NOTE_SCOPES = ['mine', 'shared', 'discover', 'hearted'] as const;
 export type NoteScope = (typeof NOTE_SCOPES)[number];
@@ -206,6 +215,9 @@ export interface NoteView {
   body: string;
   visibility: Visibility;
   onDate: string | null;
+  /** "14:00" on onDate, when the author set a time */
+  startTime: string | null;
+  endTime: string | null;
   placeName: string | null;
   createdAt: string;
   updatedAt: string;
@@ -217,6 +229,10 @@ export interface NoteView {
   pinned?: boolean;
   blockId?: string | null;
   heartCount?: number;
+  /** people whose request the author said yes to (author only) */
+  goingCount?: number;
+  /** requests still waiting for the author's answer (author only) */
+  pendingCount?: number;
   sharedWith?: PublicProfile[];
   /** The viewer's own heart, for other people's notes */
   hearted?: boolean;
@@ -228,6 +244,8 @@ export interface InterestView {
   user: PublicProfile;
   status: InterestStatus;
   invitationId: string | null;
+  /** what they wrote when asking, if anything */
+  message: string | null;
   createdAt: string;
 }
 

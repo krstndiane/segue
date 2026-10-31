@@ -635,7 +635,18 @@
   text-underline-offset: 3px;
 }
 .lp-google {
-  min-height: 54px;
+  min-height: 48px;
+}
+/* Google sign-up sits under the two main buttons, quieter than both. */
+.lp-google-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  margin-top: 14px;
+}
+.lp-google-row .lp-micro {
+  margin: 0;
 }
 
 .lp-preview {
@@ -661,10 +672,10 @@
   padding: 12px 10px 4px;
   border-radius: 0 0 31px 31px;
   background: var(--fog);
-  max-height: 520px;
+  max-height: 760px;
   overflow: hidden;
-  /* The real Today screen, drawn smaller to fit the frame. */
-  zoom: 0.74;
+  /* The real Today screen, drawn smaller so the next item, the class after it and the day's progress all fit. */
+  zoom: 0.62;
   -webkit-mask-image: linear-gradient(to bottom, #000 82%, transparent);
   mask-image: linear-gradient(to bottom, #000 82%, transparent);
 }
@@ -885,22 +896,36 @@
   color: var(--slate);
 }
 
-.lp-caps {
+/* The five tabs, with the app's own icons. */
+.lp-tour {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
   gap: 0 40px;
   margin: 28px 0 0;
+  padding: 0;
+  list-style: none;
 }
-.lp-caps > div {
+.lp-tour > li {
+  display: grid;
+  grid-template-columns: 44px 1fr;
+  gap: 14px;
   padding: 20px 0;
   border-top: 1px solid var(--line);
 }
-.lp-caps dt {
-  margin-bottom: 6px;
-  font-weight: 700;
+.lp-tour-icon {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  border-radius: 14px;
+  background: var(--brass-soft);
+  color: var(--ink);
+}
+.lp-tour h3 {
+  margin: 0 0 4px;
   font-size: var(--step-1);
 }
-.lp-caps dd {
+.lp-tour p {
   margin: 0;
   color: var(--slate);
   line-height: 1.5;
