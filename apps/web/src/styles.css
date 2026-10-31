@@ -25,6 +25,9 @@
   --radius-l: 18px;
   --gutter: 20px;
   --max: 560px;
+  /* the bottom navigation: its height, and the room content leaves for it */
+  --nav-h: 62px;
+  --nav-space: calc(var(--nav-h) + env(safe-area-inset-bottom));
   color-scheme: light;
 }
 
@@ -104,7 +107,7 @@ textarea {
 .app {
   max-width: var(--max);
   margin: 0 auto;
-  padding: 4px var(--gutter) calc(env(safe-area-inset-bottom) + 120px);
+  padding: 4px var(--gutter) calc(var(--nav-space) + 104px);
 }
 
 .boot {
@@ -183,33 +186,6 @@ textarea {
   align-items: center;
   gap: 6px;
   min-width: 0;
-}
-
-.tabs {
-  display: flex;
-  gap: 2px;
-  padding: 3px;
-  border-radius: 999px;
-  /* dark glass: white text stays readable even over a white cloud (CHIP_ALPHA) */
-  background: rgb(8 14 40 / var(--chip, 0.58));
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
-}
-
-.tabs button {
-  border: 0;
-  background: none;
-  padding: 7px 10px;
-  border-radius: 999px;
-  color: #fff;
-  font-weight: 600;
-  font-size: var(--step--1);
-  cursor: pointer;
-}
-
-.tabs button[aria-current='page'] {
-  color: #1b2240;
-  background: #fff;
 }
 
 .gear {
@@ -816,9 +792,11 @@ button:disabled {
   left: 0;
   right: 0;
   bottom: 0;
+  /* under the bottom navigation, with the button just above it */
+  z-index: 7;
   display: flex;
   justify-content: center;
-  padding: 16px var(--gutter) calc(env(safe-area-inset-bottom) + 16px);
+  padding: 16px var(--gutter) calc(var(--nav-space) + 12px);
   background: linear-gradient(to top, var(--fog) 60%, transparent);
   pointer-events: none;
 }
@@ -2081,12 +2059,12 @@ details.more[open] {
 
 .plan-bar {
   position: sticky;
-  bottom: 0;
+  bottom: var(--nav-space);
   display: flex;
   align-items: center;
   gap: 14px;
   margin: 4px calc(-1 * var(--gutter)) 0;
-  padding: 14px var(--gutter) calc(env(safe-area-inset-bottom) + 14px);
+  padding: 14px var(--gutter);
   background: linear-gradient(to top, var(--fog) 75%, transparent);
 }
 .plan-sum {
@@ -2100,14 +2078,10 @@ details.more[open] {
 }
 .app:has(.plan-page),
 .app:has(.calendar-page) {
-  padding-bottom: calc(env(safe-area-inset-bottom) + 24px);
+  padding-bottom: calc(var(--nav-space) + 24px);
 }
 
 @media (max-width: 380px) {
-  .tabs button {
-    padding: 6px 7px;
-    font-size: 0.78rem;
-  }
   .gear {
     width: 34px;
     height: 34px;
@@ -2490,7 +2464,7 @@ details.more[open] {
   margin: 4px 0 0;
 }
 .app:has(.days-page) {
-  padding-bottom: calc(env(safe-area-inset-bottom) + 32px);
+  padding-bottom: calc(var(--nav-space) + 32px);
 }
 @media (max-width: 380px) {
   .month-cells,
@@ -2503,42 +2477,8 @@ details.more[open] {
     height: 26px;
   }
 }
-@media (max-width: 430px) {
-  .tabs button {
-    padding: 7px 8px;
-  }
-}
 
 /* ---------- Together: accounts, notes, hearts, invitations ---------- */
-
-.tabs {
-  /* five tabs: scroll sideways on narrow phones instead of squeezing */
-  overflow-x: auto;
-  scrollbar-width: none;
-  max-width: 100%;
-}
-.tabs::-webkit-scrollbar {
-  display: none;
-}
-.tabs button {
-  position: relative;
-  flex: none;
-}
-.tab-badge {
-  display: inline-grid;
-  place-items: center;
-  min-width: 17px;
-  height: 17px;
-  margin-left: 4px;
-  padding: 0 4px;
-  border-radius: 999px;
-  background: var(--brass);
-  color: var(--brass-ink);
-  font-size: 0.6875rem;
-  font-weight: 800;
-  line-height: 1;
-  vertical-align: 1px;
-}
 
 .avatar {
   flex: none;
@@ -3000,36 +2940,6 @@ details.more[open] {
   color: var(--danger);
 }
 
-/* Phones: the section tabs get their own full-width row so none of them is
-   hidden off the edge (Routines and Together used to be cut off at 360-412 px). */
-@media (max-width: 600px) {
-  .top {
-    flex-wrap: wrap;
-    row-gap: 10px;
-  }
-  .top-actions {
-    display: contents;
-  }
-  .top-actions .gear {
-    order: 1;
-  }
-  .top-actions .tabs {
-    order: 2;
-    flex: 1 1 100%;
-  }
-  .tabs button {
-    flex: 1 1 auto;
-    text-align: center;
-    min-height: 32px;
-  }
-}
-@media (max-width: 360px) {
-  .tabs button {
-    padding: 6px 4px;
-    font-size: 0.76rem;
-  }
-}
-
 /* ---------- Other options for one item (AlternativesSheet). Scoped, existing tokens only. ---------- */
 .alternatives .alt-list {
   list-style: none;
@@ -3400,4 +3310,137 @@ details.more[open] {
   text-decoration: line-through;
   text-decoration-color: color-mix(in srgb, currentColor 40%, transparent);
   overflow-wrap: anywhere;
+}
+
+/* ---------- bottom navigation: the five sections, in reach of a thumb ---------- */
+
+.bottom-nav {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  /* over the page and the dock, under the assistant (9), sheets (10) and toasts (20) */
+  z-index: 8;
+  padding-bottom: env(safe-area-inset-bottom);
+  background: color-mix(in srgb, var(--fog) 94%, transparent);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border-top: 1px solid var(--line);
+}
+.bottom-nav ul {
+  display: grid;
+  grid-auto-columns: 1fr;
+  grid-auto-flow: column;
+  max-width: var(--max);
+  margin: 0 auto;
+  padding: 0 6px;
+  list-style: none;
+}
+.bottom-nav a {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  min-height: var(--nav-h);
+  color: var(--slate);
+  font-size: 0.72rem;
+  font-weight: 600;
+  text-decoration: none;
+  -webkit-tap-highlight-color: transparent;
+}
+.bn-icon {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 52px;
+  height: 30px;
+  border-radius: 999px;
+  transition: background-color 0.15s ease;
+}
+.bottom-nav a[aria-current='page'] {
+  color: var(--ink);
+}
+.bottom-nav a[aria-current='page'] .bn-icon {
+  background: var(--brass-soft);
+}
+.bottom-nav a:hover:not([aria-current='page']) .bn-icon {
+  background: color-mix(in srgb, var(--line) 55%, transparent);
+}
+.bottom-nav a:focus-visible {
+  outline: none;
+}
+.bottom-nav a:focus-visible .bn-icon {
+  outline: 2px solid var(--brass);
+  outline-offset: 2px;
+}
+.bn-badge {
+  position: absolute;
+  top: -2px;
+  right: 6px;
+  display: grid;
+  place-items: center;
+  min-width: 17px;
+  height: 17px;
+  padding: 0 4px;
+  border-radius: 999px;
+  background: var(--brass);
+  color: var(--brass-ink);
+  font-size: 0.66rem;
+  font-weight: 700;
+}
+@media (prefers-reduced-motion: reduce) {
+  .bn-icon {
+    transition: none;
+  }
+}
+/* Larger screens: the same bar, floating under the page's column instead of stretched edge to edge. */
+@media (min-width: 720px) {
+  :root {
+    --nav-space: calc(var(--nav-h) + 28px + env(safe-area-inset-bottom));
+  }
+  .bottom-nav {
+    left: 50%;
+    right: auto;
+    bottom: calc(14px + env(safe-area-inset-bottom));
+    width: min(calc(var(--max) - 2 * var(--gutter)), calc(100% - 32px));
+    padding-bottom: 0;
+    transform: translateX(-50%);
+    border: 1px solid var(--line);
+    border-radius: 22px;
+    box-shadow: 0 12px 32px -18px rgb(0 0 0 / 0.35);
+  }
+}
+
+/* ---------- empty states: say what goes here, and the next step ---------- */
+.empty-state {
+  padding: 18px 18px 16px;
+  border: 1px dashed var(--line);
+  border-radius: 16px;
+  background: color-mix(in srgb, var(--surface) 70%, transparent);
+}
+.empty-state p {
+  margin: 0;
+}
+.empty-state p + p {
+  margin-top: 6px;
+}
+.empty-state .ghost,
+.empty-state .primary {
+  margin-top: 12px;
+}
+
+/* routine days: seven equal chips, Monday first */
+.repeat-days .chips {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 6px;
+}
+.repeat-days .chip {
+  padding: 8px 0;
+  min-height: 40px;
+  text-align: center;
+}
+.repeat-days .chip:disabled {
+  cursor: not-allowed;
 }

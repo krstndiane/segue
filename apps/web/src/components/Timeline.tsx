@@ -209,8 +209,8 @@ export function Timeline(props: Props) {
 
       {!day.plan ? (
         <section className="empty">
-          <p className="lede">Nothing planned yet.</p>
-          <p className="muted">Add a few things above, then tap Re-route. Segue finds the time and the place.</p>
+          <p className="lede">Your day is open.</p>
+          <p className="muted">Add something you&apos;d like to accomplish above, like &ldquo;Gym 1h after 5pm&rdquo;. Segue finds the time and the place.</p>
         </section>
       ) : !next ? (
         <section className="empty">

@@ -1,5 +1,8 @@
 import { expect, test, type Page } from '@playwright/test';
 
+/** A section in the bottom navigation. */
+const tab = (page: Page, name: string) => page.getByRole('navigation', { name: 'Sections' }).getByRole('link', { name, exact: true });
+
 const MORNING = new Date('2026-10-20T09:00:00+08:00'); // a Tuesday
 const cors = { 'access-control-allow-origin': '*', 'content-type': 'application/json' };
 
@@ -81,7 +84,7 @@ test('the landing page explains Segue, shows the rain example on the real planne
 
 test('plan my day: leave a routine out for today only', async ({ page }) => {
   await onboard(page, ['Lunch 12:30', 'Stretch 20 min every day']);
-  await page.getByRole('button', { name: 'Plan', exact: true }).click();
+  await tab(page, 'Plan').click();
   await expect(page).toHaveURL(/\/app\/plan(\?|$)/);
   await expect(page.getByRole('heading', { name: 'Plan your day' })).toBeVisible();
   await page.getByText("What's in today").click();
@@ -90,14 +93,14 @@ test('plan my day: leave a routine out for today only', async ({ page }) => {
   await page.getByRole('dialog', { name: 'Re-route from here' }).getByRole('button', { name: 'Use this plan' }).click();
   await expect(page).toHaveURL(/\/app(\?|$)/);
   await expect(page.locator('main')).not.toContainText('Stretch');
-  await page.getByRole('button', { name: 'Routines' }).click();
+  await tab(page, 'Routines').click();
   await expect(page.locator('main')).toContainText('Stretch'); // still a routine, back tomorrow
 });
 
 test('connect Google Calendar, leave one event out, and plan around the rest', async ({ page }) => {
   await fakeGoogle(page);
   await onboard(page, ['Lunch 12:30']);
-  await page.getByRole('button', { name: 'Plan', exact: true }).click();
+  await tab(page, 'Plan').click();
   await page.locator('.hours-panel').getByRole('button', { name: 'Connect calendar' }).click();
   await expect(page).toHaveURL(/\/app\/calendar(\?|$)/);
   await expect(page.getByText('Reads, never writes')).toBeVisible();
@@ -120,7 +123,7 @@ test('connect Google Calendar, leave one event out, and plan around the rest', a
 
 test('hour by hour: tap an hour to add something then', async ({ page }) => {
   await onboard(page, ['Lunch 12:30']);
-  await page.getByRole('button', { name: 'Plan', exact: true }).click();
+  await tab(page, 'Plan').click();
   await expect(page.getByRole('heading', { name: 'Hour by hour' })).toBeVisible();
   await page.getByRole('button', { name: 'Add something at 7:00 PM' }).focus();
   await page.keyboard.press('Enter'); // keyboard: on the hour
@@ -130,13 +133,13 @@ test('hour by hour: tap an hour to add something then', async ({ page }) => {
   await expect(sheet.locator('.quick-preview')).toContainText('7 PM–7:45 PM');
   await sheet.getByRole('button', { name: 'Add', exact: true }).click();
   await page.getByRole('dialog', { name: 'Re-route from here' }).getByRole('button', { name: 'Use this plan' }).click();
-  await page.getByRole('button', { name: 'Plan', exact: true }).click();
+  await tab(page, 'Plan').click();
   await expect(page.locator('.hour-item', { hasText: 'Dinner with Ana' })).toContainText('7:00 PM–7:45 PM');
 });
 
 test('hour by hour: drag an item to move it', async ({ page }) => {
   await onboard(page, ['Lunch 12:30', 'Read 30 min after 2pm']);
-  await page.getByRole('button', { name: 'Plan', exact: true }).click();
+  await tab(page, 'Plan').click();
   const item = page.locator('.hour-item', { hasText: 'Read' });
   const before = await item.locator('.hour-item-body span').first().innerText();
   const grip = item.locator('.hour-grip');
@@ -176,7 +179,7 @@ test('weather precautions: heavy rain while driving, then a hot sunny day', asyn
   await expect(hot).toContainText('feel like 38°');
   await expect(hot).toContainText('Wear sunscreen');
   await expect(page.locator('.weather-line')).toContainText('feels');
-  await page.getByRole('button', { name: 'Plan', exact: true }).click();
+  await tab(page, 'Plan').click();
   await expect(page.locator('.precaution-strip')).toContainText('Wear sunscreen');
 });
 
@@ -204,21 +207,44 @@ test('sign up with Google on the landing page: greeted by name, calendar already
   await expect(page.getByRole('link', { name: 'Continue as Ana' }).first()).toBeVisible();
 });
 
-test('every section tab is on screen on a small phone', async ({ page }) => {
+test('the bottom navigation: five places, real addresses, back and refresh work, and nothing hides behind it', async ({ page }) => {
   await page.setViewportSize({ width: 360, height: 740 });
   await page.clock.setFixedTime(MORNING);
   await page.goto('/app?sky=clear');
   await page.getByRole('button', { name: /^Next/ }).click();
   await page.getByRole('button', { name: 'Next', exact: true }).click();
-  await page.getByRole('button', { name: 'Try an example day' }).click();
+  await page.getByRole('button', { name: 'Skip for now' }).click();
+  // A new user lands on an open day, not on sample tasks.
+  await expect(page.locator('main')).toContainText('Your day is open.');
   const nav = page.getByRole('navigation', { name: 'Sections' });
   await expect(nav).toBeVisible();
   for (const name of ['Today', 'Plan', 'Calendar', 'Routines']) {
-    const box = (await nav.getByRole('button', { name }).boundingBox())!;
+    const box = (await nav.getByRole('link', { name }).boundingBox())!;
     expect(box.x).toBeGreaterThanOrEqual(0);
     expect(box.x + box.width).toBeLessThanOrEqual(360);
-    expect(box.height).toBeGreaterThanOrEqual(24);
+    expect(box.y + box.height).toBeLessThanOrEqual(740);
+    expect(box.height).toBeGreaterThanOrEqual(44);
   }
+  await expect(nav.getByRole('link', { name: 'Today' })).toHaveAttribute('aria-current', 'page');
+  await tab(page, 'Routines').click();
+  await expect(page).toHaveURL(/\/app\/routines\?sky=clear$/);
+  await expect(nav.getByRole('link', { name: 'Routines' })).toHaveAttribute('aria-current', 'page');
+  await expect(page.getByText('Build a routine around something you want to do regularly.')).toBeVisible();
+  // The last thing on the page scrolls clear of the bar.
+  const add = page.getByRole('button', { name: 'Add a routine' });
+  await add.scrollIntoViewIfNeeded();
+  const navTop = (await nav.boundingBox())!.y;
+  expect((await add.boundingBox())!.y + (await add.boundingBox())!.height).toBeLessThanOrEqual(navTop);
+  await tab(page, 'Calendar').click();
+  await expect(page).toHaveURL(/\/app\/days/);
+  await page.goBack();
+  await expect(nav.getByRole('link', { name: 'Routines' })).toHaveAttribute('aria-current', 'page');
+  await page.reload();
+  await expect(page.getByRole('navigation', { name: 'Sections' }).getByRole('link', { name: 'Routines' })).toHaveAttribute('aria-current', 'page');
+  // Keyboard: the tabs are links in order.
+  await page.getByRole('navigation', { name: 'Sections' }).getByRole('link', { name: 'Plan' }).focus();
+  await page.keyboard.press('Enter');
+  await expect(page).toHaveURL(/\/app\/plan/);
 });
 
 test('a new day: yesterday’s calendar isn’t shown as today’s, one tap brings today’s events, and changes wait for review', async ({ page }) => {

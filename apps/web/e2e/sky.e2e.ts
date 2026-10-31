@@ -1,12 +1,12 @@
 import { expect, test, type Page } from '@playwright/test';
 
-/** Finish first-run setup quickly with the example day. */
+/** Finish first-run setup quickly, with nothing added. */
 async function setUp(page: Page, url: string, at: string) {
   await page.clock.setFixedTime(new Date(at));
   await page.goto(url);
   await page.getByRole('button', { name: /^Next/ }).click();
   await page.getByRole('button', { name: 'Next', exact: true }).click();
-  await page.getByRole('button', { name: 'Try an example day' }).click();
+  await page.getByRole('button', { name: 'Skip for now' }).click();
   await expect(page.locator('main')).toBeVisible();
 }
 
@@ -130,7 +130,7 @@ test.describe('where the sky is', () => {
     expect(await page.evaluate(() => (window as unknown as { __asked: number }).__asked)).toBeGreaterThan(0);
     await page.getByRole('button', { name: /^Next/ }).click();
     await page.getByRole('button', { name: 'Next', exact: true }).click();
-    await page.getByRole('button', { name: 'Try an example day' }).click();
+    await page.getByRole('button', { name: 'Skip for now' }).click();
     await expect(page.locator('.location-banner')).toHaveText("Allow location to match your sky. Open your browser's site settings, then reload.");
     // the device's time zone stands in, and says so
     await expect(page.locator('.where-name')).toHaveText('Manila');
