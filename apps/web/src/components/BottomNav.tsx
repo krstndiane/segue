@@ -6,7 +6,7 @@ export type NavTab = 'today' | 'plan' | 'days' | 'routines' | 'together';
 
 const stroke = { fill: 'none', stroke: 'currentColor', strokeWidth: 1.9, strokeLinecap: 'round', strokeLinejoin: 'round' } as const;
 
-const ICONS: Record<NavTab, ReactNode> = {
+export const NAV_ICONS: Record<NavTab, ReactNode> = {
   // a sun on the horizon: today
   today: (
     <>
@@ -45,7 +45,7 @@ const ICONS: Record<NavTab, ReactNode> = {
   ),
 };
 
-const LABELS: Record<NavTab, string> = { today: 'Today', plan: 'Plan', days: 'Calendar', routines: 'Routines', together: 'Together' };
+export const NAV_LABELS: Record<NavTab, string> = { today: 'Today', plan: 'Plan', days: 'Calendar', routines: 'Routines', together: 'Together' };
 
 /**
  * The app's sections, along the bottom where a thumb reaches them. Real links,
@@ -72,11 +72,11 @@ export function BottomNav({ route, together, badge, onGo }: { route: Route; toge
             >
               <span className="bn-icon" aria-hidden="true">
                 <svg viewBox="0 0 24 24" width="24" height="24">
-                  {ICONS[t]}
+                  {NAV_ICONS[t]}
                 </svg>
                 {t === 'together' && badge > 0 && <span className="bn-badge">{badge > 9 ? '9+' : badge}</span>}
               </span>
-              <span className="bn-label">{LABELS[t]}</span>
+              <span className="bn-label">{NAV_LABELS[t]}</span>
             </a>
           </li>
         ))}
