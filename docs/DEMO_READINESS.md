@@ -2,9 +2,9 @@
 
 | | |
 | --- | --- |
-| Demo URL (after merge) | **https://segue.pdyntech.com/demo** |
+| Demo URL | **https://segue.pdyntech.com/demo** (live) |
 | Before merge | The Vercel preview for the `product-demo` pull request, at `/demo` |
-| Deploy commit | The merge of `product-demo` into `main`. Live is `f0a67f6` until then |
+| Deploy commit | `034b710` (merge of #7), deployed by Vercel on 1 Nov 2026 |
 | How to start it | Open `/demo`, or press **See how it works** on the landing page. No account or setting is needed |
 | How to reset | Press **Restart demo** at the top. Reloading the page also starts over, because nothing is saved |
 | Sample data isolated | **Yes.** The demo's day lives in memory in the demo page only. It never reads or writes the app's stored plan (IndexedDB) or an account, and it never calls Google. Its only network request is opt-in: **Use live places near Ayala instead** reads public places from Segue's API, sends no personal data, and saves nothing. Every sample is labelled: "Demo · sample data", "Sample weather", "(sample forecast)", "Sample calendar", "Sample places (OpenStreetMap snapshot)", "Sample scenario" |
@@ -26,7 +26,7 @@
 | Google sign-in for the owner on the live site | PASS |
 | Google sign-in for other accounts | **UNVERIFIED.** It depends on the Audience setting in Google Cloud (see GOOGLE_INTEGRATION_AUDIT.md). The demo doesn't need it |
 | Deployed demo on the Vercel preview (`segue-git-product-demo-…vercel.app/demo`) | PASS. It loads, rain and options work, the map draws, and the live-places fallback message shows. Checked in dark mode |
-| Deployed demo checked on the live site | **UNVERIFIED** until the owner merges |
+| Deployed demo checked on the live site | PASS. Rain, options, map and Use this all work, and Class stays at 3:30 PM. **Live places from OpenStreetMap load.** No broken images; the landing page's rain example and demo link work |
 | First-time user evaluation | **UNVERIFIED.** Needs a person who hasn't seen Segue |
 
 ## Rehearsal (5 minutes, the day before)
