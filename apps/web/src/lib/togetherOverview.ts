@@ -32,7 +32,8 @@ const active = (i: InvitationView) => i.activity.status === 'active';
 export function overview(input: { invitations: InvitationView[]; mine: NoteView[]; others: NoteView[]; today: string; now: number; eventsOn: (date: string) => CalendarEvent[]; localDate: (d: Date) => string }): Overview {
   const { invitations, now, today } = input;
   const toAnswer = invitations.filter((i) => i.direction === 'received' && i.status === 'pending' && active(i));
-  const requests = input.mine.filter((n) => !n.archived && (n.heartCount ?? 0) > 0);
+  // Plans with requests still waiting for your answer (not ones you've already answered).
+  const requests = input.mine.filter((n) => !n.archived && (n.pendingCount ?? n.heartCount ?? 0) > 0);
 
   // One entry per shared activity: as the host you have one row per guest.
   const byActivity = new Map<string, InvitationView[]>();

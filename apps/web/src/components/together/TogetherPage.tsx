@@ -3,8 +3,8 @@
  * without one it explains what it's for and offers to create one. Your own
  * planner never depends on any of this.
  */
-import { useState } from 'react';
-import type { NoteScope, NoteView, NotificationView, PublicProfile } from '@segue/schemas';
+import { useEffect, useState } from 'react';
+import type { NoteView, NotificationView, PublicProfile } from '@segue/schemas';
 import type { CalendarEvent } from '../../lib/calendar';
 import { activityBlockId } from '../../lib/invitePlan';
 import { localDate } from '../../lib/model';
@@ -13,13 +13,12 @@ import { markAllRead, markRead } from '../../lib/social';
 import type { AccountState } from '../../lib/useAccount';
 import type { Together } from '../../lib/useTogether';
 import { Avatar } from '../Account';
-import { Segmented } from '../Sheet';
 import { InvitationsSection, InviteSheet, type InviteDraft } from './Invitations';
-import { NotesSection } from './Notes';
 import { OverviewSection } from './Overview';
 import { PeopleSection } from './People';
+import { DiscoverSection, MyPlansSection, RequestsSection } from './Plans';
 
-export type TogetherTab = 'overview' | 'notes' | 'invites' | 'people' | 'updates';
+export type TogetherTab = 'overview' | 'discover' | 'invites' | 'requests' | 'plans' | 'people' | 'updates';
 
 interface Props {
   accountState: AccountState;
@@ -50,8 +49,33 @@ const ago = (iso: string) => {
 export function TogetherPage(props: Props) {
   const { together: t } = props;
   const [invite, setInvite] = useState<InviteDraft | null>(null);
-  const [noteFocus, setNoteFocus] = useState<{ scope: NoteScope; noteId?: string; interests?: boolean; n: number } | undefined>();
   const [highlight, setHighlight] = useState<string | undefined>();
+  const [shareNew, setShareNew] = useState(0);
+  const [focusNote, setFocusNote] = useState<{ id: string; n: number } | undefined>();
+  // Scroll to the plan a notification is about, once its section has loaded it.
+  useEffect(() => {
+    if (!focusNote) return;
+    let tries = 0;
+    const t = setInterval(() => {
+      const el = document.getElementById(`note-${focusNote.id}`);
+      if (el || ++tries > 20) {
+        clearInterval(t);
+        el?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+      }
+    }, 150);
+    return () => clearInterval(t);
+  }, [focusNote]);
+
+  // Opening Requests reads its updates.
+  useEffect(() => {
+    if (props.tab !== 'requests') return;
+    const unread = t.notifications.filter((n) => !n.readAt && ['note_hearted', 'join_accepted', 'join_declined'].includes(n.type));
+    if (!unread.length) return;
+    t.setNotifications((list) => list.map((x) => (unread.some((u) => u.id === x.id) ? { ...x, readAt: new Date().toISOString() } : x)));
+    t.setUnread((u) => Math.max(0, u - unread.length));
+    for (const n of unread) void markRead(n.id).catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [props.tab]);
 
   if (props.accountState !== 'ready') {
     return (
@@ -121,8 +145,9 @@ export function TogetherPage(props: Props) {
       setTimeout(() => document.getElementById(`inv-${n.entityId}`)?.scrollIntoView({ block: 'center', behavior: 'smooth' }), 50);
       return;
     }
-    setNoteFocus((f) => ({ scope: n.type === 'note_shared' ? 'shared' : n.type === 'join_declined' ? 'hearted' : 'mine', noteId: n.entityId, interests: n.type === 'note_hearted', n: (f?.n ?? 0) + 1 }));
-    props.onTab('notes');
+    // Shared with you: Discover. Someone asked to join yours, or an answer to your request: Requests.
+    props.onTab(n.type === 'note_shared' ? 'discover' : 'requests');
+    setFocusNote((f) => ({ id: n.entityId, n: (f?.n ?? 0) + 1 }));
   }
 
   async function readAll() {
@@ -131,27 +156,79 @@ export function TogetherPage(props: Props) {
     await markAllRead().catch(() => {});
   }
 
+  // New requests to join your plans, and answers to yours, count on the Requests tab until you open it.
+  const REQUEST_TYPES = ['note_hearted', 'join_accepted', 'join_declined'];
+  const requests = t.notifications.filter((n) => !n.readAt && REQUEST_TYPES.includes(n.type)).length;
+  const tabs: { value: Exclude<TogetherTab, 'updates'>; label: string; count?: number }[] = [
+    { value: 'overview', label: 'Overview' },
+    { value: 'discover', label: 'Discover' },
+    { value: 'invites', label: 'Invitations', count: t.waiting.length },
+    { value: 'requests', label: 'Requests', count: requests },
+    { value: 'plans', label: 'My plans' },
+    { value: 'people', label: 'People', count: t.requestCount },
+  ];
+
   return (
     <div className="page together-page">
-      <header className="page-head">
-        <div>
+      <header className="tg-head">
+        <div className="tg-title">
           <h2 className="page-title">Together</h2>
-          <p className="muted">Plan on your own. Share what you choose. Invite when you're ready.</p>
+          <p className="muted">Make time for the people who matter. You choose what to share.</p>
+        </div>
+        <button
+          type="button"
+          className={`tg-updates${props.tab === 'updates' ? ' on' : ''}`}
+          aria-label={t.unread ? `Updates, ${t.unread} new` : 'Updates'}
+          aria-pressed={props.tab === 'updates'}
+          onClick={() => props.onTab(props.tab === 'updates' ? 'overview' : 'updates')}
+        >
+          <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true">
+            <path d="M6 16.5V11a6 6 0 0 1 12 0v5.5l1.5 1.5h-15z" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinejoin="round" />
+            <path d="M10 20.5a2.2 2.2 0 0 0 4 0" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" />
+          </svg>
+          {t.unread > 0 && <span className="bn-badge">{t.unread > 9 ? '9+' : t.unread}</span>}
+        </button>
+        <div className="tg-actions">
+          <button
+            type="button"
+            className="primary"
+            onClick={() => {
+              props.onTab('plans');
+              setShareNew((n) => n + 1);
+            }}
+          >
+            Share a plan
+          </button>
+          <button type="button" className="ghost" onClick={() => props.onTab('people')}>
+            Find people
+          </button>
         </div>
       </header>
-      <Segmented<TogetherTab>
-        label="Show"
-        value={props.tab}
-        onChange={props.onTab}
-        options={[
-          { value: 'overview', label: 'Overview' },
-          { value: 'notes', label: 'Notes' },
-          { value: 'invites', label: t.waiting.length ? `Invitations (${t.waiting.length})` : 'Invitations' },
-          { value: 'people', label: t.requestCount ? `People (${t.requestCount})` : 'People' },
-          { value: 'updates', label: t.unread ? `Updates (${t.unread})` : 'Updates' },
-        ]}
-      />
 
+      {/* Together's own sections: a scrolling row of chips, so it never looks like the app's bottom navigation. */}
+      <div className="tg-tabs" role="tablist" aria-label="Together sections">
+        {tabs.map((x) => (
+          <button
+            key={x.value}
+            type="button"
+            role="tab"
+            id={`tg-tab-${x.value}`}
+            aria-selected={props.tab === x.value}
+            aria-controls="tg-panel"
+            className={props.tab === x.value ? 'on' : undefined}
+            onClick={() => props.onTab(x.value)}
+          >
+            {x.label}
+            {!!x.count && (
+              <span className="tg-count" aria-label={`, ${x.count} new`}>
+                {x.count}
+              </span>
+            )}
+          </button>
+        ))}
+      </div>
+
+      <div id="tg-panel" role="tabpanel" aria-labelledby={props.tab === 'updates' ? undefined : `tg-tab-${props.tab}`} aria-label={props.tab === 'updates' ? 'Updates' : undefined}>
       {props.tab === 'overview' && (
         <OverviewSection
           today={props.today}
@@ -163,20 +240,22 @@ export function TogetherPage(props: Props) {
             props.onTab('invites');
             setTimeout(() => document.getElementById(`inv-${id}`)?.scrollIntoView({ block: 'center', behavior: 'smooth' }), 50);
           }}
-          onInvite={(note, people) => setInvite({ title: note.title, description: note.body, people, sourceNoteId: note.id, placeName: note.placeName, date: note.onDate })}
-          onNewNote={() => {
-            setNoteFocus((f) => ({ scope: 'mine', n: (f?.n ?? 0) + 1 }));
-            props.onTab('notes');
+          onShare={() => {
+            props.onTab('plans');
+            setShareNew((n) => n + 1);
           }}
           onFindPeople={() => props.onTab('people')}
+          onTab={props.onTab}
         />
       )}
-      {props.tab === 'notes' && (
-        <NotesSection
+      {props.tab === 'discover' && <DiscoverSection today={props.today} notify={props.notify} onFindPeople={() => props.onTab('people')} />}
+      {props.tab === 'requests' && <RequestsSection today={props.today} notify={props.notify} onJoined={t.upsert} onDiscover={() => props.onTab('discover')} />}
+      {props.tab === 'plans' && (
+        <MyPlansSection
           today={props.today}
           blocks={props.blocks}
           notify={props.notify}
-          focus={noteFocus}
+          shareNew={shareNew}
           onJoined={t.upsert}
           onInvite={(note: NoteView, people: PublicProfile[]) =>
             setInvite({ title: note.title, description: note.body, people, sourceNoteId: note.id, placeName: note.placeName, date: note.onDate })
@@ -200,7 +279,8 @@ export function TogetherPage(props: Props) {
       {props.tab === 'updates' && (
         <section className="together-section" aria-label="Updates">
           {t.error && !t.loaded && <p className="error">Couldn't load updates just now.</p>}
-          {t.loaded && t.notifications.length === 0 && <p className="empty muted">Nothing yet. Requests to join your plans, connection requests and answers to your invitations show up here.</p>}
+          <h3 className="section-title">Updates</h3>
+          {t.loaded && t.notifications.length === 0 && <p className="empty-state">You&apos;re all caught up. Invitations, requests to join your plans and answers to yours show up here.</p>}
           {t.unread > 0 && (
             <button type="button" className="text-button" onClick={() => void readAll()}>
               Mark all as read
@@ -222,6 +302,8 @@ export function TogetherPage(props: Props) {
           </ul>
         </section>
       )}
+
+      </div>
 
       {invite && (
         <InviteSheet

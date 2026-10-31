@@ -3444,3 +3444,361 @@ details.more[open] {
 .repeat-days .chip:disabled {
   cursor: not-allowed;
 }
+
+/* ---------- Together: header, sections, plan cards ---------- */
+
+.tg-head {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: start;
+  gap: 12px 10px;
+  margin-bottom: 14px;
+}
+.tg-title p {
+  margin: 4px 0 0;
+}
+.tg-updates {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  border: 1px solid var(--line);
+  border-radius: 50%;
+  background: var(--surface);
+  color: var(--ink);
+  cursor: pointer;
+}
+.tg-updates.on {
+  border-color: var(--ink);
+}
+.tg-updates .bn-badge {
+  top: -3px;
+  right: -3px;
+}
+.tg-actions {
+  grid-column: 1 / -1;
+  display: flex;
+  gap: 10px;
+}
+.tg-actions .primary {
+  flex: 1;
+}
+
+/* Together's own sections: chips that scroll sideways, unlike the app's bottom navigation. */
+.tg-tabs {
+  display: flex;
+  gap: 6px;
+  margin: 0 calc(-1 * var(--gutter)) 16px;
+  padding: 2px var(--gutter) 4px;
+  overflow-x: auto;
+  scrollbar-width: none;
+  scroll-snap-type: x proximity;
+}
+.tg-tabs::-webkit-scrollbar {
+  display: none;
+}
+.tg-tabs button {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 40px;
+  padding: 0 14px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--slate);
+  font-size: var(--step--1);
+  font-weight: 600;
+  cursor: pointer;
+  scroll-snap-align: start;
+}
+.tg-tabs button.on {
+  border-color: var(--ink);
+  background: var(--ink);
+  color: var(--fog);
+}
+.tg-tabs button:focus-visible,
+.tg-updates:focus-visible {
+  outline: 2px solid var(--brass);
+  outline-offset: 2px;
+}
+.tg-count {
+  display: inline-grid;
+  place-items: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: var(--brass);
+  color: var(--brass-ink);
+  font-size: 0.68rem;
+  font-weight: 700;
+}
+
+.tg-intro {
+  margin: 0 0 12px;
+  font-size: var(--step--1);
+}
+.tg-loading {
+  padding: 18px 0;
+  color: var(--slate);
+}
+.tg-error {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 16px;
+  border-radius: var(--radius-l);
+  background: var(--surface);
+  box-shadow: inset 0 0 0 1px var(--line);
+}
+.tg-error p {
+  margin: 0;
+}
+
+/* At a glance: three counts, each opening its section. */
+.tg-summary {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  margin: 0 0 18px;
+  padding: 0;
+  list-style: none;
+}
+.tg-summary button {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  width: 100%;
+  height: 100%;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-l);
+  background: var(--surface);
+  color: var(--ink);
+  text-align: left;
+  cursor: pointer;
+}
+.tg-summary strong {
+  font-size: var(--step-1);
+  line-height: 1.1;
+}
+.tg-summary span {
+  color: var(--slate);
+  font-size: 0.78rem;
+  line-height: 1.3;
+}
+
+.plan-list,
+.request-list {
+  display: grid;
+  gap: 12px;
+  margin: 0 0 18px;
+  padding: 0;
+  list-style: none;
+}
+.plan-card {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 14px 16px;
+  border-radius: var(--radius-l);
+  background: var(--surface);
+  box-shadow: inset 0 0 0 1px var(--line);
+}
+.pc-top {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 32px;
+  margin-bottom: 6px;
+}
+.pc-owner {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.pc-owner strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.pc-seen {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: auto;
+  color: var(--slate);
+  font-size: 0.78rem;
+  white-space: nowrap;
+}
+.pc-seen.mine {
+  margin-left: 0;
+  margin-right: auto;
+}
+.pc-title {
+  margin: 0;
+  font-size: var(--step-1);
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+}
+.pc-body {
+  margin: 0;
+  color: var(--slate);
+  overflow-wrap: anywhere;
+  white-space: pre-line;
+}
+.pc-when {
+  margin: 6px 0 0;
+  font-weight: 600;
+}
+.pc-where {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  color: var(--slate);
+}
+.pc-foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-top: 10px;
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
+}
+.pc-status {
+  min-width: 0;
+}
+.pc-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+}
+.status-chip {
+  display: inline-block;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: var(--fog);
+  color: var(--ink);
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+.status-chip.ok {
+  background: color-mix(in srgb, var(--patina) 18%, transparent);
+  color: var(--patina);
+}
+.status-chip.wait {
+  background: var(--brass-soft);
+}
+.status-chip.muted-chip {
+  color: var(--slate);
+}
+
+/* Less-used actions live behind "More options". */
+.more-menu {
+  position: relative;
+  margin-left: 2px;
+}
+.more-menu .icon-button {
+  width: 36px;
+  height: 36px;
+}
+.more-list {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 4px);
+  z-index: 3;
+  min-width: 180px;
+  margin: 0;
+  padding: 6px;
+  list-style: none;
+  border-radius: 14px;
+  background: var(--surface);
+  box-shadow:
+    0 0 0 1px var(--line),
+    0 12px 28px -12px rgb(0 0 0 / 0.35);
+}
+.more-list button {
+  display: block;
+  width: 100%;
+  min-height: 40px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 10px;
+  background: none;
+  color: var(--ink);
+  text-align: left;
+  font: inherit;
+  cursor: pointer;
+}
+.more-list button:hover,
+.more-list button:focus-visible {
+  background: var(--fog);
+}
+.more-list .danger-text {
+  color: var(--danger);
+}
+
+.request-list {
+  margin: 4px 0 0;
+  gap: 0;
+}
+.request-row {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 0;
+  border-top: 1px solid var(--line);
+}
+.request-row:first-child {
+  border-top: 0;
+}
+.request-message {
+  margin: 0;
+  padding: 8px 12px;
+  border-radius: 12px;
+  background: var(--fog);
+  overflow-wrap: anywhere;
+}
+.request-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+.request-actions .grow {
+  flex: 1 1 100%;
+}
+.share-who {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  border: 0;
+  margin: 0;
+  padding: 0;
+}
+
+@media (min-width: 720px) {
+  .tg-head {
+    grid-template-columns: 1fr auto auto;
+    align-items: center;
+  }
+  .tg-actions {
+    grid-column: auto;
+    grid-row: 1;
+    grid-column-start: 2;
+  }
+  .tg-actions .primary {
+    flex: none;
+  }
+}

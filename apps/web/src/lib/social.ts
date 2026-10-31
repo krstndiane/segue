@@ -139,6 +139,8 @@ export interface NoteInput {
   body?: string;
   visibility?: Visibility;
   onDate?: string | null;
+  startTime?: string | null;
+  endTime?: string | null;
   placeName?: string | null;
   blockId?: string | null;
   pinned?: boolean;
@@ -154,7 +156,8 @@ export const getNote = (id: string) => api<{ note: NoteView }>('GET', `/v1/notes
 export const createNote = (n: NoteInput & { title: string }) => api<{ note: NoteView }>('POST', '/v1/notes', n);
 export const updateNote = (id: string, n: NoteInput) => api<{ note: NoteView }>('PATCH', `/v1/notes/${id}`, n);
 export const deleteNote = (id: string) => api<{ deleted: boolean }>('DELETE', `/v1/notes/${id}`);
-export const heartNote = (id: string) => api<{ note: NoteView }>('POST', `/v1/notes/${id}/heart`);
+/** "Can I join?", with an optional short message for the owner. */
+export const heartNote = (id: string, message?: string) => api<{ note: NoteView }>('POST', `/v1/notes/${id}/heart`, message ? { message } : undefined);
 export const unheartNote = (id: string) => api<{ hearted: false; invitationStillOpen: boolean }>('DELETE', `/v1/notes/${id}/heart`);
 export const noteInterests = (id: string) => api<{ interests: InterestView[] }>('GET', `/v1/notes/${id}/interests`);
 /** "Yes, join me": makes it a plan you're both in. Time and place are optional. */

@@ -18,6 +18,8 @@ const note = (id: string, extra: Partial<NoteView> = {}): NoteView => ({
   body: '',
   visibility: 'selected',
   onDate: today,
+  startTime: null,
+  endTime: null,
   placeName: null,
   createdAt: at(8),
   updatedAt: at(8),
