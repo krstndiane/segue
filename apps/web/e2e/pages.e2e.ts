@@ -143,7 +143,8 @@ test('connect Google Calendar, leave one event out, and plan around the rest', a
   await expect(page.locator('main')).not.toContainText('Dentist');
 
   await page.getByRole('button', { name: 'Settings' }).click();
-  await expect(page.getByRole('button', { name: 'Manage Google Calendar' })).toBeVisible();
+  await expect(page.getByRole('dialog', { name: 'Settings' }).locator('.gc-connected')).toContainText('Connected');
+  await page.getByRole('button', { name: 'Close' }).click();
 });
 
 test('hour by hour: tap an hour to add something then', async ({ page }) => {
@@ -226,16 +227,14 @@ test('connect Google Calendar while getting started: one Connect button, then Co
   await page.getByRole('button', { name: 'Plan my day' }).click(); // enabled: the calendar counts
   await expect(page.locator('main')).toContainText('Team standup');
 
-  // Settings links to the one place it's managed; no second sign-in there.
+  // Settings is the one place it's managed (status, sync, disconnect); no second sign-in there.
   await page.getByRole('button', { name: 'Settings' }).click();
   const settings = page.getByRole('dialog', { name: 'Settings' });
-  await expect(settings.getByRole('button', { name: 'Manage Google Calendar' })).toBeVisible();
+  await expect(settings.locator('.gc-connected')).toContainText('Last synced today at');
   await expect(settings.getByRole('button', { name: /Sign (up|in) with Google|Continue with Google/ })).toHaveCount(0);
-  await settings.getByRole('button', { name: 'Manage Google Calendar' }).click();
-  await expect(page).toHaveURL(/\/app\/calendar/);
-  await page.getByRole('button', { name: 'Manage connection' }).click();
-  await page.getByRole('button', { name: 'Disconnect Google Calendar' }).click();
-  await expect(page.getByRole('button', { name: 'Connect Google Calendar' })).toBeVisible();
+  await settings.getByRole('button', { name: 'Manage connection' }).click();
+  await settings.getByRole('button', { name: 'Disconnect Google Calendar' }).click();
+  await expect(settings.getByRole('button', { name: 'Connect Google Calendar' })).toBeVisible();
 });
 
 test('the bottom navigation: five places, real addresses, back and refresh work, and nothing hides behind it', async ({ page }) => {

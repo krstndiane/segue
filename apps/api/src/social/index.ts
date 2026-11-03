@@ -12,6 +12,7 @@ import type { Ctx, Route, SocialDeps, SocialRoutes } from './core';
 import { avatarRoutes } from './avatars';
 import { connectionRoutes } from './connections';
 import { googleRoutes } from './google';
+import { signInWithGoogle } from './googleSignIn';
 import { invitationRoutes } from './invitations';
 import { noteRoutes } from './notes';
 import { notificationRoutes } from './notifications';
@@ -30,6 +31,14 @@ export function createSocial(deps: SocialDeps): SocialRoutes {
   const routes: Route[] = [...profileRoutes, ...usernameRoutes, ...avatarRoutes, ...connectionRoutes, ...stateRoutes, ...noteRoutes, ...invitationRoutes, ...notificationRoutes, ...googleRoutes];
 
   return {
+    features: { googleCalendar: !!deps.google, googleSignIn: !!deps.google && !!deps.googleSignIn },
+    async googleSignIn(req) {
+      try {
+        return await signInWithGoogle(deps, await readJson(req));
+      } catch (e) {
+        throw translate(e);
+      }
+    },
     async route(req, url) {
       const method = req.method ?? 'GET';
       let match: RegExpExecArray | null = null;

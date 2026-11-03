@@ -207,18 +207,20 @@ export async function fetchEvents(from: GoogleToken | EventSource, start: string
  * read-only connection. Call straight from a tap (it opens Google's popup).
  * Includes "email" so the server can say which Google account is connected.
  */
-export function requestCode(): Promise<string> {
+export function requestCode({ profile = false }: { profile?: boolean } = {}): Promise<string> {
   return new Promise((resolve, reject) => {
     const open = () => {
       window
         .google!.accounts.oauth2.initCodeClient({
           client_id: GOOGLE_CLIENT_ID!,
-          scope: `openid email ${SCOPE}`,
+          // Signing in also asks for the name, for the new account's profile.
+          scope: `openid email${profile ? ' profile' : ''} ${SCOPE}`,
           ux_mode: 'popup',
           select_account: true,
           callback: (r) => {
             if (r.error || !r.code) return reject(new CalendarError('denied'));
-            if (!(r.scope ?? '').split(/\s+/).includes(EVENTS_SCOPE)) return reject(new CalendarError('denied'));
+            // Signing in still works without calendar access: the server makes the account and says the calendar isn't connected.
+            if (!profile && !(r.scope ?? '').split(/\s+/).includes(EVENTS_SCOPE)) return reject(new CalendarError('denied'));
             resolve(r.code);
           },
           error_callback: (e) => reject(new CalendarError(e.type === 'popup_closed' ? 'cancelled' : 'unavailable')),

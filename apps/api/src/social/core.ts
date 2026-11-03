@@ -5,6 +5,7 @@ import type { Db } from '../db';
 import { HttpError } from '../http';
 import type { AvatarStorage } from './avatars';
 import type { GoogleCalendarConfig } from './google';
+import type { GoogleSignInConfig } from './googleSignIn';
 import type { Row } from './views';
 
 export interface SocialDeps {
@@ -16,6 +17,8 @@ export interface SocialDeps {
   avatars?: AvatarStorage;
   /** Keeps Google Calendar connected (refresh tokens, encrypted). Without it, /v1/google/calendar says available: false. */
   google?: GoogleCalendarConfig;
+  /** Continue with Google: Supabase's id-token sign-in. Needs `google` too. */
+  googleSignIn?: GoogleSignInConfig;
   limits?: { writesPerHour?: number; searchesPerHour?: number; syncWritesPerHour?: number; usernameChecksPerHour?: number };
   /** Extra reserved usernames on top of the built-in list (RESERVED_USERNAMES). */
   reservedUsernames?: string[];
@@ -46,6 +49,10 @@ export interface Route {
 
 export interface SocialRoutes {
   route(req: IncomingMessage, url: URL): Promise<{ status: number; body: unknown } | undefined>;
+  /** POST /v1/auth/google: no Segue session yet, so it isn't behind the sign-in check. */
+  googleSignIn(req: IncomingMessage): Promise<{ status: number; body: unknown }>;
+  /** What this server can do, for /health (the app hides what isn't switched on). */
+  features: { googleCalendar: boolean; googleSignIn: boolean };
 }
 
 const ID = '([0-9a-fA-F-]{36})';

@@ -45,6 +45,8 @@ export interface Config {
   googleOAuthClientId?: string;
   googleOAuthClientSecret?: string;
   googleTokenKey?: string;
+  /** Supabase's anon (publishable) key, for Continue with Google (the service key works too). */
+  supabaseAnonKey?: string;
 }
 
 /** A non-negative whole number from the environment, or the fallback when it is unset. */
@@ -104,5 +106,6 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     googleOAuthClientId: env.GOOGLE_OAUTH_CLIENT_ID?.trim() || undefined,
     googleOAuthClientSecret: env.GOOGLE_OAUTH_CLIENT_SECRET?.trim() || undefined,
     googleTokenKey: env.GOOGLE_TOKEN_KEY?.trim() || undefined,
+    supabaseAnonKey: env.SUPABASE_ANON_KEY?.trim() || undefined,
   };
 }

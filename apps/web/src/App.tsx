@@ -10,6 +10,8 @@ import { BlockForm, RoutinesView } from './components/Blocks';
 import { RoutineNudge, RoutineReview, WeekOverview } from './components/RoutineReview';
 import { applyRoutines, learnedOf, relinked, type LearnedRoutine } from './lib/routines';
 import { useRoutineLearning } from './lib/useRoutineLearning';
+import { CalendarConnection } from './components/CalendarConnection';
+import { GoogleSignInContext, continueWithGoogle, serverFeatures, signInErrorMessage, type GoogleSignInApi } from './lib/googleSignIn';
 import { CalendarCard } from './components/CalendarCard';
 import type { ConnectionProps } from './components/CalendarConnection';
 import { CalendarPage } from './components/CalendarPage';
@@ -151,6 +153,43 @@ export function App() {
   // Google Calendar stays connected through the server once you're signed in (when the server is set up for it).
   const cal = useCalendar(ready, notify, { userId: me.state === 'ready' ? (me.userId ?? me.profile?.id ?? null) : null });
   // Learning the weekly routine from the calendar: suggestions wait for the person; confirmed ones become routines.
+  // Continue with Google: one consent signs in (or creates the account) and connects Google Calendar.
+  const [googleSignInOn, setGoogleSignInOn] = useState(false);
+  const [googleBusy, setGoogleBusy] = useState(false);
+  const [googleError, setGoogleError] = useState<string | null>(null);
+  useEffect(() => {
+    if (me.enabled) void serverFeatures().then((f) => setGoogleSignInOn(f.googleSignIn));
+  }, [me.enabled]);
+  const googleSignIn: GoogleSignInApi = {
+    available: googleSignInOn && me.enabled && me.state !== 'ready' && me.state !== 'needs-profile',
+    busy: googleBusy,
+    error: googleError,
+    async start() {
+      setGoogleBusy(true);
+      setGoogleError(null);
+      try {
+        const r = await continueWithGoogle();
+        setSheet(null);
+        const p = r.calendar.problem;
+        setToast({
+          text:
+            p === 'scope_denied'
+              ? "You're signed in. Google Calendar isn't connected because calendar access wasn't given: connect it any time on the Google Calendar page."
+              : p === 'other_account'
+                ? `Signed in. Your calendar stays connected to ${r.calendar.email}.`
+                : r.created
+                  ? 'Welcome to Segue. Your account is ready and Google Calendar is connected.'
+                  : 'Signed in. Google Calendar is connected.',
+        });
+        return true;
+      } catch (e) {
+        setGoogleError(signInErrorMessage(e));
+        return false;
+      } finally {
+        setGoogleBusy(false);
+      }
+    },
+  };
   const learning = useRoutineLearning({ ready, connected: cal.calendar.connected, syncedAt: cal.calendar.syncedAt, blocks, setBlocks, fetchWindow: cal.fetchWindow, notify });
   // Today's progress syncs; the plan itself is built on each device.
   const today_ = day.progressAt ? { date: day.date, done: day.doneIds, skipped: day.skippedIds, updatedAt: day.progressAt } : null;
@@ -882,7 +921,7 @@ export function App() {
 
   if (!settings.onboarded) {
     return (
-      <>
+      <GoogleSignInContext.Provider value={googleSignIn}>
         {header}
         <div className="app">
           <Onboarding
@@ -913,12 +952,12 @@ export function App() {
             {toast.text}
           </div>
         )}
-      </>
+      </GoogleSignInContext.Provider>
     );
   }
 
   return (
-    <>
+    <GoogleSignInContext.Provider value={googleSignIn}>
       {header}
       <div className="app">
         <LocationBanner banner={banner} />
@@ -1301,25 +1340,26 @@ export function App() {
             calendar={
               <section className="settings-group">
                 <h3 className="section-title">Google Calendar</h3>
-                <p className="muted small">
-                  {!GOOGLE_CLIENT_ID
-                    ? 'Not set up on this version of Segue.'
-                    : cal.needsAttention
-                      ? 'Your connection needs attention.'
-                      : cal.calendar.connected
-                        ? `Connected${cal.link?.email ? ` as ${cal.link.email}` : ''}.`
-                        : 'Bring in your meetings and classes so Segue plans around them.'}
-                </p>
-                <button
-                  type="button"
-                  className="ghost"
-                  onClick={() => {
-                    setSheet(null);
-                    navigate('calendar');
-                  }}
-                >
-                  {cal.needsAttention ? 'Reconnect Google Calendar' : cal.calendar.connected ? 'Manage Google Calendar' : 'Set up Google Calendar'}
-                </button>
+                {!GOOGLE_CLIENT_ID ? (
+                  <p className="muted small">Not set up on this version of Segue.</p>
+                ) : (
+                  <>
+                    {/* The one place it's managed: account, last sync, Sync now, Reconnect, a different account, Disconnect. */}
+                    <CalendarConnection {...connection} />
+                    {cal.calendar.connected && (
+                      <button
+                        type="button"
+                        className="text-button"
+                        onClick={() => {
+                          setSheet(null);
+                          navigate('calendar');
+                        }}
+                      >
+                        See today’s events
+                      </button>
+                    )}
+                  </>
+                )}
               </section>
             }
             onStartOver={() => void startOver()}
@@ -1327,6 +1367,6 @@ export function App() {
           />
         )}
       </div>
-    </>
+    </GoogleSignInContext.Provider>
   );
 }

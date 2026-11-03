@@ -81,6 +81,8 @@ Google calls are capped per day (`GOOGLE_DAILY_BUDGET`, default 500) and fall ba
    GOOGLE_TOKEN_KEY=$(openssl rand -base64 32)  # keep it; changing it means everyone reconnects once
    ```
 
+8. **Continue with Google** (one Google step signs in, creates the Segue account the first time, and connects the calendar): with step 7 done, turn on the Google provider in Supabase (Authentication → Sign In / Providers → Google: enable, and paste the same web client ID and secret), then optionally give the API the project's anon key (`SUPABASE_ANON_KEY=…`; without it the service role key is used for that one call). `/health` → `googleSignIn: true` once it's on. Details: `docs/GOOGLE_SIGNIN.md`.
+
 Segue only reads timed events, and never changes your calendar. Signed in to a Segue account (and with the three settings on the API), Segue's server keeps an encrypted refresh token and reads events for the app; events pass through and aren't stored. Without an account, or without those settings, sign-in happens in the browser and the short-lived token stays in memory for about an hour. Details: `docs/GOOGLE_CONNECTION_AUDIT.md`. To let other people connect, Google has to verify the app for these scopes (publish the consent screen and submit it for review).
 
 **Smart add** ("Let Segue read it" for notes the phone can't parse) needs an Anthropic API key on the server:

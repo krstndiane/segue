@@ -2,6 +2,8 @@
  * Segue accounts in the app: sign in or create an account, set up and edit
  * the profile, privacy and notifications, sync status, sign out and delete.
  */
+import { useGoogleSignIn } from '../lib/googleSignIn';
+import { ContinueWithGoogle } from './ContinueWithGoogle';
 import { useEffect, useMemo, useState, type FormEvent } from 'react';
 import type { MyProfile, PublicProfile } from '@segue/schemas';
 import { AuthFailure, passwordProblem, sendPasswordReset, signIn, signUp, updatePassword } from '../lib/auth';
@@ -30,6 +32,7 @@ type AuthMode = 'signin' | 'signup' | 'forgot' | 'newPassword' | 'checkEmail' | 
 /** Sign in, create an account, or reset a password. */
 export function AuthSheet({ start = 'signin', onClose, onDone }: { start?: AuthMode; onClose: () => void; onDone: (message: string) => void }) {
   const [mode, setMode] = useState<AuthMode>(start);
+  const googleOn = useGoogleSignIn().available;
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -95,8 +98,12 @@ export function AuthSheet({ start = 'signin', onClose, onDone }: { start?: AuthM
 
   return (
     <Sheet title={titles[mode]} onClose={onClose}>
+      {(mode === 'signin' || mode === 'signup') && (
+        <ContinueWithGoogle className="auth-google" onDone={onClose} />
+      )}
       <form className="form" onSubmit={(e) => void submit(e)}>
-        {mode === 'signup' && <p className="muted small">An account keeps your plans on every device and lets you share notes and invite people. Your planner works without one too.</p>}
+        {googleOn && (mode === 'signin' || mode === 'signup') && <p className="auth-or muted small">Or with email</p>}
+        {mode === 'signup' && <p className="muted small">An account keeps your plans on every device and lets you share plans and invite people. Your planner works without one too.</p>}
         {mode !== 'newPassword' && (
           <label className="field">
             <span>Email</span>
@@ -535,18 +542,20 @@ export function AccountSettings(props: {
   onRetry: () => void;
 }) {
   const { profile } = props;
+  const googleOn = useGoogleSignIn().available;
   return (
     <section className="settings-group">
       <h3 className="section-title">Segue account</h3>
       {props.state === 'signed-out' && (
         <>
-          <p className="muted small">Keep your plans on every device, share notes and invite people. Optional: Segue works without one.</p>
+          <p className="muted small">Keep your plans on every device, share plans and invite people. Optional: Segue works without one.</p>
+          <ContinueWithGoogle />
           <div className="row-actions">
-            <button type="button" className="primary" onClick={props.onCreate}>
-              Create account
+            <button type="button" className={googleOn ? 'ghost' : 'primary'} onClick={props.onCreate}>
+              {googleOn ? 'Create account with email' : 'Create account'}
             </button>
             <button type="button" className="ghost" onClick={props.onSignIn}>
-              Sign in
+              {googleOn ? 'Sign in with email' : 'Sign in'}
             </button>
           </div>
         </>

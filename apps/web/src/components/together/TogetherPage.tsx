@@ -13,6 +13,8 @@ import { markAllRead, markRead } from '../../lib/social';
 import type { AccountState } from '../../lib/useAccount';
 import type { Together } from '../../lib/useTogether';
 import { Avatar } from '../Account';
+import { ContinueWithGoogle } from '../ContinueWithGoogle';
+import { useGoogleSignIn } from '../../lib/googleSignIn';
 import { InvitationsSection, InviteSheet, type InviteDraft } from './Invitations';
 import { PeopleSection } from './People';
 import { DiscoverSection, MyPlansSection, RequestsSection } from './Plans';
@@ -47,6 +49,7 @@ const ago = (iso: string) => {
 
 export function TogetherPage(props: Props) {
   const { together: t } = props;
+  const googleOn = useGoogleSignIn().available;
   const [invite, setInvite] = useState<InviteDraft | null>(null);
   const [highlight, setHighlight] = useState<string | undefined>();
   const [shareNew, setShareNew] = useState(0);
@@ -94,12 +97,13 @@ export function TogetherPage(props: Props) {
                 <li>“Can I join?” only asks. Nothing is agreed until the other person says yes.</li>
                 <li>Invitations never change your day unless you add them yourself.</li>
               </ul>
+              <ContinueWithGoogle />
               <div className="row-actions">
-                <button type="button" className="primary" onClick={props.onCreate}>
-                  Create a free account
+                <button type="button" className={googleOn ? 'ghost' : 'primary'} onClick={props.onCreate}>
+                  {googleOn ? 'Create an account with email' : 'Create a free account'}
                 </button>
                 <button type="button" className="ghost" onClick={props.onSignIn}>
-                  Sign in
+                  {googleOn ? 'Sign in with email' : 'Sign in'}
                 </button>
               </div>
             </>
