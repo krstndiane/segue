@@ -102,10 +102,17 @@ const STEPS = ['The plan', 'Something changes', 'Segue finds alternatives', 'You
 
 /**
  * How it works, told once: the sample day on Segue's real planner and
- * alternatives engine, one step and one action at a time.
+ * alternatives engine, one step and one action at a time. Any of the four
+ * steps can be chosen, in any order; the motorcycle rides to the one chosen.
  */
 function RouteStory() {
-  const [step, setStep] = useState(0);
+  const [step, setStepState] = useState(0);
+  const [visited, setVisited] = useState<number[]>([0]);
+  /** Choose a step (a milestone, or a button in the panel): the motorcycle rides there and the panel follows. */
+  const setStep = (i: number) => {
+    setStepState(i);
+    setVisited((v) => (v.includes(i) ? v : [...v, i]));
+  };
   const [pick, setPick] = useState(0);
   const roadWrap = useRef<HTMLDivElement>(null);
   const base = useMemo(() => demoStart(), []);
@@ -146,11 +153,11 @@ function RouteStory() {
   return (
     <div className="lp-story">
       <div className="lp-steps-wrap" ref={roadWrap}>
-        <RoadRide wrap={roadWrap} />
+        <RoadRide wrap={roadWrap} step={step} />
         <ol className="lp-steps">
           {STEPS.map((label, i) => (
-            <li key={label} aria-current={i === step ? 'step' : undefined} className={i < step ? 'done' : i === step ? 'on' : ''}>
-              <button type="button" onClick={() => i <= step && setStep(i)} disabled={i > step}>
+            <li key={label} aria-current={i === step ? 'step' : undefined} className={i === step ? 'on' : visited.includes(i) ? 'visited' : ''}>
+              <button type="button" onClick={() => i !== step && setStep(i)} aria-label={`Step ${i + 1}: ${label}`}>
                 <span className="lp-step-dot" aria-hidden="true">
                   {i + 1}
                 </span>
@@ -215,7 +222,14 @@ function RouteStory() {
               <a className="lp-primary" href="/app" onClick={openApp}>
                 Try Segue
               </a>
-              <button type="button" className="lp-text" onClick={() => setStep(0)}>
+              <button
+                type="button"
+                className="lp-text"
+                onClick={() => {
+                  setStep(0);
+                  setVisited([0]);
+                }}
+              >
                 Start over
               </button>
             </div>

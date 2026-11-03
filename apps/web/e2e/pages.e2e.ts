@@ -93,9 +93,9 @@ test('the landing page: a route-aware planner, one main action, and the story to
   await expect(story.locator('.lp-stage h3')).toHaveText('You decide');
   await expect(story).toContainText('Class stays at 3:30 PM');
   await expect(story).toContainText('sample weather and real places from an OpenStreetMap snapshot');
-  // Earlier steps can be revisited, later ones can't be skipped to.
+  // Start over goes back to the plan.
   await story.getByRole('button', { name: 'Start over' }).click();
-  await expect(story.getByRole('button', { name: /You decide/ })).toBeDisabled();
+  await expect(story.locator('.lp-steps [aria-current="step"]')).toContainText('The plan');
 
   // The full-screen demo is its own, separately named link; Try Segue opens the app.
   await story.getByRole('link', { name: 'Open the full-screen demo' }).click();
@@ -343,87 +343,179 @@ async function bikeOnRoad(page: Page) {
     const m = /translate\(([-\d.]+) ([-\d.]+)\)/.exec(bike.getAttribute('transform') ?? '');
     const x = Number(m?.[1]);
     const y = Number(m?.[2]);
-    return { x, y, at: Number(bike.dataset.at), onRoad: road.isPointInStroke(new DOMPoint(x, y)) };
+    return { x, y, at: Number(bike.dataset.at), facing: bike.dataset.facing, onRoad: road.isPointInStroke(new DOMPoint(x, y)) };
   });
 }
+/** The centre of step i's circle, in the road's coordinates. */
+async function dotX(page: Page, i: number) {
+  const dot = (await page.locator('#how .lp-step-dot').nth(i).boundingBox())!;
+  const wrap = (await page.locator('#how .lp-steps-wrap').boundingBox())!;
+  return { x: dot.x - wrap.x + dot.width / 2, r: dot.width / 2 };
+}
+/** Choose step i and sample the ride until it stops. */
+async function ride(page: Page, i: number) {
+  await page.locator('#how .lp-steps button').nth(i).click();
+  const samples = [];
+  for (let k = 0; k < 60; k++) {
+    samples.push(await bikeOnRoad(page));
+    if (k > 3 && samples.at(-1)!.at === samples.at(-2)!.at && samples.at(-2)!.at === samples.at(-3)!.at) break;
+    await page.waitForTimeout(70);
+  }
+  return samples;
+}
+const STEP_TITLES = ['Here’s today’s route', 'It starts raining', 'Segue finds a practical way forward', 'You decide'];
 
-test('how it works: a motorcycle rides the winding road from Step 1 to Step 4, once, lighting each milestone', async ({ page }) => {
+test('how it works: the motorcycle never moves on its own', async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 860 });
   await page.goto('/');
-  // Before the section is in view it waits at the start, on the road.
   await page.locator('.lp-bike').waitFor({ state: 'attached' });
-  const before = await bikeOnRoad(page);
-  expect(before.onRoad).toBe(true);
-  await page.waitForTimeout(600);
-  expect((await bikeOnRoad(page)).at).toBe(before.at);
-
-  // The order the milestones are reached in.
-  await page.evaluate(() => {
-    (window as unknown as { reached: number[] }).reached = [];
-    document.querySelectorAll('#how .lp-steps > li').forEach((li, i) =>
-      new MutationObserver(() => {
-        const r = (window as unknown as { reached: number[] }).reached;
-        if (li.classList.contains('passed') && !r.includes(i)) r.push(i);
-      }).observe(li, { attributes: true, attributeFilter: ['class'] }),
-    );
+  const start = await bikeOnRoad(page);
+  expect(start.onRoad).toBe(true);
+  // Not on load, not when the section scrolls into view, not after a while, not when scrolling around.
+  await page.locator('#how .lp-steps-wrap').scrollIntoViewIfNeeded();
+  await page.waitForTimeout(2500);
+  expect((await bikeOnRoad(page)).at).toBe(start.at);
+  await page.mouse.wheel(0, 600);
+  await page.waitForTimeout(400);
+  await page.mouse.wheel(0, -600);
+  await page.waitForTimeout(1500);
+  expect((await bikeOnRoad(page)).at).toBe(start.at);
+  await expect(page.locator('#how .lp-steps > li.on')).toContainText('The plan');
+  // The panel's text is readable on its card inside the navy section (not white on white).
+  const contrast = await page.evaluate(() => {
+    const lum = (c: string) => {
+      const [r, g, b] = (c.match(/\d+(\.\d+)?/g) ?? []).slice(0, 3).map(Number).map((v) => {
+        const x = v / 255;
+        return x <= 0.03928 ? x / 12.92 : ((x + 0.055) / 1.055) ** 2.4;
+      });
+      return 0.2126 * r! + 0.7152 * g! + 0.0722 * b!;
+    };
+    const fg = lum(getComputedStyle(document.querySelector('#how .lp-stage h3')!).color);
+    const bg = lum(getComputedStyle(document.querySelector('#how .lp-stage')!).backgroundColor);
+    return (Math.max(fg, bg) + 0.05) / (Math.min(fg, bg) + 0.05);
   });
-  await page.locator('#how .lp-steps-wrap').scrollIntoViewIfNeeded();
-  // Sampled through the ride: always on the road, only ever moving forward.
-  const samples = [];
-  for (let i = 0; i < 40; i++) {
-    samples.push(await bikeOnRoad(page));
-    await page.waitForTimeout(120);
-  }
-  for (const s of samples) expect(s.onRoad, `off the road at ${s.x},${s.y}`).toBe(true);
-  for (let i = 1; i < samples.length; i++) expect(samples[i]!.at).toBeGreaterThanOrEqual(samples[i - 1]!.at);
-  expect(new Set(samples.map((s) => s.at)).size).toBeGreaterThan(15); // it really moved
-  await expect(page.getByRole('button', { name: 'Ride again' })).toBeVisible({ timeout: 4000 });
-  expect(await page.evaluate(() => (window as unknown as { reached: number[] }).reached)).toEqual([0, 1, 2, 3]);
-  await expect(page.locator('#how .lp-steps > li').nth(3)).toHaveClass(/arrived/);
-
-  // It parks just short of Step 4: close to the circle, never on top of the number.
-  const end = await bikeOnRoad(page);
-  const dot4 = (await page.locator('#how .lp-step-dot').nth(3).boundingBox())!;
-  const wrap = (await page.locator('#how .lp-steps-wrap').boundingBox())!;
-  const dx = dot4.x - wrap.x + dot4.width / 2 - end.x;
-  expect(dx).toBeGreaterThan(dot4.width / 2);
-  expect(dx).toBeLessThan(80);
-  // The four milestones stay readable.
-  for (const name of ['The plan', 'Something changes', 'Segue finds alternatives', 'You decide']) await expect(page.locator('#how .lp-steps')).toContainText(name);
-
-  // Scrolling away and back doesn't restart it.
-  await page.mouse.wheel(0, -2000);
-  await page.waitForTimeout(400);
-  await page.locator('#how .lp-steps-wrap').scrollIntoViewIfNeeded();
-  await page.waitForTimeout(700);
-  expect((await bikeOnRoad(page)).at).toBe(end.at);
-
-  // Ride again replays it from the start.
-  await page.getByRole('button', { name: 'Ride again' }).click();
-  await page.waitForTimeout(250);
-  expect((await bikeOnRoad(page)).at).toBeLessThan(end.at);
-  await expect(page.getByRole('button', { name: 'Ride again' })).toBeVisible({ timeout: 8000 });
-
-  // On a phone the same road, the same ride: the road is rebuilt for the new width and the bike stays on it.
-  await page.setViewportSize({ width: 390, height: 844 });
-  await page.waitForTimeout(400);
-  expect((await bikeOnRoad(page)).onRoad).toBe(true);
-  expect(await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)).toBeLessThanOrEqual(0);
+  expect(contrast).toBeGreaterThan(7);
+  // It rests just before Step 1, never on the number.
+  const d1 = await dotX(page, 0);
+  expect(d1.x - start.x).toBeGreaterThan(d1.r);
 });
 
-test('how it works with reduced motion: a still road, the motorcycle waiting at the start, no ride', async ({ page }) => {
+test('how it works: choosing a step rides the motorcycle along the road to it, forwards or back, and the panel follows', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 860 });
+  await page.goto('/');
+  await page.locator('#how .lp-steps-wrap').scrollIntoViewIfNeeded();
+  const steps = page.locator('#how .lp-steps > li');
+  const stage = page.locator('#how .lp-stage h3');
+
+  for (const [to, forward] of [[1, true], [2, true], [3, true], [0, false]] as const) {
+    const samples = await ride(page, to);
+    // Every sample on the road surface, always in one direction, and it really moved.
+    for (const s of samples) expect(s.onRoad, `off the road at ${s.x},${s.y}`).toBe(true);
+    for (let k = 1; k < samples.length; k++) {
+      if (forward) expect(samples[k]!.at).toBeGreaterThanOrEqual(samples[k - 1]!.at);
+      else expect(samples[k]!.at).toBeLessThanOrEqual(samples[k - 1]!.at);
+    }
+    expect(new Set(samples.map((s) => s.at)).size).toBeGreaterThan(4);
+    const end = samples.at(-1)!;
+    expect(end.facing).toBe(forward ? 'forward' : 'back');
+    // Stopped beside the chosen circle, on the side it came from, clear of the number.
+    const d = await dotX(page, to);
+    const gap = forward ? d.x - end.x : end.x - d.x;
+    expect(gap).toBeGreaterThan(d.r);
+    expect(gap).toBeLessThan(70);
+    await expect(steps.nth(to)).toHaveClass(/\bon\b/);
+    await expect(stage).toHaveText(STEP_TITLES[to]!);
+  }
+  // Active, visited and not visited look different: after the tour, the others are all visited.
+  for (const i of [1, 2, 3]) await expect(steps.nth(i)).toHaveClass(/visited/);
+  await expect(steps.nth(0)).toHaveAttribute('aria-current', 'step');
+
+  // Choosing the step it's already at doesn't move it.
+  const still = await bikeOnRoad(page);
+  await page.locator('#how .lp-steps button').nth(0).click();
+  await page.waitForTimeout(700);
+  expect((await bikeOnRoad(page)).at).toBe(still.at);
+
+  // Random order, each one lands where it should with the matching panel.
+  for (const to of [2, 0, 3, 1]) {
+    const end = (await ride(page, to)).at(-1)!;
+    const d = await dotX(page, to);
+    expect(Math.abs(end.x - d.x)).toBeGreaterThan(d.r);
+    expect(Math.abs(end.x - d.x)).toBeLessThan(70);
+    await expect(stage).toHaveText(STEP_TITLES[to]!);
+  }
+});
+
+test('how it works: a new choice mid-ride redirects the motorcycle from where it is, without jumping', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 860 });
+  await page.goto('/');
+  await page.locator('#how .lp-steps-wrap').scrollIntoViewIfNeeded();
+  const buttons = page.locator('#how .lp-steps button');
+  await buttons.nth(3).click();
+  await page.waitForTimeout(450);
+  const mid = await bikeOnRoad(page);
+  await buttons.nth(1).click(); // change of mind, while riding
+  const trace = [mid];
+  for (let k = 0; k < 40; k++) {
+    await page.waitForTimeout(50);
+    trace.push(await bikeOnRoad(page));
+  }
+  // Continuous: never more than a small step between samples, always on the road.
+  for (let k = 1; k < trace.length; k++) {
+    expect(Math.abs(trace[k]!.at - trace[k - 1]!.at)).toBeLessThan(90);
+    expect(trace[k]!.onRoad).toBe(true);
+  }
+  const end = trace.at(-1)!;
+  const d = await dotX(page, 1);
+  expect(Math.abs(end.x - d.x)).toBeGreaterThan(d.r);
+  expect(Math.abs(end.x - d.x)).toBeLessThan(70);
+  await expect(page.locator('#how .lp-stage h3')).toHaveText(STEP_TITLES[1]!);
+  // Rapid clicks: it ends at the last one chosen.
+  for (const i of [3, 0, 2, 3, 2]) await buttons.nth(i).click();
+  await page.waitForTimeout(2600);
+  const last = await bikeOnRoad(page);
+  const d2 = await dotX(page, 2);
+  expect(Math.abs(last.x - d2.x)).toBeLessThan(70);
+  await expect(page.locator('#how .lp-steps > li').nth(2)).toHaveClass(/\bon\b/);
+});
+
+test('how it works on a phone: the same road, the steps are easy to tap, and the motorcycle stays on it', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto('/');
+  await page.locator('#how .lp-steps-wrap').scrollIntoViewIfNeeded();
+  for (let i = 0; i < 4; i++) {
+    const box = (await page.locator('#how .lp-steps button').nth(i).boundingBox())!;
+    expect(box.height).toBeGreaterThanOrEqual(44);
+  }
+  for (const to of [2, 3, 0]) {
+    const samples = await ride(page, to);
+    for (const s of samples) expect(s.onRoad).toBe(true);
+    await expect(page.locator('#how .lp-stage h3')).toHaveText(STEP_TITLES[to]!);
+  }
+  expect(await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)).toBeLessThanOrEqual(0);
+  // Resizing rebuilds the road and keeps the motorcycle at its step.
+  await page.setViewportSize({ width: 820, height: 1000 });
+  await page.waitForTimeout(400);
+  const now = await bikeOnRoad(page);
+  expect(now.onRoad).toBe(true);
+  const d = await dotX(page, 0);
+  expect(Math.abs(now.x - d.x)).toBeLessThan(70);
+});
+
+test('how it works with reduced motion: choosing a step moves the motorcycle there at once, with no ride', async ({ page }) => {
   await page.emulateMedia({ reducedMotion: 'reduce' });
   await page.goto('/');
   await page.locator('#how .lp-steps-wrap').scrollIntoViewIfNeeded();
-  await page.waitForTimeout(300);
   const a = await bikeOnRoad(page);
-  expect(a.onRoad).toBe(true);
-  await page.waitForTimeout(2500);
+  await page.waitForTimeout(1500);
   expect((await bikeOnRoad(page)).at).toBe(a.at);
-  await expect(page.locator('#how .lp-steps > li.passed')).toHaveCount(0);
-  await expect(page.getByRole('button', { name: 'Ride again' })).toHaveCount(0);
-  // Before Step 1, so the number stays clear.
-  const dot1 = (await page.locator('#how .lp-step-dot').first().boundingBox())!;
-  const wrap = (await page.locator('#how .lp-steps-wrap').boundingBox())!;
-  expect(a.x).toBeLessThan(dot1.x - wrap.x);
+  await page.locator('#how .lp-steps button').nth(2).click();
+  await page.waitForTimeout(60);
+  const b = await bikeOnRoad(page);
+  expect(b.onRoad).toBe(true);
+  const d = await dotX(page, 2);
+  expect(Math.abs(b.x - d.x)).toBeLessThan(70);
+  await page.waitForTimeout(400);
+  expect((await bikeOnRoad(page)).at).toBe(b.at); // nothing left moving
+  await expect(page.locator('#how .lp-stage h3')).toHaveText(STEP_TITLES[2]!);
 });
