@@ -50,12 +50,15 @@ async function buildSocial(): Promise<SocialRoutes | undefined> {
     if (applied.length) console.log(`Database migrations applied: ${applied.join(', ')}`);
   }
   const { supabaseUrl, supabaseServiceRoleKey } = config;
+  const google = googleCalendar();
   return createSocial({
     db,
     verifier: verifier!,
     deleteAuthUser: supabaseUrl && supabaseServiceRoleKey ? (id) => deleteAuthUser(supabaseUrl, supabaseServiceRoleKey, id) : undefined,
     avatars: supabaseUrl && supabaseServiceRoleKey ? supabaseAvatarStorage(supabaseUrl, supabaseServiceRoleKey) : undefined,
-    google: googleCalendar(),
+    google,
+    // Continue with Google needs Google kept connected (above) and a Supabase key for its id-token sign-in.
+    googleSignIn: google && supabaseUrl && (config.supabaseAnonKey || supabaseServiceRoleKey) ? { supabaseUrl, apiKey: (config.supabaseAnonKey || supabaseServiceRoleKey)! } : undefined,
     reservedUsernames: config.reservedUsernames,
     limits: { writesPerHour: config.socialWriteRateLimit, searchesPerHour: config.searchRateLimit },
     log: (l) => console.log(l),

@@ -77,7 +77,7 @@ export function parseTokenKey(raw: string): Buffer {
 
 // ---- talking to Google ----
 
-interface TokenAnswer {
+export interface TokenAnswer {
   access_token?: string;
   refresh_token?: string;
   expires_in?: number;
@@ -86,7 +86,7 @@ interface TokenAnswer {
   error?: string;
 }
 
-class GoogleRefused extends Error {
+export class GoogleRefused extends Error {
   constructor(
     readonly reason: 'revoked' | 'unreachable' | 'denied' | 'busy',
     detail = '',
@@ -95,7 +95,7 @@ class GoogleRefused extends Error {
   }
 }
 
-async function tokenCall(g: GoogleCalendarConfig, form: Record<string, string>): Promise<TokenAnswer> {
+export async function tokenCall(g: GoogleCalendarConfig, form: Record<string, string>): Promise<TokenAnswer> {
   let res: Response;
   try {
     res = await (g.fetch ?? fetch)(TOKEN_URL, {
@@ -124,7 +124,7 @@ function whoFromIdToken(idToken: string | undefined): { sub: string; email: stri
   }
 }
 
-async function revoke(g: GoogleCalendarConfig, token: string): Promise<void> {
+export async function revoke(g: GoogleCalendarConfig, token: string): Promise<void> {
   try {
     await (g.fetch ?? fetch)(REVOKE_URL, { method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({ token }).toString() });
   } catch {
@@ -244,7 +244,7 @@ const RangeSchema = z
   .object({ start: z.string().datetime({ offset: true }), end: z.string().datetime({ offset: true }) })
   .refine((r) => Date.parse(r.end) > Date.parse(r.start) && Date.parse(r.end) - Date.parse(r.start) <= MAX_RANGE_MS, 'end must be after start, within 62 days');
 
-function statusOf(row: Row | undefined, available: boolean): GoogleCalendarStatus {
+export function statusOf(row: Row | undefined, available: boolean): GoogleCalendarStatus {
   if (!row) return { available, status: 'disconnected' };
   return {
     available,
@@ -337,62 +337,8 @@ export const googleRoutes: Route[] = [
         if (e instanceof GoogleRefused && e.reason === 'unreachable') throw new HttpError(502, "Couldn't reach Google. Try again in a minute.", undefined, {}, 'google_unreachable');
         throw new HttpError(400, "Google didn't accept that sign-in. Try connecting again.", undefined, {}, 'google_code_invalid');
       }
-      const scopes = (t.scope ?? '').split(/\s+/).filter(Boolean);
-      if (!scopes.includes(EVENTS_SCOPE)) {
-        await revoke(g, t.access_token!);
-        throw new HttpError(400, "Google didn't give Segue access to your calendar. Connect again and allow access.", undefined, {}, 'google_scope_missing');
-      }
-      const who = whoFromIdToken(t.id_token);
-      if (!who) {
-        await revoke(g, t.access_token!);
-        throw new HttpError(400, "Google didn't say which account this is. Try connecting again.", undefined, {}, 'google_code_invalid');
-      }
-      const existing = await rowFor(ctx);
-      if (existing && existing.google_sub !== who.sub && !replace) {
-        // Don't switch accounts silently: the app asks first.
-        await revoke(g, t.access_token!);
-        throw new HttpError(
-          409,
-          `Segue is connected to ${existing.email}. Disconnect it first, or choose to switch to ${who.email}.`,
-          { connected: existing.email, offered: who.email },
-          {},
-          'google_other_account',
-        );
-      }
-      const uid = ctx.user.id;
-      // Google only sends a refresh token on first consent; keep the one we have for the same account.
-      const refreshSealed = t.refresh_token
-        ? sealToken(g.key, uid, t.refresh_token)
-        : existing && existing.google_sub === who.sub && existing.refresh_token_enc
-          ? String(existing.refresh_token_enc)
-          : null;
-      if (!refreshSealed) {
-        await revoke(g, t.access_token!);
-        throw new HttpError(400, "Google didn't give Segue lasting access. Try connecting again.", undefined, {}, 'google_no_offline');
-      }
-      if (existing && existing.google_sub !== who.sub && existing.refresh_token_enc) {
-        // Switching accounts: let go of the old one at Google too.
-        try {
-          await revoke(g, openToken(g.key, uid, String(existing.refresh_token_enc)));
-        } catch {
-          // unreadable: nothing to revoke
-        }
-      }
-      const now = ctx.deps.now?.() ?? Date.now();
-      const rows = await ctx.db.query(
-        `insert into segue.google_accounts (user_id, google_sub, email, scopes, refresh_token_enc, access_token_enc, access_expires_at, status, last_error)
-         values ($1, $2, $3, $4, $5, $6, $7, 'active', null)
-         on conflict (user_id) do update set
-           google_sub = excluded.google_sub, email = excluded.email, scopes = excluded.scopes,
-           refresh_token_enc = excluded.refresh_token_enc, access_token_enc = excluded.access_token_enc,
-           access_expires_at = excluded.access_expires_at, status = 'active', last_error = null,
-           created_at = case when segue.google_accounts.google_sub = excluded.google_sub then segue.google_accounts.created_at else now() end,
-           last_synced_at = case when segue.google_accounts.google_sub = excluded.google_sub then segue.google_accounts.last_synced_at else null end,
-           updated_at = now()
-         returning *`,
-        [uid, who.sub, who.email.slice(0, 320), scopes.join(' '), refreshSealed, sealToken(g.key, uid, t.access_token!), new Date(now + (t.expires_in ?? 3600) * 1000)],
-      );
-      return { status: 200, body: statusOf(rows[0], true) };
+      const row = await storeConnection(ctx.db, g, ctx.user.id, t, { replace, now: ctx.deps.now?.() ?? Date.now() });
+      return { status: 200, body: statusOf(row, true) };
     },
   },
   {
@@ -455,6 +401,71 @@ export async function forgetGoogle(ctx: Ctx): Promise<void> {
     }
   }
   await ctx.db.query('delete from segue.google_accounts where user_id = $1', [ctx.user.id]);
+}
+
+
+/**
+ * Save a Google grant as this person's lasting calendar connection (encrypted),
+ * after checking it allows reading the calendar and says which Google account it
+ * is. Used by Connect Google Calendar and by Continue with Google. Never switches
+ * to a different Google account silently (`replace` must be set).
+ */
+export async function storeConnection(db: Ctx['db'], g: GoogleCalendarConfig, uid: string, t: TokenAnswer, opts: { replace?: boolean; now: number }): Promise<Row> {
+  const { replace, now } = opts;
+  const scopes = (t.scope ?? '').split(/\s+/).filter(Boolean);
+  if (!scopes.includes(EVENTS_SCOPE)) {
+    await revoke(g, t.access_token!);
+    throw new HttpError(400, "Google didn't give Segue access to your calendar. Connect again and allow access.", undefined, {}, 'google_scope_missing');
+  }
+  const who = whoFromIdToken(t.id_token);
+  if (!who) {
+    await revoke(g, t.access_token!);
+    throw new HttpError(400, "Google didn't say which account this is. Try connecting again.", undefined, {}, 'google_code_invalid');
+  }
+  const existing = (await db.query('select * from segue.google_accounts where user_id = $1', [uid]))[0];
+  if (existing && existing.google_sub !== who.sub && !replace) {
+    // Don't switch accounts silently: the app asks first.
+    await revoke(g, t.access_token!);
+    throw new HttpError(
+      409,
+      `Segue is connected to ${existing.email}. Disconnect it first, or choose to switch to ${who.email}.`,
+      { connected: existing.email, offered: who.email },
+      {},
+      'google_other_account',
+    );
+  }
+    // Google only sends a refresh token on first consent; keep the one we have for the same account.
+  const refreshSealed = t.refresh_token
+    ? sealToken(g.key, uid, t.refresh_token)
+    : existing && existing.google_sub === who.sub && existing.refresh_token_enc
+      ? String(existing.refresh_token_enc)
+      : null;
+  if (!refreshSealed) {
+    await revoke(g, t.access_token!);
+    throw new HttpError(400, "Google didn't give Segue lasting access. Try connecting again.", undefined, {}, 'google_no_offline');
+  }
+  if (existing && existing.google_sub !== who.sub && existing.refresh_token_enc) {
+    // Switching accounts: let go of the old one at Google too.
+    try {
+      await revoke(g, openToken(g.key, uid, String(existing.refresh_token_enc)));
+    } catch {
+      // unreadable: nothing to revoke
+    }
+  }
+    const rows = await db.query(
+    `insert into segue.google_accounts (user_id, google_sub, email, scopes, refresh_token_enc, access_token_enc, access_expires_at, status, last_error)
+     values ($1, $2, $3, $4, $5, $6, $7, 'active', null)
+     on conflict (user_id) do update set
+       google_sub = excluded.google_sub, email = excluded.email, scopes = excluded.scopes,
+       refresh_token_enc = excluded.refresh_token_enc, access_token_enc = excluded.access_token_enc,
+       access_expires_at = excluded.access_expires_at, status = 'active', last_error = null,
+       created_at = case when segue.google_accounts.google_sub = excluded.google_sub then segue.google_accounts.created_at else now() end,
+       last_synced_at = case when segue.google_accounts.google_sub = excluded.google_sub then segue.google_accounts.last_synced_at else null end,
+       updated_at = now()
+     returning *`,
+    [uid, who.sub, who.email.slice(0, 320), scopes.join(' '), refreshSealed, sealToken(g.key, uid, t.access_token!), new Date(now + (t.expires_in ?? 3600) * 1000)],
+  );
+  return rows[0]!;
 }
 
 function refusedToHttp(e: GoogleRefused): HttpError {

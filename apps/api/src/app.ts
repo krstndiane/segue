@@ -97,6 +97,7 @@ export function createApp(deps: AppDeps) {
   const understandCap = new DailyCap(deps.config.smartAddDailyCap ?? 300);
   const assistantLimiter = new RateLimiter(deps.config.assistantRateLimit ?? 60, 60 * 60 * 1000);
   const assistantCap = new DailyCap(deps.config.assistantDailyCap ?? 500);
+  const signInLimiter = new RateLimiter(30, 60 * 60 * 1000);
   const who = (req: IncomingMessage) => clientKey(req, { header: deps.config.clientIpHeader, hops: deps.config.trustedProxyHops });
   /** Places, weather and place names each reach a free service that bans heavy callers. */
   const limitRead = (req: IncomingMessage) => {
@@ -131,11 +132,22 @@ export function createApp(deps: AppDeps) {
           weather: deps.weather.name,
           smartAdd: !!deps.understand,
           accounts: !!deps.social,
+          // Continue with Google (one consent: account + calendar), and Google Calendar kept connected by this server.
+          googleSignIn: !!deps.social?.features?.googleSignIn,
+          googleCalendar: !!deps.social?.features?.googleCalendar,
           assistant: deps.assistant ? 'ai' : 'basic',
           // Which map source answered last, and the latest failure: how to check live data after a deploy.
           ...(deps.places.status ? { placesStatus: deps.places.status() } : {}),
         },
       };
+    }
+
+    if (method === 'POST' && url.pathname === '/v1/auth/google') {
+      if (!deps.social) throw new HttpError(503, "Accounts aren't set up on this server yet", undefined, {}, 'accounts_off');
+      // Per address: nobody can hammer sign-in.
+      const retryAfter = signInLimiter.hit(who(req));
+      if (retryAfter) throw new HttpError(429, 'Too many tries. Wait a minute and try again.', undefined, { 'retry-after': String(retryAfter) }, 'rate_limited');
+      return deps.social.googleSignIn(req);
     }
 
     if (SOCIAL_PATH.test(url.pathname)) {
