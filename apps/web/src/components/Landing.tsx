@@ -1,10 +1,11 @@
-import { useEffect, useMemo, useState, type MouseEvent } from 'react';
+import { useEffect, useMemo, useRef, useState, type MouseEvent } from 'react';
 import { loadAccount } from '../lib/account';
 import { getSession } from '../lib/auth';
 import { DEMO_IDS, demoOptions, demoStart } from '../lib/demo';
 import { clock } from '../lib/format';
 import { enterApp } from '../lib/router';
 import { NAV_ICONS, NAV_LABELS, type NavTab } from './BottomNav';
+import { RoadRide } from './RoadRide';
 import { Sky, sceneFor } from './Sky';
 import { Timeline } from './Timeline';
 import '../landing.css';
@@ -99,17 +100,6 @@ function TodayPreview() {
 
 const STEPS = ['The plan', 'Something changes', 'Segue finds alternatives', 'You decide'] as const;
 
-/** The winding road from the logo, drawn as far as the step you're on. */
-function Road({ step }: { step: number }) {
-  return (
-    <svg className="lp-road" viewBox="0 0 400 60" preserveAspectRatio="none" aria-hidden="true">
-      <path className="lp-road-bed" d="M10 30 C 70 0, 110 60, 170 30 S 270 0, 330 30 S 380 50, 390 30" pathLength={100} />
-      <path className="lp-road-done" d="M10 30 C 70 0, 110 60, 170 30 S 270 0, 330 30 S 380 50, 390 30" pathLength={100} style={{ strokeDashoffset: 100 - (step / 3) * 100 }} />
-      {step >= 1 && <path className="lp-road-branch" d="M200 26 C 215 8, 240 6, 260 8" pathLength={100} />}
-    </svg>
-  );
-}
-
 /**
  * How it works, told once: the sample day on Segue's real planner and
  * alternatives engine, one step and one action at a time.
@@ -117,6 +107,7 @@ function Road({ step }: { step: number }) {
 function RouteStory() {
   const [step, setStep] = useState(0);
   const [pick, setPick] = useState(0);
+  const roadWrap = useRef<HTMLDivElement>(null);
   const base = useMemo(() => demoStart(), []);
   const result = useMemo(() => (step >= 1 ? demoOptions({ ...base, raining: true }) : null), [step >= 1, base]); // eslint-disable-line react-hooks/exhaustive-deps
   const options = result?.options.filter((o) => o.kind !== 'later').slice(0, 3) ?? [];
@@ -154,8 +145,8 @@ function RouteStory() {
 
   return (
     <div className="lp-story">
-      <div className="lp-steps-wrap">
-        <Road step={step} />
+      <div className="lp-steps-wrap" ref={roadWrap}>
+        <RoadRide wrap={roadWrap} />
         <ol className="lp-steps">
           {STEPS.map((label, i) => (
             <li key={label} aria-current={i === step ? 'step' : undefined} className={i < step ? 'done' : i === step ? 'on' : ''}>
@@ -356,7 +347,7 @@ export function Landing() {
           </div>
         </section>
 
-        <section id="how" className="lp-band lp-skyband" aria-labelledby="how-title">
+        <section id="how" className="lp-band lp-howband" aria-labelledby="how-title">
           <div className="lp-section">
             <p className="lp-eyebrow">How it works</p>
             <h2 id="how-title">One day, four steps</h2>
