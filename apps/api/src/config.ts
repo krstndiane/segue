@@ -41,6 +41,10 @@ export interface Config {
   socialWriteRateLimit: number;
   reservedUsernames: string[];
   searchRateLimit: number;
+  /** Keeping Google Calendar connected needs all three. GOOGLE_TOKEN_KEY encrypts the saved tokens (32 bytes, base64 or hex). */
+  googleOAuthClientId?: string;
+  googleOAuthClientSecret?: string;
+  googleTokenKey?: string;
 }
 
 /** A non-negative whole number from the environment, or the fallback when it is unset. */
@@ -97,5 +101,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     socialWriteRateLimit: count(env, 'SOCIAL_WRITE_RATE_LIMIT', 300),
     reservedUsernames: (env.RESERVED_USERNAMES ?? '').split(',').map((x) => x.trim().toLowerCase()).filter(Boolean),
     searchRateLimit: count(env, 'SEARCH_RATE_LIMIT', 60),
+    googleOAuthClientId: env.GOOGLE_OAUTH_CLIENT_ID?.trim() || undefined,
+    googleOAuthClientSecret: env.GOOGLE_OAUTH_CLIENT_SECRET?.trim() || undefined,
+    googleTokenKey: env.GOOGLE_TOKEN_KEY?.trim() || undefined,
   };
 }
