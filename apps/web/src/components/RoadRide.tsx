@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type RefObject } from 'react';
 
 /**
- * The winding road under "How it works", with a motorcycle that rides it.
+ * The winding road under "How it works", with a motorcycle on it.
  *
  * One path is the authority for everything: it's drawn through the actual
  * centres of the four step circles (measured from the page, so it fits every
@@ -9,11 +9,13 @@ import { useEffect, useRef, useState, type RefObject } from 'react';
  * with getPointAtLength and turned to its tangent. Nothing moves in a straight
  * line, and nothing is a hard-coded pixel position.
  *
- * The ride runs once, when the section first comes into view; "Ride again"
- * replays it. With reduced motion there is no ride: the road is drawn and the
- * motorcycle waits at the start.
+ * The motorcycle moves only when a step is chosen: it rides from wherever it
+ * is to that step, forwards or backwards, and stops beside its circle (never
+ * on the number). Choosing again while it rides redirects it from where it is.
+ * Nothing moves on load, on scroll or on a timer. With reduced motion it is
+ * simply placed at the chosen step.
  *
- * It writes to the SVG and the step classes directly while riding, so React
+ * While riding it writes to the SVG and the step classes directly, so React
  * doesn't re-render 60 times a second.
  */
 
@@ -45,13 +47,11 @@ function smoothPath(pts: { x: number; y: number }[]): { d: string; ends: string[
 }
 
 const ease = (u: number) => (u < 0.5 ? 4 * u * u * u : 1 - Math.pow(-2 * u + 2, 3) / 2);
-/** How far before the destination circle the motorcycle stops, so it never covers the number. */
-const PARK_BEFORE = 36;
-/** How far before Step 1 it starts. */
-const START_BEFORE = 30;
+/** How far short of a circle the motorcycle stops (on the side it arrived from), so it never covers the number. */
+const PARK = 34;
 const TRAIL = 70;
 
-export function RoadRide({ wrap }: { wrap: RefObject<HTMLDivElement | null> }) {
+export function RoadRide({ wrap, step }: { wrap: RefObject<HTMLDivElement | null>; step: number }) {
   const [geo, setGeo] = useState<Geometry | null>(null);
   const measure = useRef<SVGPathElement>(null);
   const road = useRef<SVGPathElement>(null);
@@ -59,9 +59,12 @@ export function RoadRide({ wrap }: { wrap: RefObject<HTMLDivElement | null> }) {
   const trail = useRef<SVGPathElement>(null);
   const geoRef = useRef<Geometry | null>(null);
   const raf = useRef(0);
-  const state = useRef<'waiting' | 'riding' | 'done'>('waiting');
-  const [done, setDone] = useState(false);
-  const reduced = useRef(typeof matchMedia !== 'undefined' && matchMedia('(prefers-reduced-motion: reduce)').matches);
+  /** where the motorcycle is now (distance along the road), and which way it faces (1 forward, -1 back) */
+  const at = useRef<number | null>(null);
+  const dir = useRef(1);
+  /** the step it's riding to, or resting at */
+  const target = useRef(step);
+  const reduced = () => typeof matchMedia !== 'undefined' && matchMedia('(prefers-reduced-motion: reduce)').matches;
 
   // The road through the circles' real centres; again whenever the layout changes size.
   useEffect(() => {
@@ -107,104 +110,97 @@ export function RoadRide({ wrap }: { wrap: RefObject<HTMLDivElement | null> }) {
     return () => ro.disconnect();
   }, [wrap]);
 
+  /** Where it rests for a step: just short of the circle, on the side it came from. */
+  const restFor = (i: number, facing: number) => {
+    const g = geoRef.current!;
+    return Math.max(0, Math.min(g.total, g.stops[i]! - facing * PARK));
+  };
+
   /** Put the motorcycle at a distance along the road, facing the way it goes. */
-  function place(at: number) {
+  function place(pos: number, facing: number) {
     const g = geoRef.current;
     const p = road.current;
     const b = bike.current;
     if (!g || !p || !b) return;
-    const a = p.getPointAtLength(Math.max(0, Math.min(g.total, at)));
-    const n = p.getPointAtLength(Math.max(0, Math.min(g.total, at + 2)));
-    const prev = p.getPointAtLength(Math.max(0, Math.min(g.total, at - 2)));
-    const angle = (Math.atan2(n.y - prev.y, n.x - prev.x) * 180) / Math.PI;
+    at.current = pos;
+    const a = p.getPointAtLength(Math.max(0, Math.min(g.total, pos)));
+    const n = p.getPointAtLength(Math.max(0, Math.min(g.total, pos + 2)));
+    const prev = p.getPointAtLength(Math.max(0, Math.min(g.total, pos - 2)));
+    const angle = (Math.atan2(n.y - prev.y, n.x - prev.x) * 180) / Math.PI + (facing < 0 ? 180 : 0);
     const scale = g.width < 560 ? 1.05 : 1.4;
     b.setAttribute('transform', `translate(${a.x.toFixed(2)} ${a.y.toFixed(2)}) rotate(${angle.toFixed(2)}) scale(${scale})`);
-    b.dataset.at = String(Math.round(at));
+    b.dataset.at = String(Math.round(pos));
+    b.dataset.facing = facing > 0 ? 'forward' : 'back';
     const t = trail.current;
     if (t) {
+      // The trail is the stretch just behind the motorcycle.
+      const from = facing > 0 ? pos - TRAIL : pos;
       t.style.strokeDasharray = `${TRAIL} ${g.total + TRAIL}`;
-      t.style.strokeDashoffset = String(-(at - TRAIL));
+      t.style.strokeDashoffset = String(-from);
     }
   }
 
-  const steps = () => [...(wrap.current?.querySelectorAll<HTMLElement>('.lp-steps > li') ?? [])];
+  const lis = () => [...(wrap.current?.querySelectorAll<HTMLElement>('.lp-steps > li') ?? [])];
 
-  // Where the motorcycle waits before the ride (or for good, with reduced motion), and after it.
-  useEffect(() => {
-    if (!geo) return;
-    if (state.current === 'waiting') place(geo.stops[0]! - START_BEFORE);
-    if (state.current === 'done') place(geo.stops[3]! - PARK_BEFORE);
-  }, [geo]); // eslint-disable-line react-hooks/exhaustive-deps
+  /** Glow on the step it reached, briefly. */
+  function arrive(i: number) {
+    const li = lis()[i];
+    if (!li) return;
+    li.classList.remove('lit');
+    void li.offsetWidth; // restart the glow if it was already showing
+    li.classList.add('lit');
+    window.setTimeout(() => li.classList.remove('lit'), 1100);
+  }
 
-  function ride() {
+  /** Ride from wherever it is now to step i. A new choice mid-ride starts from where it is, so it never jumps. */
+  function rideTo(i: number) {
     const g = geoRef.current;
-    if (!g || reduced.current) return;
+    if (!g || at.current === null) return;
     cancelAnimationFrame(raf.current);
-    state.current = 'riding';
-    setDone(false);
-    const lis = steps();
-    lis.forEach((li) => li.classList.remove('lit', 'arrived', 'passed'));
+    const from = at.current;
+    const facing = g.stops[i]! >= from ? 1 : -1;
+    const to = restFor(i, facing);
+    if (reduced() || Math.abs(to - from) < 1) {
+      place(to, facing);
+      dir.current = facing;
+      wrap.current?.classList.remove('riding');
+      arrive(i);
+      return;
+    }
+    dir.current = facing;
     wrap.current?.classList.add('riding');
-    // Legs: start → 1 → 2 → 3 → just before 4. Each eases in and out, so it slows past every milestone.
-    const legs = () => {
-      const s = geoRef.current!.stops;
-      const pts = [s[0]! - START_BEFORE, s[0]!, s[1]!, s[2]!, s[3]! - PARK_BEFORE];
-      return pts.slice(0, -1).map((from, i) => ({ from, to: pts[i + 1]!, ms: i === 0 ? 650 : 1150 }));
-    };
-    let leg = 0;
-    let legStart = performance.now();
-    const light = (i: number) => {
-      const li = lis[i];
-      if (!li) return;
-      li.classList.add('lit', 'passed');
-      if (i === 3) li.classList.add('arrived');
-      else setTimeout(() => li.classList.remove('lit'), 900);
-    };
+    const ms = Math.max(550, Math.min(2200, Math.abs(to - from) * 1.9));
+    const start = performance.now();
     const tick = (now: number) => {
-      const L = legs();
-      const cur = L[leg]!;
-      const u = Math.min(1, (now - legStart) / cur.ms);
-      place(cur.from + (cur.to - cur.from) * ease(u));
-      if (u >= 1) {
-        // Reaching the end of a leg is reaching a milestone (the last one stops just short of the circle).
-        light(leg === 0 ? 0 : leg);
-        if (leg === L.length - 1) {
-          state.current = 'done';
-          wrap.current?.classList.remove('riding');
-          setDone(true);
-          return;
-        }
-        leg++;
-        legStart = now;
+      const u = Math.min(1, (now - start) / ms);
+      place(from + (to - from) * ease(u), facing);
+      if (u < 1) {
+        raf.current = requestAnimationFrame(tick);
+        return;
       }
-      raf.current = requestAnimationFrame(tick);
+      wrap.current?.classList.remove('riding');
+      arrive(i);
     };
     raf.current = requestAnimationFrame(tick);
   }
 
-  // Ride once, the first time the road is properly in view. Scrolling around afterwards doesn't restart it.
+  // First layout: parked at the current step, facing along the road. A new layout (resize): put it back at its step.
   useEffect(() => {
-    const el = wrap.current;
-    if (!el || !geo || reduced.current || state.current !== 'waiting') return;
-    if (!('IntersectionObserver' in window)) return;
-    const io = new IntersectionObserver(
-      (entries) => {
-        if (entries.some((e) => e.isIntersecting) && state.current === 'waiting') {
-          io.disconnect();
-          ride();
-        }
-      },
-      { threshold: 0.6 },
-    );
-    io.observe(el);
-    return () => io.disconnect();
-  }, [geo !== null]); // eslint-disable-line react-hooks/exhaustive-deps
+    if (!geo) return;
+    if (at.current === null || !wrap.current?.classList.contains('riding')) place(restFor(target.current, dir.current), dir.current);
+  }, [geo]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // The only thing that moves it: a different step being chosen.
+  useEffect(() => {
+    if (target.current === step) return;
+    target.current = step;
+    rideTo(step);
+  }, [step]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => () => cancelAnimationFrame(raf.current), []);
 
   return (
-    <>
-      <svg className="lp-road" width={geo?.width ?? 0} height={geo?.height ?? 0} viewBox={geo ? `0 0 ${geo.width} ${geo.height}` : undefined} aria-hidden="true" focusable="false">
+    <svg className="lp-road" width={geo?.width ?? 0} height={geo?.height ?? 0} viewBox={geo ? `0 0 ${geo.width} ${geo.height}` : undefined} aria-hidden="true" focusable="false">
         <defs>
           <filter id="lp-road-glow" x="-10%" y="-200%" width="120%" height="500%">
             <feGaussianBlur stdDeviation="5" />
@@ -252,19 +248,6 @@ export function RoadRide({ wrap }: { wrap: RefObject<HTMLDivElement | null> }) {
             </g>
           </>
         )}
-      </svg>
-      {done && (
-        <button
-          type="button"
-          className="lp-ride-again"
-          onClick={() => {
-            state.current = 'waiting';
-            ride();
-          }}
-        >
-          Ride again
-        </button>
-      )}
-    </>
+    </svg>
   );
 }
