@@ -256,14 +256,22 @@ describe('time zones and overlaps', () => {
 });
 
 describe('the planner uses confirmed routines', () => {
-  const events = [...weekly('Programming 1', MWF, '08:00', '10:00', { series: 'prog' }), ...weekly('Mathematics', MWF, '13:00', '14:30', { series: 'math' }), ...weekly('Gym', MWF, '17:00', '18:30')];
-  const r = analyse(events);
+  // In the app the calendar, the routines and the planner all use the device's time zone; so does this test (CI runs in UTC).
+  const local = (date: string, hm: string) => {
+    const [y, m, d] = date.split('-').map(Number);
+    const [h, mi] = hm.split(':').map(Number);
+    return new Date(y!, m! - 1, d!, h!, mi!).toISOString();
+  };
+  const weeklyLocal = (title: string, days: number[], start: string, end: string, series?: string): CalendarEvent[] =>
+    datesOn(days).map((d) => ({ id: `${series ?? title}-${d}`, title, start: local(d, start), end: local(d, end), seriesId: series }));
+  const events = [...weeklyLocal('Programming 1', MWF, '08:00', '10:00', 'prog'), ...weeklyLocal('Mathematics', MWF, '13:00', '14:30', 'math'), ...weeklyLocal('Gym', MWF, '17:00', '18:30')];
+  const r = reconcile(EMPTY_LEARNING, [], detectPatterns(occurrencesOf(events), TODAY), TODAY, WINDOW_START);
   const routines = r.suggestions.map((s) => routineFrom(s, 'now'));
-  const today = events.filter((e) => e.start.startsWith(TODAY));
-  const now = new Date(`${TODAY}T07:00:00+08:00`);
+  const today = events.filter((e) => e.id.endsWith(TODAY));
+  const now = new Date(local(TODAY, '07:00'));
 
   it('fixed classes come from today’s calendar once; the gym becomes a flexible block around today’s time, not a fixed event', () => {
-    const applied = applyRoutines(routines, today, ZONE);
+    const applied = applyRoutines(routines, today);
     // Classes: the calendar's events are planned (fixed); the routine steps aside, so nothing is planned twice.
     expect(applied.blocks.filter((b) => b.fixedStart)).toHaveLength(0);
     const gymEvent = today.find((e) => e.title === 'Gym')!;
@@ -274,14 +282,14 @@ describe('the planner uses confirmed routines', () => {
   });
 
   it('a two-hour assignment is planned around the classes and the gym, never on top of a class', () => {
-    const applied = applyRoutines(routines, today, ZONE);
+    const applied = applyRoutines(routines, today);
     const assignment: StoredBlock = { id: 'assignment', title: 'Programming assignment', minMinutes: 120, maxMinutes: 120, priority: 'must', category: 'none', requirements: [], active: true, date: TODAY };
     const cal = calendarBlocks(today, 20).filter((b) => !applied.replacesCalendar.has(b.id));
     const blocks = [...applied.blocks, assignment].map((b) => toEngineBlock(b, now));
     const plan = reroute({
       blocks: [...blocks, ...cal],
       candidates: {},
-      context: { now: now.toISOString(), endOfDay: `${TODAY}T22:00:00+08:00`, location: { lat: 14.6, lng: 121 }, energy: 'medium', mode: 'local', utcOffsetMinutes: 480 },
+      context: { now: now.toISOString(), endOfDay: local(TODAY, '22:00'), location: { lat: 14.6, lng: 121 }, energy: 'medium', mode: 'local', utcOffsetMinutes: -now.getTimezoneOffset() },
     }).plan;
     const at = (title: string) => plan.items.find((i) => i.title === title)!;
     const a = at('Programming assignment');
@@ -291,17 +299,18 @@ describe('the planner uses confirmed routines', () => {
       expect(Date.parse(a.end) <= Date.parse(f.start) || Date.parse(a.start) >= Date.parse(f.end)).toBe(true);
     }
     // Classes keep their exact times.
-    expect(new Date(at('Programming 1').start).toISOString()).toBe(new Date(`${TODAY}T08:00:00+08:00`).toISOString());
+    expect(new Date(at('Programming 1').start).toISOString()).toBe(local(TODAY, '08:00'));
     // The gym is planned within its window, and only once.
     const gym = plan.items.filter((i) => i.title === 'Gym');
     expect(gym).toHaveLength(1);
-    expect(Date.parse(gym[0]!.start)).toBeGreaterThanOrEqual(Date.parse(`${TODAY}T16:00:00+08:00`));
+    expect(Date.parse(gym[0]!.start)).toBeGreaterThanOrEqual(Date.parse(local(TODAY, '16:00')));
+    expect(Date.parse(gym[0]!.end)).toBeLessThanOrEqual(Date.parse(local(TODAY, '20:00')));
     expect(gym[0]!.fixed).toBeFalsy();
     void alternatives;
   });
 
   it('calendar not synced today: classes are still protected at their usual times', () => {
-    const applied = applyRoutines(routines, null, ZONE);
+    const applied = applyRoutines(routines, null);
     const prog = applied.blocks.find((b) => b.title === 'Programming 1')!;
     expect(prog).toMatchObject({ fixedStart: '08:00', fixedEnd: '10:00', priority: 'must' });
     expect(applied.why[prog.id]).toMatch(/not synced/);
@@ -309,20 +318,20 @@ describe('the planner uses confirmed routines', () => {
 
   it('a class cancelled today (not in today’s calendar) isn’t planned from the routine either', () => {
     const withoutMath = today.filter((e) => e.title !== 'Mathematics');
-    const applied = applyRoutines(routines, withoutMath, ZONE);
+    const applied = applyRoutines(routines, withoutMath);
     expect(applied.blocks.some((b) => b.title === 'Mathematics')).toBe(false);
   });
 
   it('routines the person made themselves are untouched', () => {
     const mine: StoredBlock = { id: 'read', title: 'Read', minMinutes: 30, maxMinutes: 30, priority: 'should', category: 'none', requirements: [], active: true };
-    expect(applyRoutines([mine], today, ZONE).blocks).toEqual([mine]);
+    expect(applyRoutines([mine], today).blocks).toEqual([mine]);
   });
 
   it('matches an event to its routine by series, or by title near its usual time', () => {
     const gym = routines.find((b) => b.title === 'Gym')!;
-    expect(eventMatches(gym, { title: 'GYM!', start: `${TODAY}T17:30:00+08:00` }, ZONE)).toBe(true);
-    expect(eventMatches(gym, { title: 'Gym', start: `${TODAY}T07:00:00+08:00` }, ZONE)).toBe(false);
+    expect(eventMatches(gym, { title: 'GYM!', start: local(TODAY, '17:30') })).toBe(true);
+    expect(eventMatches(gym, { title: 'Gym', start: local(TODAY, '07:00') })).toBe(false);
     const prog = routines.find((b) => b.title === 'Programming 1')!;
-    expect(eventMatches(prog, { title: 'Renamed', seriesId: 'prog', start: `${TODAY}T08:00:00+08:00` }, ZONE)).toBe(true);
+    expect(eventMatches(prog, { title: 'Renamed', seriesId: 'prog', start: local(TODAY, '08:00') })).toBe(true);
   });
 });
