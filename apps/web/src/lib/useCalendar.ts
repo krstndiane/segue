@@ -56,8 +56,32 @@ const serverSource: EventSource = async (start, end) => {
   }
 };
 
+/**
+ * The last status the server gave this account, kept so the right screen shows
+ * at once and while the server can't be reached. A hint only: every action
+ * still asks the server, which can say otherwise.
+ */
+const HINT_KEY = 'segue.googleLink';
+function readHint(userId: string): GoogleLink | null {
+  try {
+    const h = JSON.parse(localStorage.getItem(HINT_KEY) ?? 'null') as { userId?: string; link?: GoogleLink } | null;
+    return h?.userId === userId && h.link ? h.link : null;
+  } catch {
+    return null;
+  }
+}
+function writeHint(userId: string | null, link: GoogleLink | null) {
+  try {
+    if (userId && link) localStorage.setItem(HINT_KEY, JSON.stringify({ userId, link }));
+    else localStorage.removeItem(HINT_KEY);
+  } catch {
+    // private mode: the hint lasts as long as the page
+  }
+}
+
 /** Google Calendar: connect, sync, disconnect, blocks for a re-route, and events for the days you open. */
-export function useCalendar(ready: boolean, notify: (message: string) => void, { signedIn = false }: { signedIn?: boolean } = {}) {
+export function useCalendar(ready: boolean, notify: (message: string) => void, { userId = null }: { userId?: string | null } = {}) {
+  const signedIn = !!userId;
   const [calendar, setCalendar] = usePersisted<CalendarState>('calendar', EMPTY_CALENDAR, ready);
   const [days, setDays] = usePersisted<CalendarDays>('calendarDays', EMPTY_DAYS, ready);
   const [busy, setBusy] = useState(false);
@@ -67,8 +91,10 @@ export function useCalendar(ready: boolean, notify: (message: string) => void, {
   /** Browser mode only: today's events are due a refresh but Google needs a tap (its token lives in memory). */
   const [needsTap, setNeedsTap] = useState(false);
   /** What the server says about the connection. null: not asked (signed out) or not known yet. */
-  const [link, setLink] = useState<GoogleLink | null>(null);
-  const [linkChecked, setLinkChecked] = useState(!signedIn);
+  const [link, setLink] = useState<GoogleLink | null>(() => (userId ? readHint(userId) : null));
+  const [linkChecked, setLinkChecked] = useState(() => !userId || !!readHint(userId));
+  /** The link came from the server just now (not the saved hint, not a failed check). */
+  const [linkFresh, setLinkFresh] = useState(false);
   /** A connect was refused because a different Google account is connected: who's connected, who was offered. */
   const [otherAccount, setOtherAccount] = useState<{ connected: string; offered: string } | null>(null);
   const lastRange = useRef<{ key: string; at: number } | null>(null);
@@ -85,32 +111,51 @@ export function useCalendar(ready: boolean, notify: (message: string) => void, {
   useEffect(() => {
     if (mode === 'server') wasServer.current = true;
   }, [mode]);
+  /** Ask the server. A failure keeps what was known (the hint) and is retried on the next refresh. */
+  const checkLink = useRef<() => Promise<void>>(async () => {});
+  checkLink.current = async () => {
+    if (!userId) return;
+    const asked = userId;
+    try {
+      const l = await getGoogleLink();
+      if (asked !== userIdRef.current) return;
+      setLink(l);
+      setLinkFresh(true);
+    } catch {
+      if (asked === userIdRef.current) setLinkFresh(false);
+    } finally {
+      if (asked === userIdRef.current) setLinkChecked(true);
+    }
+  };
+  const userIdRef = useRef(userId);
+  userIdRef.current = userId;
   useEffect(() => {
-    if (!signedIn) {
+    if (!userId) {
       if (wasServer.current && !tokenValid(currentToken())) {
         setCalendar(EMPTY_CALENDAR);
         setDays(EMPTY_DAYS);
         lastRange.current = null;
       }
       wasServer.current = false;
+      writeHint(null, null);
       setLink(null);
+      setLinkFresh(false);
       setLinkChecked(true);
       return;
     }
-    let live = true;
-    setLinkChecked(false);
-    getGoogleLink()
-      .then((l) => live && setLink(l))
-      .catch(() => live && setLink(null)) // offline or asleep: fall back to what this device has
-      .finally(() => live && setLinkChecked(true));
-    return () => {
-      live = false;
-    };
-  }, [signedIn]);
+    const hint = readHint(userId);
+    setLink(hint);
+    setLinkFresh(false);
+    setLinkChecked(!!hint);
+    void checkLink.current();
+  }, [userId]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    if (userId && link) writeHint(userId, link);
+  }, [userId, link]);
 
   // The server is the source of truth: keep this device's "connected" in step with it.
   useEffect(() => {
-    if (mode !== 'server' || !link) return;
+    if (mode !== 'server' || !link || !linkFresh) return;
     if (link.status === 'disconnected' && calendar.connected && !tokenValid(currentToken())) {
       // Disconnected on another device, or never connected through the server: show it as not connected.
       setCalendar(EMPTY_CALENDAR);
@@ -118,7 +163,7 @@ export function useCalendar(ready: boolean, notify: (message: string) => void, {
     } else if (link.status !== 'disconnected' && !calendar.connected) {
       setCalendar((c) => ({ ...c, connected: true }));
     }
-  }, [mode, link?.status]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [mode, link?.status, linkFresh]); // eslint-disable-line react-hooks/exhaustive-deps
 
   /** Where events come from right now, or null when a tap is needed first (browser mode without a live token). */
   function source(): EventSource | null {
@@ -170,6 +215,7 @@ export function useCalendar(ready: boolean, notify: (message: string) => void, {
         throw fromApi(e);
       }
       setLink(next);
+      setLinkFresh(true);
       const events = await saveToday(serverSource, new Date());
       const count = events.length === 1 ? '1 event' : `${events.length} events`;
       notify(`Google Calendar connected${next.email ? ` (${next.email})` : ''}: ${count} today. It stays connected.`);
@@ -246,6 +292,8 @@ export function useCalendar(ready: boolean, notify: (message: string) => void, {
    * in browser mode without a live token it flags that a tap is needed.
    */
   async function refresh(force = false) {
+    // The server couldn't say last time: ask again (cheap) before deciding anything.
+    if (signedIn && !linkFresh) await checkLink.current();
     if ((!calendar.connected && !serverConnected) || refreshing.current || needsAttention) return;
     const now = new Date();
     const due = force || calendar.date !== localDate(now) || !calendar.syncedAt || now.getTime() - Date.parse(calendar.syncedAt) > CALENDAR_REFRESH_MS;
@@ -289,9 +337,10 @@ export function useCalendar(ready: boolean, notify: (message: string) => void, {
   async function disconnect() {
     setBusy(true);
     try {
-      if (mode === 'server' && link && link.status !== 'disconnected') {
+      if (mode === 'server') {
         try {
           setLink(await disconnectGoogleLink());
+          setLinkFresh(true);
         } catch (e) {
           setError(calendarErrorMessage(fromApi(e)));
           return;

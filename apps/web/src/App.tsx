@@ -146,7 +146,7 @@ export function App() {
   // Segue account (optional): sync across devices, notes, hearts and invitations.
   const me = useAccount();
   // Google Calendar stays connected through the server once you're signed in (when the server is set up for it).
-  const cal = useCalendar(ready, notify, { signedIn: me.state === 'ready' });
+  const cal = useCalendar(ready, notify, { userId: me.state === 'ready' ? (me.userId ?? me.profile?.id ?? null) : null });
   // Today's progress syncs; the plan itself is built on each device.
   const today_ = day.progressAt ? { date: day.date, done: day.doneIds, skipped: day.skippedIds, updatedAt: day.progressAt } : null;
   const synced: Synced = { blocks, settings, favorites, placeHistory: history, dayArchive: archive, today: today_ };

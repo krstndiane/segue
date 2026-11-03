@@ -63,17 +63,25 @@ Google calls are capped per day (`GOOGLE_DAILY_BUDGET`, default 500) and fall ba
 
 1. In [Google Cloud Console](https://console.cloud.google.com/), create or pick a project and enable the **Google Calendar API**.
 2. Under **Google Auth Platform → Branding/Audience**, set up the consent screen. While the app is in *Testing*, add your own Google account as a test user.
-3. Under **Data Access**, add the scopes `openid`, `email`, `profile` (for **Continue with Google** on the landing page), `https://www.googleapis.com/auth/calendar.events.readonly` and `https://www.googleapis.com/auth/calendar.calendarlist.readonly` (the last lets Segue read every calendar you have switched on; without it, only your main one).
-4. Under **Clients**, create an OAuth client of type **Web application**. Add `http://localhost:5173` (and your production URL) to **Authorized JavaScript origins**. No redirect URI is needed.
+3. Under **Data Access**, add the scopes `openid`, `email` (to show which Google account is connected), `https://www.googleapis.com/auth/calendar.events.readonly` and `https://www.googleapis.com/auth/calendar.calendarlist.readonly` (the last lets Segue read every calendar you have switched on; without it, only your main one).
+4. Under **Clients**, create an OAuth client of type **Web application**. Add `http://localhost:5173` (and your production URL) to **Authorized JavaScript origins**. No redirect URI is needed (Google's popup hands the code back to the page).
 5. Put the client ID in `apps/web/.env`:
 
    ```bash
    cp apps/web/.env.example apps/web/.env   # then set VITE_GOOGLE_CLIENT_ID=…apps.googleusercontent.com
    ```
 
-6. Restart `pnpm dev:web`. On the landing page, **Continue with Google** signs you up and connects your calendar in one step; inside the app, the **Plan** tab (or Settings) has **Connect** for the Google Calendar screen.
+6. Restart `pnpm dev:web`. Google Calendar is connected from the app's **Google Calendar** page (Plan → Connect, Settings, or while getting started).
 
-Segue only reads today's timed events, and never changes your calendar. Sign-in happens in the browser and the short-lived token stays in memory, so the API never sees it. To let other people connect, Google has to verify the app for this scope (publish the consent screen and submit it for review).
+7. **Staying connected** (so signed-in people aren't asked to sign in to Google again): give the API the same client, its secret, and a key that encrypts the saved tokens. All three, or it stays in the browser-only mode below:
+
+   ```bash
+   GOOGLE_OAUTH_CLIENT_ID=…apps.googleusercontent.com
+   GOOGLE_OAUTH_CLIENT_SECRET=…            # Clients → your web client → Client secret
+   GOOGLE_TOKEN_KEY=$(openssl rand -base64 32)  # keep it; changing it means everyone reconnects once
+   ```
+
+Segue only reads timed events, and never changes your calendar. Signed in to a Segue account (and with the three settings on the API), Segue's server keeps an encrypted refresh token and reads events for the app; events pass through and aren't stored. Without an account, or without those settings, sign-in happens in the browser and the short-lived token stays in memory for about an hour. Details: `docs/GOOGLE_CONNECTION_AUDIT.md`. To let other people connect, Google has to verify the app for these scopes (publish the consent screen and submit it for review).
 
 **Smart add** ("Let Segue read it" for notes the phone can't parse) needs an Anthropic API key on the server:
 
