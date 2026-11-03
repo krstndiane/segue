@@ -2,15 +2,12 @@ import { useEffect } from 'react';
 import type { CalendarState } from '../lib/calendar';
 import { clock } from '../lib/format';
 import { GOOGLE_CLIENT_ID, preloadGoogle } from '../lib/googleCalendar';
+import { CalendarConnection, type ConnectionProps } from './CalendarConnection';
 
 interface Props {
   calendar: CalendarState;
   today: string;
-  busy: boolean;
-  error: string | null;
-  onConnect: () => void;
-  onSync: () => void;
-  onDisconnect: () => void;
+  connection: ConnectionProps;
 }
 
 function CalendarIcon() {
@@ -23,7 +20,8 @@ function CalendarIcon() {
   );
 }
 
-export function CalendarCard({ calendar, today, busy, error, onConnect, onSync, onDisconnect }: Props) {
+/** Google Calendar during onboarding: the same one connection control as the Calendar page, plus today's events once they're in. */
+export function CalendarCard({ calendar, today, connection }: Props) {
   // Load Google's sign-in script early so the popup opens straight from the tap.
   useEffect(() => {
     if (GOOGLE_CLIENT_ID) preloadGoogle().catch(() => {});
@@ -45,64 +43,32 @@ export function CalendarCard({ calendar, today, busy, error, onConnect, onSync, 
     );
   }
 
-  const events = calendar.date === today ? calendar.events : [];
+  const events = calendar.connected && calendar.date === today ? calendar.events : [];
   return (
     <section className="calendar-card" aria-label="Google Calendar">
       <p className="calendar-head">
         <CalendarIcon />
         <strong>Google Calendar</strong>
-        {calendar.connected && <span className="calendar-status">Connected</span>}
       </p>
-
-      {!calendar.connected ? (
-        <>
-          <p className="muted small">
-            Bring in today's meetings and classes from the calendars you have switched on. Segue plans around them and never changes your calendar.
-          </p>
-          <button type="button" className="primary" onClick={onConnect} disabled={busy}>
-            {busy ? 'Connecting…' : 'Connect Google Calendar'}
-          </button>
-        </>
-      ) : (
-        <>
-          <p className="muted small">
-            {calendar.date !== today
-              ? 'Not synced today yet. Sync to plan around today’s events.'
-              : `${events.length === 0 ? 'No events' : events.length === 1 ? '1 event' : `${events.length} events`} today${
-                  calendar.syncedAt ? ` · Synced ${clock(calendar.syncedAt)}` : ''
-                }`}
-          </p>
-          {events.length > 0 && (
-            <ul className="calendar-events">
-              {events.map((e) => (
-                <li key={e.id}>
-                  <span className="stave-time">{clock(e.start)}</span>
-                  <span className="stave-body">
-                    <span className="stave-title">{e.title}</span>
-                    <span className="stave-sub">
-                      Until {clock(e.end)}
-                      {e.location && ` · ${e.location}`}
-                    </span>
-                  </span>
-                </li>
-              ))}
-            </ul>
-          )}
-          <div className="row-actions">
-            <button type="button" className="ghost" onClick={onSync} disabled={busy}>
-              {busy ? 'Syncing…' : 'Sync now'}
-            </button>
-            <button type="button" className="text-button" onClick={onDisconnect} disabled={busy}>
-              Disconnect
-            </button>
-          </div>
-        </>
+      {!calendar.connected && (
+        <p className="muted small">Bring in today's meetings and classes. Segue plans around them and never changes your calendar.</p>
       )}
-
-      {error && (
-        <p className="error" role="alert">
-          {error}
-        </p>
+      <CalendarConnection {...connection} compact />
+      {events.length > 0 && (
+        <ul className="calendar-events">
+          {events.map((e) => (
+            <li key={e.id}>
+              <span className="stave-time">{clock(e.start)}</span>
+              <span className="stave-body">
+                <span className="stave-title">{e.title}</span>
+                <span className="stave-sub">
+                  Until {clock(e.end)}
+                  {e.location && ` · ${e.location}`}
+                </span>
+              </span>
+            </li>
+          ))}
+        </ul>
       )}
     </section>
   );

@@ -8,10 +8,10 @@ import { assistantAiAvailable } from './lib/smartAdd';
 import { askAssistantAi } from './lib/social';
 import { BlockForm, RoutinesView } from './components/Blocks';
 import { CalendarCard } from './components/CalendarCard';
+import type { ConnectionProps } from './components/CalendarConnection';
 import { CalendarPage } from './components/CalendarPage';
 import { DaysPage, WeekStrip, marksFor } from './components/DaysPage';
 import { ItemSheet } from './components/ItemSheet';
-import { GoogleButton } from './components/GoogleButton';
 import { Onboarding } from './components/Onboarding';
 import { PlanPage } from './components/PlanPage';
 import { PrecautionsCard } from './components/Precautions';
@@ -33,7 +33,7 @@ import { calendarBlockId, calendarDiff, isCalendarBlock } from './lib/calendar';
 import { moveUp, planStampOf, type MoveUpResult } from './lib/moveUp';
 import { addDays, dayLabel, withArchived, type CalendarDays, type DayArchive } from './lib/days';
 import { clock } from './lib/format';
-import { firstName, forgetAccount, loadAccount, signUpWithGoogle, type Account } from './lib/account';
+import { firstName, loadAccount, type Account } from './lib/account';
 import { GOOGLE_CLIENT_ID, calendarErrorMessage } from './lib/googleCalendar';
 import { useNow, usePersisted, useSystemDark } from './lib/hooks';
 import { areaForZone, currentLocation, deviceZone, sourceLocation } from './lib/location';
@@ -140,13 +140,13 @@ export function App() {
   const [dismissed, setDismissed] = useState<Set<string>>(new Set());
   const [seed, setSeed] = useState<{ text: string; n: number } | undefined>();
   const [account, setAccount] = useState<Account | null>(null);
-  const [signingIn, setSigningIn] = useState(false);
   const now = useNow();
   const today = localDate(now);
   const notify = useCallback((text: string) => setToast({ text }), []);
-  const cal = useCalendar(ready, notify);
   // Segue account (optional): sync across devices, notes, hearts and invitations.
   const me = useAccount();
+  // Google Calendar stays connected through the server once you're signed in (when the server is set up for it).
+  const cal = useCalendar(ready, notify, { signedIn: me.state === 'ready' });
   // Today's progress syncs; the plan itself is built on each device.
   const today_ = day.progressAt ? { date: day.date, done: day.doneIds, skipped: day.skippedIds, updatedAt: day.progressAt } : null;
   const synced: Synced = { blocks, settings, favorites, placeHistory: history, dayArchive: archive, today: today_ };
@@ -715,28 +715,6 @@ export function App() {
     setToast({ text: granted ? "Reminders are on. You'll get a nudge when it's time to leave." : "Notifications are blocked, so reminders stay in the app." });
   }
 
-  /** Settings: sign up with Google later. Runs from a tap, so Google's window opens straight away. */
-  async function signIn() {
-    setSigningIn(true);
-    try {
-      const result = await signUpWithGoogle();
-      setAccount(result.account);
-      cal.setCalendar(result.calendar);
-      setToast({ text: `Signed in${result.account ? ` as ${firstName(result.account)}` : ''}. Your Google Calendar is connected.` });
-    } catch (e) {
-      setToast({ text: calendarErrorMessage(e) });
-    } finally {
-      setSigningIn(false);
-    }
-  }
-
-  async function signOut() {
-    cal.disconnect();
-    await forgetAccount();
-    setAccount(null);
-    setToast({ text: 'Signed out of Google. Your plans stay on this device.' });
-  }
-
   async function signOutSegue() {
     sync.forget();
     await me.signOut();
@@ -795,17 +773,23 @@ export function App() {
   });
   const banner = locationBanner(where);
 
-  const calendarCard = (
-    <CalendarCard
-      calendar={cal.calendar}
-      today={today}
-      busy={cal.busy}
-      error={cal.error}
-      onConnect={() => void cal.sync('consent')}
-      onSync={() => void cal.sync()}
-      onDisconnect={cal.disconnect}
-    />
-  );
+  // The one Google Calendar connection control, the same everywhere it appears.
+  const connection: ConnectionProps = {
+    mode: cal.mode,
+    link: cal.link,
+    connected: cal.calendar.connected,
+    deviceSyncedAt: cal.calendar.syncedAt,
+    busy: cal.busy,
+    error: cal.error,
+    otherAccount: cal.otherAccount,
+    signedOut: me.enabled && me.state === 'signed-out',
+    onConnect: () => void cal.connect(),
+    onSwitch: () => void cal.connect({ replace: true }),
+    onSync: () => void cal.sync(),
+    onDisconnect: () => void cal.disconnect(),
+    onSignIn: () => setSheet({ kind: 'auth', start: 'signin' }),
+  };
+  const calendarCard = <CalendarCard calendar={cal.calendar} today={today} connection={connection} />;
   const calendarEvents = cal.calendar.date === day.date ? cal.calendar.events : [];
   // Events added, moved or removed in Google Calendar since today's plan was made.
   // (Plain code, not a hook: this runs after the early returns above.)
@@ -964,9 +948,11 @@ export function App() {
                   items={day.plan?.items ?? []}
                   hasPlan={!!day.plan}
                   needsTap={cal.needsTap}
+                  attention={cal.needsAttention}
                   busy={cal.busy}
                   error={cal.error}
                   onRefresh={() => void cal.sync()}
+                  onReconnect={() => void cal.connect()}
                   onUpdatePlan={() => void replan(null)}
                 />
               }
@@ -1088,11 +1074,8 @@ export function App() {
               calendar={cal.calendar}
               today={today}
               busy={cal.busy}
-              error={cal.error}
               excluded={excludedSet}
-              onConnect={() => void cal.sync('consent')}
-              onSync={() => void cal.sync()}
-              onDisconnect={cal.disconnect}
+              connection={connection}
               onToggleExclude={toggleExclude}
               onBack={() => navigate(lastRoute.current)}
               onPlan={() => {
@@ -1288,35 +1271,6 @@ export function App() {
                   onRetry={() => void me.reload()}
                 />
               )}
-              {GOOGLE_CLIENT_ID ? (
-                <section className="settings-group">
-                  <h3 className="section-title">{me.enabled ? 'Google' : 'Account'}</h3>
-                  {account ? (
-                    <>
-                      <div className="account-row">
-                        {account.picture ? (
-                          <img className="avatar" src={account.picture} alt="" referrerPolicy="no-referrer" width="44" height="44" />
-                        ) : (
-                          <span className="avatar">{firstName(account).charAt(0)}</span>
-                        )}
-                        <span>
-                          <strong>{account.name}</strong>
-                          <span className="muted small block">{account.email}</span>
-                        </span>
-                      </div>
-                      <p className="muted small">Signed in with Google on this device. Your calendar is read in your browser; Segue's server never sees your sign-in.</p>
-                      <button type="button" className="ghost" onClick={() => void signOut()}>
-                        Sign out
-                      </button>
-                    </>
-                  ) : (
-                    <>
-                      <p className="muted small">Sign up with Google to bring in your calendar. Segue only reads it.</p>
-                      <GoogleButton busy={signingIn} onClick={() => void signIn()} />
-                    </>
-                  )}
-                </section>
-              ) : null}
               </>
             }
             calendar={
@@ -1325,9 +1279,11 @@ export function App() {
                 <p className="muted small">
                   {!GOOGLE_CLIENT_ID
                     ? 'Not set up on this version of Segue.'
-                    : cal.calendar.connected
-                      ? `Connected${cal.calendar.syncedAt ? `, synced ${clock(cal.calendar.syncedAt)}` : ''}.`
-                      : 'Bring in your meetings and classes so Segue plans around them.'}
+                    : cal.needsAttention
+                      ? 'Your connection needs attention.'
+                      : cal.calendar.connected
+                        ? `Connected${cal.link?.email ? ` as ${cal.link.email}` : ''}.`
+                        : 'Bring in your meetings and classes so Segue plans around them.'}
                 </p>
                 <button
                   type="button"
@@ -1337,7 +1293,7 @@ export function App() {
                     navigate('calendar');
                   }}
                 >
-                  {cal.calendar.connected ? 'Manage Google Calendar' : 'Connect Google Calendar'}
+                  {cal.needsAttention ? 'Reconnect Google Calendar' : cal.calendar.connected ? 'Manage Google Calendar' : 'Set up Google Calendar'}
                 </button>
               </section>
             }

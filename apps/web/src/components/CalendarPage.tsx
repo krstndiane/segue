@@ -2,16 +2,14 @@ import { useEffect } from 'react';
 import { calendarBlockId, type CalendarState } from '../lib/calendar';
 import { clock, duration, minutesBetween } from '../lib/format';
 import { GOOGLE_CLIENT_ID, preloadGoogle } from '../lib/googleCalendar';
+import { CalendarConnection, type ConnectionProps } from './CalendarConnection';
 
 interface Props {
   calendar: CalendarState;
   today: string;
   busy: boolean;
-  error: string | null;
   excluded: Set<string>;
-  onConnect: () => void;
-  onSync: () => void;
-  onDisconnect: () => void;
+  connection: ConnectionProps;
   onToggleExclude: (blockId: string) => void;
   onBack: () => void;
   onPlan: () => void;
@@ -30,16 +28,26 @@ function CalendarGlyph({ size = 40 }: { size?: number }) {
   );
 }
 
-const PROMISES = [
+const promises = (server: boolean) => [
   { title: 'Reads, never writes', body: "Segue reads today's events, and the days you open on its calendar. It can't create, change or delete anything in your calendar." },
   { title: 'Plans around what makes you busy', body: 'Meetings and classes become fixed times. Events marked "free", ones you declined, cancelled ones and all-day events are left out.' },
   { title: 'Every calendar you have switched on', body: 'Work, personal and shared calendars all count. A meeting that is on two of them shows up once.' },
-  { title: 'Stays on your phone', body: "Google's sign-in happens in your browser and lasts about an hour. Segue's server never sees it. Events you've opened are kept on this phone so the calendar works offline; disconnecting removes them." },
+  server
+    ? {
+        title: 'Connected once, kept safe',
+        body: "Segue's server keeps the read-only access Google gives it, encrypted, so you aren't asked to sign in again. Events pass through to your device and aren't stored on the server. Disconnecting removes the access, at Google too.",
+      }
+    : {
+        title: 'Stays on your phone',
+        body: "Google's sign-in happens in your browser and lasts about an hour. Segue's server never sees it. Events you've opened are kept on this phone so the calendar works offline; disconnecting removes them.",
+      },
 ];
 
 export function CalendarPage(props: Props) {
-  const { calendar, today, busy, error, excluded } = props;
+  const { calendar, today, busy, excluded, connection } = props;
   const events = calendar.date === today ? calendar.events : [];
+  const PROMISES = promises(connection.mode === 'server');
+  const attention = connection.mode === 'server' && connection.link?.status === 'needs_attention';
 
   // Load Google's sign-in early so the popup opens straight from the tap.
   useEffect(() => {
@@ -59,13 +67,7 @@ export function CalendarPage(props: Props) {
         <CalendarGlyph />
         <div>
           <h2 className="page-title">Google Calendar</h2>
-          <p className="muted">
-            {calendar.connected
-              ? calendar.date === today && calendar.syncedAt
-                ? `Connected · synced ${clock(calendar.syncedAt)}`
-                : 'Connected · not synced today yet'
-              : "Bring today's meetings and classes into your plan."}
-          </p>
+          <p className="muted">Your meetings and classes become fixed times Segue plans around.</p>
         </div>
       </header>
 
@@ -82,34 +84,29 @@ export function CalendarPage(props: Props) {
             )}
           </p>
         </section>
-      ) : !calendar.connected ? (
+      ) : !calendar.connected || attention ? (
         <>
-          <ul className="promises">
-            {PROMISES.map((p) => (
-              <li key={p.title}>
-                <strong>{p.title}</strong>
-                <span className="muted">{p.body}</span>
-              </li>
-            ))}
-          </ul>
-          <button type="button" className="primary wide big" onClick={props.onConnect} disabled={busy}>
-            {busy ? 'Waiting for Google…' : 'Connect Google Calendar'}
-          </button>
-          <p className="muted small center">
-            Google will ask you to choose an account and allow read-only access. You can disconnect any time.
-          </p>
+          <CalendarConnection {...connection} />
+          {!attention && (
+            <ul className="promises">
+              {PROMISES.map((p) => (
+                <li key={p.title}>
+                  <strong>{p.title}</strong>
+                  <span className="muted">{p.body}</span>
+                </li>
+              ))}
+            </ul>
+          )}
         </>
       ) : (
         <>
+          <CalendarConnection {...connection} />
           <section className="panel">
             <div className="panel-row">
               <h3 className="panel-title">Today</h3>
-              <button type="button" className="ghost" onClick={props.onSync} disabled={busy}>
-                {busy ? 'Syncing…' : 'Sync now'}
-              </button>
             </div>
             {calendar.date !== today ? (
-              <p className="muted">Sync to bring in today's events.</p>
+              <p className="muted">{busy ? 'Bringing in today’s events…' : 'Today’s events aren’t in yet. Open Manage connection and tap Sync now.'}</p>
             ) : events.length === 0 ? (
               <p className="muted">Nothing on your calendar today. The whole day is yours to plan.</p>
             ) : (
@@ -151,17 +148,8 @@ export function CalendarPage(props: Props) {
                 <li key={p.title}>{p.body}</li>
               ))}
             </ul>
-            <button type="button" className="text-button danger-text" onClick={props.onDisconnect} disabled={busy}>
-              Disconnect Google Calendar
-            </button>
           </section>
         </>
-      )}
-
-      {error && (
-        <p className="error" role="alert">
-          {error}
-        </p>
       )}
     </div>
   );

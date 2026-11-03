@@ -15,9 +15,12 @@ interface Props {
   hasPlan: boolean;
   /** Google needs a tap to sign in again before it can refresh */
   needsTap: boolean;
+  /** The server says Google stopped letting Segue read the calendar. */
+  attention?: boolean;
   busy: boolean;
   error: string | null;
   onRefresh: () => void;
+  onReconnect?: () => void;
   onUpdatePlan: () => void;
 }
 
@@ -31,6 +34,21 @@ const overlaps = (e: CalendarEvent, items: PlanItem[]) =>
  */
 export function CalendarNotice(p: Props) {
   if (!p.connected) return null;
+  if (p.attention) {
+    return (
+      <div className="nudge nudge-calendar" role="status">
+        <div>
+          <strong>Your Google Calendar connection needs attention.</strong>
+          <p>Calendar events are paused until you reconnect. Your plans aren&apos;t affected.</p>
+        </div>
+        <div className="nudge-actions">
+          <button type="button" className="ghost" onClick={p.onReconnect} disabled={p.busy}>
+            {p.busy ? 'Waiting for Google…' : 'Reconnect Google Calendar'}
+          </button>
+        </div>
+      </div>
+    );
+  }
   const refresh = (
     <button type="button" className="ghost" onClick={p.onRefresh} disabled={p.busy}>
       {p.busy ? 'Refreshing…' : p.loadedToday ? 'Refresh' : 'Refresh calendar'}

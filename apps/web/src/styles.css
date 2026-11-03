@@ -2200,19 +2200,6 @@ details.more[open] {
   font-weight: 700;
   object-fit: cover;
 }
-.settings .google-button {
-  display: inline-flex;
-  align-items: center;
-  gap: 10px;
-  min-height: 44px;
-  padding: 0 18px 0 14px;
-  border: 1px solid #dadce0;
-  border-radius: 999px;
-  background: #fff;
-  color: #1f1f1f;
-  font-weight: 600;
-  cursor: pointer;
-}
 
 /* ---------- calendar: month grid, week strip, day details ---------- */
 
@@ -3800,5 +3787,74 @@ details.more[open] {
   }
   .tg-actions .primary {
     flex: none;
+  }
+}
+
+/* ---------- Google Calendar: the one connection control ---------- */
+.gc-status {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 10px;
+  width: 100%;
+  margin: 0 0 18px;
+  padding: 16px;
+  border-radius: var(--radius-l);
+  background: var(--surface);
+  box-shadow: inset 0 0 0 1px var(--line);
+}
+.calendar-card .gc-status {
+  margin: 0;
+  padding: 0;
+  box-shadow: none;
+  background: none;
+}
+.gc-status p {
+  margin: 0;
+}
+.gc-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  width: 100%;
+}
+.gc-line {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.gc-line svg {
+  flex: none;
+}
+.gc-connected .gc-line strong {
+  color: var(--patina);
+}
+.gc-attention {
+  box-shadow: inset 0 0 0 2px var(--warn, #c2912e);
+}
+.gc-manage {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 14px;
+  width: 100%;
+  padding-top: 10px;
+  border-top: 1px solid var(--line);
+}
+.gc-problem {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 10px 12px;
+  border-radius: var(--radius-s);
+  background: var(--brass-soft);
+}
+@media (max-width: 420px) {
+  .gc-status > .primary,
+  .gc-manage > .ghost {
+    width: 100%;
   }
 }
