@@ -334,3 +334,96 @@ test('a new day: yesterday’s calendar isn’t shown as today’s, one tap brin
   await expect(page.locator('.timeline')).toContainText('Lunch with Ana');
   await expect(page.locator('.nudge-calendar')).toHaveCount(0);
 });
+
+/** Where the motorcycle is, read from its transform, and whether that point lies on the road surface. */
+async function bikeOnRoad(page: Page) {
+  return page.evaluate(() => {
+    const bike = document.querySelector<SVGGElement>('.lp-bike')!;
+    const road = document.querySelector<SVGPathElement>('.lp-road-surface')!;
+    const m = /translate\(([-\d.]+) ([-\d.]+)\)/.exec(bike.getAttribute('transform') ?? '');
+    const x = Number(m?.[1]);
+    const y = Number(m?.[2]);
+    return { x, y, at: Number(bike.dataset.at), onRoad: road.isPointInStroke(new DOMPoint(x, y)) };
+  });
+}
+
+test('how it works: a motorcycle rides the winding road from Step 1 to Step 4, once, lighting each milestone', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 860 });
+  await page.goto('/');
+  // Before the section is in view it waits at the start, on the road.
+  await page.locator('.lp-bike').waitFor({ state: 'attached' });
+  const before = await bikeOnRoad(page);
+  expect(before.onRoad).toBe(true);
+  await page.waitForTimeout(600);
+  expect((await bikeOnRoad(page)).at).toBe(before.at);
+
+  // The order the milestones are reached in.
+  await page.evaluate(() => {
+    (window as unknown as { reached: number[] }).reached = [];
+    document.querySelectorAll('#how .lp-steps > li').forEach((li, i) =>
+      new MutationObserver(() => {
+        const r = (window as unknown as { reached: number[] }).reached;
+        if (li.classList.contains('passed') && !r.includes(i)) r.push(i);
+      }).observe(li, { attributes: true, attributeFilter: ['class'] }),
+    );
+  });
+  await page.locator('#how .lp-steps-wrap').scrollIntoViewIfNeeded();
+  // Sampled through the ride: always on the road, only ever moving forward.
+  const samples = [];
+  for (let i = 0; i < 40; i++) {
+    samples.push(await bikeOnRoad(page));
+    await page.waitForTimeout(120);
+  }
+  for (const s of samples) expect(s.onRoad, `off the road at ${s.x},${s.y}`).toBe(true);
+  for (let i = 1; i < samples.length; i++) expect(samples[i]!.at).toBeGreaterThanOrEqual(samples[i - 1]!.at);
+  expect(new Set(samples.map((s) => s.at)).size).toBeGreaterThan(15); // it really moved
+  await expect(page.getByRole('button', { name: 'Ride again' })).toBeVisible({ timeout: 4000 });
+  expect(await page.evaluate(() => (window as unknown as { reached: number[] }).reached)).toEqual([0, 1, 2, 3]);
+  await expect(page.locator('#how .lp-steps > li').nth(3)).toHaveClass(/arrived/);
+
+  // It parks just short of Step 4: close to the circle, never on top of the number.
+  const end = await bikeOnRoad(page);
+  const dot4 = (await page.locator('#how .lp-step-dot').nth(3).boundingBox())!;
+  const wrap = (await page.locator('#how .lp-steps-wrap').boundingBox())!;
+  const dx = dot4.x - wrap.x + dot4.width / 2 - end.x;
+  expect(dx).toBeGreaterThan(dot4.width / 2);
+  expect(dx).toBeLessThan(80);
+  // The four milestones stay readable.
+  for (const name of ['The plan', 'Something changes', 'Segue finds alternatives', 'You decide']) await expect(page.locator('#how .lp-steps')).toContainText(name);
+
+  // Scrolling away and back doesn't restart it.
+  await page.mouse.wheel(0, -2000);
+  await page.waitForTimeout(400);
+  await page.locator('#how .lp-steps-wrap').scrollIntoViewIfNeeded();
+  await page.waitForTimeout(700);
+  expect((await bikeOnRoad(page)).at).toBe(end.at);
+
+  // Ride again replays it from the start.
+  await page.getByRole('button', { name: 'Ride again' }).click();
+  await page.waitForTimeout(250);
+  expect((await bikeOnRoad(page)).at).toBeLessThan(end.at);
+  await expect(page.getByRole('button', { name: 'Ride again' })).toBeVisible({ timeout: 8000 });
+
+  // On a phone the same road, the same ride: the road is rebuilt for the new width and the bike stays on it.
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.waitForTimeout(400);
+  expect((await bikeOnRoad(page)).onRoad).toBe(true);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)).toBeLessThanOrEqual(0);
+});
+
+test('how it works with reduced motion: a still road, the motorcycle waiting at the start, no ride', async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await page.goto('/');
+  await page.locator('#how .lp-steps-wrap').scrollIntoViewIfNeeded();
+  await page.waitForTimeout(300);
+  const a = await bikeOnRoad(page);
+  expect(a.onRoad).toBe(true);
+  await page.waitForTimeout(2500);
+  expect((await bikeOnRoad(page)).at).toBe(a.at);
+  await expect(page.locator('#how .lp-steps > li.passed')).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Ride again' })).toHaveCount(0);
+  // Before Step 1, so the number stays clear.
+  const dot1 = (await page.locator('#how .lp-step-dot').first().boundingBox())!;
+  const wrap = (await page.locator('#how .lp-steps-wrap').boundingBox())!;
+  expect(a.x).toBeLessThan(dot1.x - wrap.x);
+});

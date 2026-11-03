@@ -1071,37 +1071,6 @@
 .lp-steps-wrap {
   position: relative;
 }
-.lp-road {
-  position: absolute;
-  inset: 4px 4% auto;
-  width: 92%;
-  height: 46px;
-  overflow: visible;
-  pointer-events: none;
-}
-.lp-road path {
-  fill: none;
-  stroke-linecap: round;
-}
-.lp-road-bed {
-  stroke: color-mix(in srgb, var(--lp-navy) 22%, transparent);
-  stroke-width: 7;
-}
-.lp-road-done {
-  stroke: var(--lp-road);
-  stroke-width: 7;
-  stroke-dasharray: 100 200;
-}
-.lp-road-branch {
-  stroke: var(--lp-road-deep);
-  stroke-width: 3;
-  stroke-dasharray: 4 5;
-}
-@media (prefers-reduced-motion: no-preference) {
-  .lp-road-done {
-    transition: stroke-dashoffset 0.7s cubic-bezier(0.3, 0.7, 0.2, 1);
-  }
-}
 .lp-steps {
   position: relative;
   display: grid;
@@ -1253,8 +1222,202 @@
     width: 38px;
     height: 38px;
   }
-  .lp-road {
-    height: 40px;
-    top: 0;
+}
+
+/* ---------- 2026-11-04: How it works on a navy night road, with a motorcycle ---------- */
+.lp-howband {
+  position: relative;
+  isolation: isolate;
+  color: #fff;
+  background:
+    radial-gradient(70% 60% at 85% 0%, rgb(126 167 230 / 0.28), transparent 70%),
+    radial-gradient(60% 50% at 0% 100%, rgb(126 167 230 / 0.16), transparent 70%),
+    linear-gradient(170deg, var(--lp-navy), var(--lp-navy-deep));
+}
+.lp-howband h2 {
+  color: #fff;
+}
+.lp-howband .lp-lead,
+.lp-howband .lp-sc-foot {
+  color: rgb(251 244 228 / 0.82);
+}
+.lp-howband .lp-eyebrow {
+  color: var(--lp-road) !important;
+}
+.lp-howband .lp-sc-foot a {
+  color: var(--lp-road);
+}
+.lp-howband .lp-steps-wrap {
+  padding-top: 10px;
+}
+
+/* The road: one path, drawn in layers (glow, darker edge, surface, lane marks), then the trail. */
+.lp-road {
+  position: absolute;
+  inset: 0;
+  overflow: visible;
+  pointer-events: none;
+}
+.lp-road path {
+  fill: none;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.lp-road-glow {
+  stroke: var(--lp-road);
+  stroke-width: 26;
+  opacity: 0.22;
+}
+.lp-road-edge {
+  stroke: var(--lp-road-deep);
+  stroke-width: 17;
+}
+.lp-road-surface {
+  stroke: var(--lp-road);
+  stroke-width: 13;
+}
+.lp-road-lane {
+  stroke: var(--lp-navy-deep);
+  stroke-width: 1.4;
+  stroke-dasharray: 7 8;
+  opacity: 0.45;
+}
+.lp-road-trail {
+  stroke: #fff3c4;
+  stroke-width: 10;
+  opacity: 0;
+  transition: opacity 0.6s ease;
+}
+.lp-steps-wrap.riding .lp-road-trail {
+  opacity: 0.85;
+}
+.lp-bike {
+  filter: drop-shadow(0 1px 1.5px rgb(14 20 49 / 0.55));
+}
+.lp-bike-beam {
+  opacity: 0.55;
+  mix-blend-mode: screen;
+}
+.lp-steps-wrap.riding .lp-bike-beam {
+  opacity: 0.85;
+}
+@media (max-width: 560px) {
+  .lp-road-glow {
+    stroke-width: 20;
+  }
+  .lp-road-edge {
+    stroke-width: 13;
+  }
+  .lp-road-surface {
+    stroke-width: 10;
+  }
+}
+
+/* The four milestones on the night road: readable at rest, lit as the motorcycle reaches them. */
+.lp-howband .lp-steps {
+  z-index: 1;
+}
+.lp-howband .lp-steps button,
+.lp-howband .lp-steps button:disabled {
+  color: rgb(251 244 228 / 0.86);
+  /* steps you haven't reached stay solid circles: the road passes under them, never through */
+  opacity: 1;
+}
+.lp-howband .lp-step-dot {
+  background: var(--lp-navy-deep);
+  color: #fbf4e4;
+  box-shadow:
+    inset 0 0 0 2px rgb(251 244 228 / 0.55),
+    0 0 0 4px var(--lp-navy);
+  transition: box-shadow 0.45s ease, background-color 0.45s ease, color 0.45s ease, transform 0.45s ease;
+}
+.lp-howband .lp-steps li.done .lp-step-dot {
+  background: #fbf4e4;
+  color: var(--lp-navy-deep);
+  box-shadow: 0 0 0 4px var(--lp-navy);
+}
+.lp-howband .lp-steps li.on .lp-step-dot {
+  background: var(--lp-road);
+  color: var(--lp-navy-deep);
+  box-shadow:
+    0 0 0 4px var(--lp-navy),
+    0 0 0 7px rgb(255 211 110 / 0.45);
+}
+.lp-howband .lp-steps li.on .lp-step-label {
+  color: #fff;
+}
+.lp-step-label {
+  transition: color 0.45s ease, transform 0.45s ease;
+}
+/* reached: a short yellow glow, and the label lifts */
+.lp-howband .lp-steps li.lit .lp-step-dot {
+  box-shadow:
+    0 0 0 4px var(--lp-navy),
+    0 0 0 7px rgb(255 211 110 / 0.7),
+    0 0 26px 8px rgb(255 211 110 / 0.55);
+  transform: scale(1.08);
+}
+.lp-howband .lp-steps li.lit .lp-step-label {
+  color: var(--lp-road);
+  transform: translateY(-1px);
+}
+/* the destination: it stays lit, with a slow pulse */
+.lp-howband .lp-steps li.arrived .lp-step-dot {
+  background: var(--lp-road);
+  color: var(--lp-navy-deep);
+}
+.lp-howband .lp-steps li.arrived .lp-step-label {
+  color: var(--lp-road);
+}
+@media (prefers-reduced-motion: no-preference) {
+  .lp-howband .lp-steps li.arrived .lp-step-dot {
+    animation: lp-arrive 2.4s ease-in-out 2;
+  }
+}
+@keyframes lp-arrive {
+  0%,
+  100% {
+    box-shadow:
+      0 0 0 4px var(--lp-navy),
+      0 0 0 7px rgb(255 211 110 / 0.7),
+      0 0 26px 8px rgb(255 211 110 / 0.55);
+  }
+  50% {
+    box-shadow:
+      0 0 0 4px var(--lp-navy),
+      0 0 0 10px rgb(255 211 110 / 0.35),
+      0 0 40px 14px rgb(255 211 110 / 0.35);
+  }
+}
+.lp-ride-again {
+  position: absolute;
+  right: 0;
+  bottom: -30px;
+  z-index: 1;
+  padding: 4px 6px;
+  border: 0;
+  background: none;
+  color: rgb(251 244 228 / 0.75);
+  font: inherit;
+  font-size: var(--step--1);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+.lp-ride-again:hover {
+  color: var(--lp-road);
+}
+.lp-ride-again:focus-visible {
+  outline: 3px solid var(--lp-road);
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+.lp-howband .lp-story {
+  gap: 36px;
+}
+@media (prefers-reduced-motion: reduce) {
+  .lp-road-trail,
+  .lp-bike-beam {
+    display: none;
   }
 }
