@@ -79,9 +79,20 @@ export function useCalendar(ready: boolean, notify: (message: string) => void, {
   const serverConnected = mode === 'server' && link?.status === 'connected';
   const needsAttention = mode === 'server' && link?.status === 'needs_attention';
 
-  // Ask the server once per sign-in (and when the app comes back after a while; see refresh below).
+  // Ask the server once per sign-in. Signing out of Segue ends what the server connection
+  // brought onto this device: it isn't connected here any more.
+  const wasServer = useRef(false);
+  useEffect(() => {
+    if (mode === 'server') wasServer.current = true;
+  }, [mode]);
   useEffect(() => {
     if (!signedIn) {
+      if (wasServer.current && !tokenValid(currentToken())) {
+        setCalendar(EMPTY_CALENDAR);
+        setDays(EMPTY_DAYS);
+        lastRange.current = null;
+      }
+      wasServer.current = false;
       setLink(null);
       setLinkChecked(true);
       return;
@@ -116,9 +127,15 @@ export function useCalendar(ready: boolean, notify: (message: string) => void, {
     return tokenValid(t) ? tokenSource(t) : null;
   }
 
-  function afterFailure(e: unknown) {
+  /** Handles a failure; returns the message to show, or null when the connection status already says it. */
+  function afterFailure(e: unknown): string | null {
     if (e instanceof CalendarError && e.kind === 'expired') forgetToken();
-    if (e instanceof CalendarError && e.kind === 'reconnect' && link) setLink({ ...link, status: 'needs_attention' });
+    if (e instanceof CalendarError && e.kind === 'reconnect' && mode === 'server') {
+      // "Needs attention" with its Reconnect button says it; no second message.
+      setLink((l) => (l ? { ...l, status: 'needs_attention' } : l));
+      return null;
+    }
+    return calendarErrorMessage(e);
   }
 
   async function saveToday(from: EventSource, now: Date) {
@@ -126,7 +143,7 @@ export function useCalendar(ready: boolean, notify: (message: string) => void, {
     const syncedAt = new Date().toISOString();
     setCalendar({ connected: true, date: localDate(now), events, allDay, syncedAt });
     setDays((d) => mergeDays(d, localDate(now), addDays(localDate(now), 1), events, syncedAt));
-    if (mode === 'server' && link) setLink({ ...link, status: 'connected', lastSyncedAt: syncedAt });
+    if (mode === 'server') setLink((l) => (l ? { ...l, status: 'connected', lastSyncedAt: syncedAt } : l));
     return events;
   }
 
@@ -158,8 +175,7 @@ export function useCalendar(ready: boolean, notify: (message: string) => void, {
       notify(`Google Calendar connected${next.email ? ` (${next.email})` : ''}: ${count} today. It stays connected.`);
       return true;
     } catch (e) {
-      afterFailure(e);
-      setError(calendarErrorMessage(e));
+      setError(afterFailure(e));
       return false;
     } finally {
       setBusy(false);
@@ -186,8 +202,7 @@ export function useCalendar(ready: boolean, notify: (message: string) => void, {
       notify(!wasConnected ? `Google Calendar connected: ${count} today.` : `Calendar synced: ${count} today.`);
       return true;
     } catch (e) {
-      afterFailure(e);
-      setError(calendarErrorMessage(e));
+      setError(afterFailure(e));
       return false;
     } finally {
       setBusy(false);
@@ -219,8 +234,7 @@ export function useCalendar(ready: boolean, notify: (message: string) => void, {
       setDays((d) => mergeDays(d, from, toExclusive, events, at));
       lastRange.current = { key, at: Date.now() };
     } catch (e) {
-      afterFailure(e);
-      setRangeError(calendarErrorMessage(e));
+      setRangeError(afterFailure(e));
     } finally {
       setRangeBusy(false);
     }
@@ -248,9 +262,9 @@ export function useCalendar(ready: boolean, notify: (message: string) => void, {
       setError(null);
     } catch (e) {
       // Keep the last events; say what went wrong.
-      afterFailure(e);
+      const message = afterFailure(e);
       if (e instanceof CalendarError && e.kind === 'expired') setNeedsTap(true);
-      else setError(calendarErrorMessage(e));
+      else setError(message);
     } finally {
       refreshing.current = false;
     }

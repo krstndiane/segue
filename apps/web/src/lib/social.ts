@@ -229,4 +229,4 @@ export const getGoogleLink = () => api<GoogleLink>('GET', '/v1/google/calendar')
 export const connectGoogleLink = (code: string, replace = false) => api<GoogleLink>('POST', '/v1/google/calendar', { code, ...(replace ? { replace } : {}) });
 export const disconnectGoogleLink = () => api<GoogleLink>('DELETE', '/v1/google/calendar');
 export const googleLinkEvents = (start: string, end: string) =>
-  api<{ items: import('./calendar').GoogleEvent[]; syncedAt: string; email?: string }>('GET', `/v1/google/calendar/events?${qs({ start, end })}`);
+  api<{ items: import('./calendar').GoogleEvent[]; syncedAt: string; email?: string }>('GET', `/v1/google/calendar/events${qs({ start, end })}`);

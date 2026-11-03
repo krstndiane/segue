@@ -48,45 +48,61 @@ async function onboard(page: Page, things: string[]) {
   await expect(page.locator('.next')).toBeVisible();
 }
 
-test('the landing page explains Segue, shows the rain example on the real planner, and opens the demo or the app', async ({ page }) => {
-  // "before 8" means 8 PM in the morning and 8 AM before dawn, so fix the clock.
+test('the landing page: a route-aware planner, one main action, and the story told once on the real planner', async ({ page }) => {
   await page.clock.setFixedTime(MORNING);
   await page.goto('/');
-  // Above the fold: what it is (a daily planner), what it does, and the two ways in.
-  await expect(page.getByRole('heading', { level: 1 })).toHaveText('Your day, planned around real life.');
-  await expect(page.locator('.lp-kicker')).toHaveText('Intelligent daily planner');
-  await expect(page.locator('.lp-sub')).toContainText('tasks, routines and Google Calendar');
-  for (const name of ['Get started', 'See how it works']) {
-    const box = (await page.getByRole('link', { name }).first().boundingBox())!;
-    expect(box.y + box.height).toBeLessThanOrEqual((page.viewportSize()?.height ?? 800));
+  // Above the fold: what it is, what it does, and one obvious way in.
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText('Your day has a route. Segue helps you find your way.');
+  await expect(page.locator('.lp-kicker')).toHaveText('Your route-aware daily planner');
+  await expect(page.locator('.lp-sub')).toContainText('Plan your stops, routines, and commitments in one place.');
+  const hero = page.locator('.lp-hero');
+  for (const name of ['Try Segue', 'How it works']) {
+    const box = (await hero.locator('.lp-copy').getByRole('link', { name }).boundingBox())!;
+    expect(box.y + box.height).toBeLessThanOrEqual(page.viewportSize()?.height ?? 800);
   }
-  // The five tabs, by the names the app uses.
-  for (const name of ['Today', 'Plan', 'Calendar', 'Routines', 'Together']) await expect(page.locator('.lp-tour h3', { hasText: new RegExp(`^${name}$`) })).toBeVisible();
-  // The hero shows the real Today screen on the sample day, and says it's a sample.
+  // No Google sign-in competing with it, anywhere on the page.
+  await expect(page.getByRole('button', { name: /google/i })).toHaveCount(0);
+  await expect(page.getByRole('link', { name: /google/i })).toHaveCount(0);
+  // The hero shows the real Today screen and the day's route, and says it's a sample.
+  await expect(page.locator('.lp-ribbon')).toContainText('Ayala Triangle Gardens');
+  await expect(page.locator('.lp-ribbon')).toContainText('3:30 PM · fixed');
   await expect(page.locator('.lp-preview')).toContainText('Outdoor workout');
   await expect(page.locator('.lp-preview figcaption')).toHaveText('Segue’s Today screen, on a sample day');
-  // Step 1 is the real plain-words reader.
-  await page.locator('#lp-try').fill('Groceries before 8');
-  await expect(page.locator('.lp-try-result')).toContainText('Before 8 PM');
-  // The example: nothing until it rains; then real options that keep Class at 3:30.
-  const example = page.locator('.lp-scenario');
-  await expect(example).toContainText('Press “Make it rain”');
-  await example.getByRole('button', { name: 'Make it rain' }).click();
-  await expect(example).toContainText('Keeps Class at 3:30 PM exactly where it is');
-  await expect(example.locator('.lp-sc-list.after')).toContainText('3:30 PM Class');
-  await expect(example.locator('.lp-sc-list.after')).toContainText('Unchanged');
-  await expect(example).toContainText('Sample scenario');
-  const picks = example.getByRole('radio');
+  // The five tabs, by the names the app uses.
+  for (const name of ['Today', 'Plan', 'Calendar', 'Routines', 'Together']) await expect(page.locator('.lp-tour h3', { hasText: new RegExp(`^${name}$`) })).toBeVisible();
+
+  // "How it works" goes to the one explanation on this page, not somewhere else.
+  await hero.locator('.lp-copy').getByRole('link', { name: 'How it works' }).click();
+  await expect(page).toHaveURL(/#how$/);
+  const story = page.locator('#how');
+  // The rain story exists once: one "Make it rain" on the whole page.
+  await expect(page.getByRole('button', { name: 'Make it rain' })).toHaveCount(1);
+  await expect(story.locator('.lp-steps [aria-current="step"]')).toContainText('The plan');
+  await expect(story.locator('.lp-stage')).toContainText('Outdoor workout');
+  await story.getByRole('button', { name: 'Make it rain' }).click();
+  await expect(story.locator('.lp-steps [aria-current="step"]')).toContainText('Something changes');
+  await expect(story.locator('.lp-sc-list li.hit')).toContainText('Outdoor workout');
+  await story.getByRole('button', { name: 'See options' }).click();
+  const picks = story.getByRole('radio');
   expect(await picks.count()).toBeGreaterThanOrEqual(2);
   await picks.nth(1).click();
   await expect(picks.nth(1)).toHaveAttribute('aria-checked', 'true');
-  await expect(example.locator('.lp-sc-list.after li').first()).toContainText(/Leaves \d+ min before Class/);
-  // Into the demo, and back; then into the app without an account.
-  await page.getByRole('link', { name: 'See how it works' }).first().click();
+  await expect(story.locator('.lp-sc-list li.changed')).toContainText(/Leaves \d+ min before Class/);
+  await expect(story.locator('.lp-sc-list')).toContainText('Unchanged');
+  await story.getByRole('button', { name: 'Use this' }).click();
+  await expect(story.locator('.lp-stage h3')).toHaveText('You decide');
+  await expect(story).toContainText('Class stays at 3:30 PM');
+  await expect(story).toContainText('sample weather and real places from an OpenStreetMap snapshot');
+  // Earlier steps can be revisited, later ones can't be skipped to.
+  await story.getByRole('button', { name: 'Start over' }).click();
+  await expect(story.getByRole('button', { name: /You decide/ })).toBeDisabled();
+
+  // The full-screen demo is its own, separately named link; Try Segue opens the app.
+  await story.getByRole('link', { name: 'Open the full-screen demo' }).click();
   await expect(page).toHaveURL(/\/demo$/);
   await expect(page.getByRole('heading', { name: 'This is a planned day in Segue' })).toBeVisible();
   await page.goto('/');
-  await page.getByRole('link', { name: 'Get started' }).first().click();
+  await page.getByRole('link', { name: 'Try Segue' }).first().click();
   await expect(page).toHaveURL(/\/app(\?|$)/);
   await expect(page.getByRole('heading', { name: 'Plan your day around real life' })).toBeVisible();
 });
@@ -192,28 +208,34 @@ test('weather precautions: heavy rain while driving, then a hot sunny day', asyn
   await expect(page.locator('.precaution-strip')).toContainText('Wear sunscreen');
 });
 
-test('sign up with Google on the landing page: greeted by name, calendar already in', async ({ page }) => {
+test('connect Google Calendar while getting started: one Connect button, then Connected with when it last synced', async ({ page }) => {
   await fakeGoogle(page);
   await page.clock.setFixedTime(MORNING);
-  await page.goto('/');
-  await expect(page.getByRole('link', { name: 'Get started' }).first()).toBeVisible();
-  await page.getByRole('button', { name: 'Continue with Google' }).first().click();
-
-  await expect(page).toHaveURL(/\/app(\?|$)/);
-  await expect(page.getByRole('heading', { name: 'Welcome, Ana' })).toBeVisible();
-  await expect(page.getByText('Your Google Calendar is connected')).toBeVisible();
+  await page.goto('/app?sky=clear');
   await page.getByRole('button', { name: /^Next/ }).click();
   await page.getByRole('button', { name: 'Next', exact: true }).click();
-  await expect(page.locator('.calendar-card')).toContainText('Connected');
+  const card = page.locator('.calendar-card');
+  // Exactly one way to connect, and no Google sign-in for Segue itself.
+  await expect(card.getByRole('button')).toHaveCount(1);
+  await card.getByRole('button', { name: 'Connect Google Calendar' }).click();
+  await expect(card).toContainText('Connected');
+  await expect(card).toContainText('Last synced today at');
+  // Without a Segue account it is honest that this lasts for this visit only.
+  await expect(card).toContainText('This visit only');
+  await expect(card.getByRole('button', { name: 'Connect Google Calendar' })).toHaveCount(0);
   await page.getByRole('button', { name: 'Plan my day' }).click(); // enabled: the calendar counts
   await expect(page.locator('main')).toContainText('Team standup');
 
+  // Settings links to the one place it's managed; no second sign-in there.
   await page.getByRole('button', { name: 'Settings' }).click();
-  await expect(page.getByRole('dialog', { name: 'Settings' })).toContainText('ana@example.com');
-  await page.getByRole('button', { name: 'Close' }).click();
-
-  await page.goto('/');
-  await expect(page.getByRole('link', { name: 'Continue as Ana' }).first()).toBeVisible();
+  const settings = page.getByRole('dialog', { name: 'Settings' });
+  await expect(settings.getByRole('button', { name: 'Manage Google Calendar' })).toBeVisible();
+  await expect(settings.getByRole('button', { name: /Sign (up|in) with Google|Continue with Google/ })).toHaveCount(0);
+  await settings.getByRole('button', { name: 'Manage Google Calendar' }).click();
+  await expect(page).toHaveURL(/\/app\/calendar/);
+  await page.getByRole('button', { name: 'Manage connection' }).click();
+  await page.getByRole('button', { name: 'Disconnect Google Calendar' }).click();
+  await expect(page.getByRole('button', { name: 'Connect Google Calendar' })).toBeVisible();
 });
 
 test('the bottom navigation: five places, real addresses, back and refresh work, and nothing hides behind it', async ({ page }) => {
@@ -274,13 +296,13 @@ test('a new day: yesterday’s calendar isn’t shown as today’s, one tap brin
     return r.fulfill({ headers: cors, body: JSON.stringify({ items }) });
   });
 
-  // Day one: sign up with Google and plan.
+  // Day one: connect Google Calendar while getting started, and plan.
   await page.clock.setFixedTime(MORNING);
-  await page.goto('/');
-  await page.getByRole('button', { name: 'Continue with Google' }).first().click();
-  await expect(page.getByRole('heading', { name: 'Welcome, Ana' })).toBeVisible();
+  await page.goto('/app');
   await page.getByRole('button', { name: /^Next/ }).click();
   await page.getByRole('button', { name: 'Next', exact: true }).click();
+  await page.locator('.calendar-card').getByRole('button', { name: 'Connect Google Calendar' }).click();
+  await expect(page.locator('.calendar-card')).toContainText('Connected');
   await page.getByRole('button', { name: 'Plan my day' }).click();
   await expect(page.locator('main')).toContainText('Client call');
 
