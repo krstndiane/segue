@@ -14,6 +14,8 @@ export interface CalendarEvent {
   start: string;
   end: string;
   location?: string;
+  /** Google's recurring-series id, when it's one occurrence of a repeating event */
+  seriesId?: string;
 }
 
 /** An all-day event (a holiday, a birthday, a trip): shown on the day, never blocks time. */
@@ -39,6 +41,8 @@ export interface GoogleEvent {
   id: string;
   /** shared across calendars for the same meeting */
   iCalUID?: string;
+  /** set on each occurrence of a repeating event */
+  recurringEventId?: string;
   status?: string;
   summary?: string;
   location?: string;
@@ -99,6 +103,7 @@ export function parseEvents(items: GoogleEvent[], dayStart: string, dayEnd: stri
       start: new Date(start).toISOString(),
       end: new Date(end).toISOString(),
       location: e.location?.trim() || undefined,
+      ...(e.recurringEventId ? { seriesId: e.recurringEventId } : {}),
     });
   }
   return out.sort((a, b) => Date.parse(a.start) - Date.parse(b.start));
