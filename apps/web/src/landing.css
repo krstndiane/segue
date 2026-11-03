@@ -483,63 +483,6 @@
   }
 }
 
-/* ---------- sign up with Google ---------- */
-
-.google-button {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 12px;
-  min-height: 54px;
-  padding: 0 24px 0 18px;
-  border: 1px solid #dadce0;
-  border-radius: 999px;
-  background: #fff;
-  color: #1f1f1f;
-  font-family: Roboto, var(--font);
-  font-weight: 600;
-  font-size: var(--step-0);
-  cursor: pointer;
-  box-shadow: 0 10px 30px -14px rgb(0 0 0 / 0.5);
-}
-.google-button:hover {
-  background: #f8f9fb;
-}
-.google-button:disabled {
-  cursor: progress;
-  opacity: 0.85;
-}
-.lp-secondary.dark {
-  color: var(--ink);
-  border-color: var(--line);
-  background: var(--surface);
-}
-.lp-error {
-  margin: -14px 0 22px;
-  padding: 8px 12px;
-  border-radius: var(--radius-s);
-  background: rgb(255 255 255 / 0.92);
-  color: var(--danger);
-  font-size: var(--step--1);
-  max-width: 34em;
-}
-.lp-final .lp-ctas {
-  justify-content: center;
-}
-.lp-final .lp-micro {
-  margin: 14px 0 0;
-  color: var(--slate);
-  max-width: 30em;
-}
-.lp-final .lp-error {
-  margin: 12px 0 0;
-}
-@media (max-width: 520px) {
-  .google-button {
-    flex: 1 1 100%;
-  }
-}
-
 /* ---------- privacy policy page (/privacy) ---------- */
 
 .pp {
@@ -633,20 +576,6 @@
 .lp-micro a {
   color: inherit;
   text-underline-offset: 3px;
-}
-.lp-google {
-  min-height: 48px;
-}
-/* Google sign-up sits under the two main buttons, quieter than both. */
-.lp-google-row {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px 12px;
-  margin-top: 14px;
-}
-.lp-google-row .lp-micro {
-  margin: 0;
 }
 
 .lp-preview {
@@ -956,7 +885,376 @@
 .lp-secondary {
   white-space: nowrap;
 }
-.lp-error a {
-  color: inherit;
+
+/* ---------- 2026-11-04: route-aware planner, logo palette, one story ---------- */
+
+/* The logo's colours: dark navy, road yellow, cream and light sky blue. */
+.landing {
+  --lp-navy: #1a2556;
+  --lp-navy-deep: #0e1431;
+  --lp-road: #ffd36e;
+  --lp-road-deep: #a77d2c;
+  --lp-cream: #fbf4e4;
+  --lp-skyblue: #e3ecfb;
+}
+@media (prefers-color-scheme: dark) {
+  .landing {
+    --lp-cream: #1c1f33;
+    --lp-skyblue: #16204a;
+  }
+}
+
+/* Sections alternate backgrounds, and sit closer together than before. */
+.lp-band {
+  background: var(--fog);
+}
+.lp-band .lp-section {
+  padding-block: clamp(44px, 6.5vw, 80px);
+}
+.lp-cream {
+  background: var(--lp-cream);
+}
+.lp-skyband {
+  background:
+    radial-gradient(120% 80% at 85% 0%, rgb(255 255 255 / 0.55), transparent 60%),
+    var(--lp-skyblue);
+}
+.lp-navy {
+  background: linear-gradient(160deg, var(--lp-navy), var(--lp-navy-deep));
+  color: #fff;
+}
+.lp-navy h2 {
+  color: #fff;
+}
+.lp-navy p,
+.lp-navy .lp-lead,
+.lp-navy .lp-checks li {
+  color: rgb(255 255 255 / 0.86);
+}
+.lp-navy .lp-eyebrow {
+  color: var(--lp-road) !important;
+}
+.lp-navy .lp-checks li::before {
+  background: var(--lp-road);
+}
+.lp-navy .lp-checks li::after {
+  border-color: var(--lp-navy);
+}
+.lp-eyebrow {
+  color: var(--lp-road-deep) !important;
+}
+@media (prefers-color-scheme: dark) {
+  .lp-eyebrow {
+    color: var(--lp-road) !important;
+  }
+}
+
+/* The main button is road yellow, everywhere. */
+.lp-primary {
+  background: var(--lp-road);
+  color: var(--lp-navy-deep);
+  box-shadow: 0 10px 30px -12px rgb(167 125 44 / 0.9);
+}
+.lp-open {
+  background: var(--lp-road);
+  color: var(--lp-navy-deep);
+  text-shadow: none;
+}
+.lp-secondary::after {
+  content: '↓';
+  margin-left: 8px;
   font-weight: 700;
+}
+
+/* Hero text comes in in order: label, headline, line, buttons. */
+@media (prefers-reduced-motion: no-preference) {
+  .lp-copy > * {
+    animation: lp-rise 0.6s cubic-bezier(0.2, 0.7, 0.2, 1) both;
+  }
+  .lp-copy > :nth-child(2) {
+    animation-delay: 0.1s;
+  }
+  .lp-copy > :nth-child(3) {
+    animation-delay: 0.2s;
+  }
+  .lp-copy > :nth-child(4),
+  .lp-copy > :nth-child(5) {
+    animation-delay: 0.3s;
+  }
+  .lp-reveal {
+    opacity: 0;
+    transform: translateY(14px);
+    transition: opacity 0.5s ease, transform 0.5s ease;
+  }
+  .lp-reveal.in {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes lp-rise {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+}
+
+/* The route above the phone: where the sample day goes, on a yellow road. */
+.lp-ribbon {
+  position: relative;
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(0, 1fr);
+  width: min(340px, 100%);
+  margin: 0 0 6px;
+  padding: 12px 10px 10px;
+  border-radius: 18px;
+  list-style: none;
+  background: rgb(14 20 49 / 0.55);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  color: #fff;
+  font-size: 0.74rem;
+  line-height: 1.25;
+}
+.lp-ribbon li {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  padding: 0 4px;
+  text-align: center;
+}
+/* the road between stops */
+.lp-ribbon li:not(:first-child)::before {
+  content: '';
+  position: absolute;
+  top: 6px;
+  right: 50%;
+  width: 100%;
+  height: 3px;
+  border-radius: 2px;
+  background: var(--lp-road);
+}
+.lp-ribbon i {
+  position: relative;
+  z-index: 1;
+  width: 15px;
+  height: 15px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 0 0 3px var(--lp-navy-deep);
+}
+.lp-ribbon li.hit i {
+  background: #9fb4d8;
+}
+.lp-ribbon li.hit span {
+  color: #cfe0ff;
+}
+.lp-ribbon li.fixed i {
+  background: var(--lp-road);
+}
+.lp-ribbon strong {
+  font-weight: 700;
+}
+.lp-ribbon span {
+  opacity: 0.85;
+}
+
+/* How it works: four stops on the logo's winding road, one at a time. */
+.lp-story {
+  margin-top: 26px;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+.lp-steps-wrap {
+  position: relative;
+}
+.lp-road {
+  position: absolute;
+  inset: 4px 4% auto;
+  width: 92%;
+  height: 46px;
+  overflow: visible;
+  pointer-events: none;
+}
+.lp-road path {
+  fill: none;
+  stroke-linecap: round;
+}
+.lp-road-bed {
+  stroke: color-mix(in srgb, var(--lp-navy) 22%, transparent);
+  stroke-width: 7;
+}
+.lp-road-done {
+  stroke: var(--lp-road);
+  stroke-width: 7;
+  stroke-dasharray: 100 200;
+}
+.lp-road-branch {
+  stroke: var(--lp-road-deep);
+  stroke-width: 3;
+  stroke-dasharray: 4 5;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .lp-road-done {
+    transition: stroke-dashoffset 0.7s cubic-bezier(0.3, 0.7, 0.2, 1);
+  }
+}
+.lp-steps {
+  position: relative;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.lp-steps button {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 0 4px;
+  border: 0;
+  background: none;
+  color: var(--ink);
+  font: inherit;
+  text-align: center;
+  cursor: pointer;
+}
+.lp-steps button:disabled {
+  cursor: default;
+  color: var(--slate);
+}
+.lp-step-dot {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: var(--surface);
+  box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--lp-navy) 25%, transparent);
+  font-weight: 750;
+}
+.lp-steps li.done .lp-step-dot {
+  background: var(--lp-road);
+  color: var(--lp-navy-deep);
+  box-shadow: none;
+}
+.lp-steps li.on .lp-step-dot {
+  background: var(--lp-navy);
+  color: #fff;
+  box-shadow: 0 0 0 5px color-mix(in srgb, var(--lp-road) 60%, transparent);
+}
+.lp-step-label {
+  font-size: var(--step--1);
+  font-weight: 650;
+  line-height: 1.25;
+}
+.lp-steps button:focus-visible {
+  outline: 3px solid var(--focus);
+  outline-offset: 4px;
+  border-radius: 12px;
+}
+.lp-stage {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  max-width: 640px;
+  margin: 0 auto;
+  width: 100%;
+  padding: 24px;
+  border-radius: var(--radius-l);
+  background: var(--surface);
+  box-shadow: 0 24px 60px -36px rgb(14 20 49 / 0.55), inset 0 0 0 1px var(--line);
+}
+.lp-stage h3 {
+  margin: 0;
+  font-size: var(--step-1);
+}
+.lp-stage > p {
+  margin: 0;
+}
+.lp-action {
+  align-self: flex-start;
+  min-height: 50px;
+  padding: 0 24px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--lp-navy);
+  color: #fff;
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+.lp-action:disabled {
+  opacity: 0.6;
+  cursor: progress;
+}
+.lp-action:focus-visible,
+.lp-text:focus-visible {
+  outline: 3px solid var(--focus);
+  outline-offset: 2px;
+}
+.lp-stage-end {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 18px;
+}
+.lp-text {
+  border: 0;
+  background: none;
+  padding: 8px 4px;
+  color: var(--ink);
+  font: inherit;
+  font-weight: 650;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+.lp-story .lp-sc-foot {
+  text-align: center;
+  margin-inline: auto;
+}
+.lp-stage .lp-sc-alert {
+  color: var(--fog);
+}
+.lp-stage .lp-sc-alert strong {
+  color: #fff;
+}
+@media (prefers-color-scheme: dark) {
+  .lp-action {
+    background: var(--lp-road);
+    color: var(--lp-navy-deep);
+  }
+  .lp-steps li.on .lp-step-dot {
+    background: var(--lp-road);
+    color: var(--lp-navy-deep);
+  }
+}
+
+@media (max-width: 560px) {
+  .lp-stage {
+    padding: 18px;
+  }
+  .lp-action,
+  .lp-stage-end .lp-primary {
+    align-self: stretch;
+    width: 100%;
+  }
+  .lp-step-label {
+    font-size: 0.72rem;
+  }
+  .lp-step-dot {
+    width: 38px;
+    height: 38px;
+  }
+  .lp-road {
+    height: 40px;
+    top: 0;
+  }
 }

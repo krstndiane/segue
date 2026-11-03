@@ -1,45 +1,65 @@
 import { useEffect, useMemo, useState, type MouseEvent } from 'react';
-import { firstName, loadAccount, signUpWithGoogle, type Account } from '../lib/account';
+import { loadAccount } from '../lib/account';
+import { getSession } from '../lib/auth';
 import { DEMO_IDS, demoOptions, demoStart } from '../lib/demo';
 import { clock } from '../lib/format';
-import { GOOGLE_CLIENT_ID, calendarErrorMessage, preloadGoogle } from '../lib/googleCalendar';
-import { parseQuickAdd } from '../lib/quickAdd';
 import { enterApp } from '../lib/router';
 import { NAV_ICONS, NAV_LABELS, type NavTab } from './BottomNav';
-import { GoogleButton } from './GoogleButton';
-import { EXAMPLES } from './QuickAdd';
 import { Sky, sceneFor } from './Sky';
 import { Timeline } from './Timeline';
 import '../landing.css';
 
 const PROBLEMS = [
-  ['It starts raining', 'and your run is outdoors.'],
-  ['A meeting runs late', 'and everything after it is now wrong.'],
+  ['It starts raining', 'and your workout is outdoors.'],
+  ['A meeting runs late', 'and every stop after it is now off.'],
   ['The place is closed', 'or too far to reach before your class.'],
 ];
 
-const CONTEXT = ['Your Google Calendar, kept exactly where it is', 'The weather, hour by hour', 'Real places nearby and their listed opening hours', 'Travel time, rush hour included', 'What has to happen before what'];
-
 /** The app's five tabs, each in terms of what you can do there. Same icons as the app's bottom navigation. */
 const TOUR: { tab: NavTab; body: string }[] = [
-  { tab: 'today', body: 'See what’s next, tick things off, skip without reshuffling the rest, and get a suggestion when something gets in the way.' },
-  { tab: 'plan', body: 'Add what you want to get done the way you’d say it, choose what matters most, and let Segue fit it around your fixed times.' },
+  { tab: 'today', body: 'Your day as a route: what’s next, where, and when to leave. Tick things off, skip one without reshuffling the rest.' },
+  { tab: 'plan', body: 'Add stops the way you’d say them (“Gym 1h after 5pm”), choose what matters most, and Segue fits them around your fixed times.' },
   { tab: 'days', body: 'Your Google Calendar events and your own plans, day by day. Segue reads your calendar and never changes it.' },
-  { tab: 'routines', body: 'Things you do on certain days, like a weekday workout or a morning read. Segue fits them into each of those days.' },
-  { tab: 'together', body: 'Share a plan with people you choose, let them ask to join, and agree on a time. Everything else stays private.' },
+  { tab: 'routines', body: 'The stops you make on certain days, like the gym after class on Mondays. Segue fits them into each of those days.' },
+  { tab: 'together', body: 'Share one plan or stop with people you choose, let them ask to join, and agree on a time. Everything else stays private.' },
 ];
 
 const TOGETHER_POINTS = [
-  'Share one plan, not your whole schedule.',
-  '“Can I join?” only asks. You say yes or not this time.',
-  'An invitation never changes your day unless you add it.',
+  'Share one stop or plan, never your whole calendar.',
+  '“Can I join?” only asks. You approve or decline.',
+  'An invitation never changes your day unless you accept it.',
 ];
 
 const PRIVACY = [
-  'Your plans are saved on your phone. A Segue account is optional and only syncs your plans between your devices.',
-  'Google Calendar is read in your browser. Segue never writes to it.',
-  'Your location is used to plan and check the weather; the weather uses a spot rounded to about 1 km. The server doesn’t store it.',
+  'Your plans are saved on your device. A Segue account is optional and syncs them between your devices.',
+  'Google Calendar is read-only: Segue never writes to it. Signed in, Segue keeps the connection so you aren’t asked again.',
+  'Your location is used to plan and check the weather; the weather uses a spot rounded to about 1 km. It isn’t stored.',
 ];
+
+/** The route on the sample day: where you'll be, in order, with the stop the rain affects marked. */
+function RouteRibbon() {
+  const s = useMemo(() => demoStart(), []);
+  const stops = s.day.plan!.items.filter((i) => i.place || i.fixed);
+  return (
+    <ol className="lp-ribbon" aria-label="The sample day's route">
+      <li>
+        <i aria-hidden="true" />
+        <strong>Home</strong>
+        <span>Now</span>
+      </li>
+      {stops.map((i) => (
+        <li key={i.blockId} className={i.fixed ? 'fixed' : i.blockId === DEMO_IDS.workout ? 'hit' : ''}>
+          <i aria-hidden="true" />
+          <strong>{i.place?.name ?? i.title}</strong>
+          <span>
+            {clock(i.start)}
+            {i.fixed ? ' · fixed' : ' · rain'}
+          </span>
+        </li>
+      ))}
+    </ol>
+  );
+}
 
 /** The real Today screen on the sample day, at the moment the rain starts. Not interactive here. */
 function TodayPreview() {
@@ -47,6 +67,7 @@ function TodayPreview() {
   const workout = s.day.plan!.items.find((i) => i.blockId === DEMO_IDS.workout)!;
   return (
     <figure className="lp-preview">
+      <RouteRibbon />
       <div className="lp-phone" inert>
         <div className="lp-phone-sky rain">
           <img src="/wordmark-light.svg" alt="" />
@@ -76,152 +97,186 @@ function TodayPreview() {
   );
 }
 
-/** The core idea, live: the real engine on the sample day, before and after the rain. */
-function Scenario() {
-  const [raining, setRaining] = useState(false);
+const STEPS = ['The plan', 'Something changes', 'Segue finds alternatives', 'You decide'] as const;
+
+/** The winding road from the logo, drawn as far as the step you're on. */
+function Road({ step }: { step: number }) {
+  return (
+    <svg className="lp-road" viewBox="0 0 400 60" preserveAspectRatio="none" aria-hidden="true">
+      <path className="lp-road-bed" d="M10 30 C 70 0, 110 60, 170 30 S 270 0, 330 30 S 380 50, 390 30" pathLength={100} />
+      <path className="lp-road-done" d="M10 30 C 70 0, 110 60, 170 30 S 270 0, 330 30 S 380 50, 390 30" pathLength={100} style={{ strokeDashoffset: 100 - (step / 3) * 100 }} />
+      {step >= 1 && <path className="lp-road-branch" d="M200 26 C 215 8, 240 6, 260 8" pathLength={100} />}
+    </svg>
+  );
+}
+
+/**
+ * How it works, told once: the sample day on Segue's real planner and
+ * alternatives engine, one step and one action at a time.
+ */
+function RouteStory() {
+  const [step, setStep] = useState(0);
   const [pick, setPick] = useState(0);
   const base = useMemo(() => demoStart(), []);
-  const result = useMemo(() => (raining ? demoOptions({ ...base, raining: true }) : null), [raining, base]);
+  const result = useMemo(() => (step >= 1 ? demoOptions({ ...base, raining: true }) : null), [step >= 1, base]); // eslint-disable-line react-hooks/exhaustive-deps
   const options = result?.options.filter((o) => o.kind !== 'later').slice(0, 3) ?? [];
   const o = options[Math.min(pick, options.length - 1)];
-  const workout = base.day.plan!.items.find((i) => i.blockId === DEMO_IDS.workout)!;
-  const t = (iso: string) => clock(iso);
+  const items = base.day.plan!.items;
+  const workout = items.find((i) => i.blockId === DEMO_IDS.workout)!;
+  const cls = items.find((i) => i.blockId === DEMO_IDS.class)!;
+  const later = items.find((i) => i.blockId === DEMO_IDS.personal)!;
+  const short = (label: string) => label.replace(/ instead$/, '');
+
+  const route = (changed: boolean) => (
+    <ol className="lp-sc-list">
+      {changed && o ? (
+        <li className="changed">
+          <b>{clock(o.start)}</b> {short(o.label)}
+          <span>{o.facts.map((f) => f.text).filter((x) => /Open|Leaves|No trip|min to get/.test(x)).join(' · ')}</span>
+        </li>
+      ) : (
+        <li className={step === 1 ? 'hit' : ''}>
+          <b>{clock(workout.start)}</b> {workout.title}
+          <span>
+            {workout.place?.name} · {workout.travelMinutesBefore} min away · outdoors
+          </span>
+        </li>
+      )}
+      <li className="set">
+        <b>{clock(cls.start)}</b> {cls.title} <span className="tag">Calendar · fixed</span>
+        {changed && <span>Unchanged</span>}
+      </li>
+      <li>
+        <b>{clock(later.start)}</b> {later.title}
+      </li>
+    </ol>
+  );
+
   return (
-    <div className="lp-scenario">
-      <div className="lp-sc-col">
-        <p className="lp-sc-head">Your plan</p>
-        <ol className="lp-sc-list">
-          <li className={raining ? 'hit' : ''}>
-            <b>{t(workout.start)}</b> Outdoor workout <span>Ayala Triangle Gardens</span>
-          </li>
-          <li className="set">
-            <b>3:30 PM</b> Class <span className="tag">Calendar</span>
-          </li>
+    <div className="lp-story">
+      <div className="lp-steps-wrap">
+        <Road step={step} />
+        <ol className="lp-steps">
+          {STEPS.map((label, i) => (
+            <li key={label} aria-current={i === step ? 'step' : undefined} className={i < step ? 'done' : i === step ? 'on' : ''}>
+              <button type="button" onClick={() => i <= step && setStep(i)} disabled={i > step}>
+                <span className="lp-step-dot" aria-hidden="true">
+                  {i + 1}
+                </span>
+                <span className="lp-step-label">{label}</span>
+              </button>
+            </li>
+          ))}
         </ol>
-        {!raining ? (
-          <button type="button" className="lp-rain" onClick={() => setRaining(true)}>
-            Make it rain
-          </button>
-        ) : (
-          <p className="lp-sc-alert">
-            <strong>It starts raining.</strong> 90% chance until about 5 PM, and the workout is outdoors.
-          </p>
-        )}
       </div>
 
-      <div className={`lp-sc-col lp-sc-after${raining ? ' on' : ''}`} aria-live="polite">
-        <p className="lp-sc-head">What Segue does</p>
-        {!raining || !o ? (
-          <p className="lp-sc-wait">Press “Make it rain” to see what Segue checks and suggests.</p>
-        ) : (
+      <div className="lp-stage" aria-live="polite">
+        {step === 0 && (
           <>
+            <h3>Here’s today’s route</h3>
+            <p>Two things are already done. Next: a workout outdoors at 2, then class at 3:30 from your Google Calendar, which Segue never moves.</p>
+            {route(false)}
+            <button type="button" className="lp-action" onClick={() => setStep(1)}>
+              Make it rain
+            </button>
+          </>
+        )}
+        {step === 1 && (
+          <>
+            <h3>It starts raining</h3>
+            <p className="lp-sc-alert">
+              <strong>90% chance until about 5 PM,</strong> and the workout is outdoors. Segue notices before you’re standing in it.
+            </p>
+            {route(false)}
             <ul className="lp-sc-checks">
-              <li>Sees the workout is outdoors and it’s going to rain</li>
+              <li>Finds the stop the rain affects</li>
               <li>Looks for indoor places nearby and checks their listed hours</li>
-              <li>Counts the trip there and the time before Class</li>
-              <li>Keeps Class at 3:30 PM exactly where it is</li>
+              <li>Counts the trip and the time before class</li>
             </ul>
+            <button type="button" className="lp-action" onClick={() => setStep(2)} disabled={!options.length}>
+              See options
+            </button>
+          </>
+        )}
+        {step === 2 && (
+          <>
+            <h3>Segue finds a practical way forward</h3>
+            <p>Real places from OpenStreetMap, open by their listed hours, with time to reach class.</p>
             <div className="lp-sc-pick" role="radiogroup" aria-label="Options Segue found">
               {options.map((x, i) => (
                 <button key={x.id} type="button" role="radio" aria-checked={i === pick} className={i === pick ? 'on' : ''} onClick={() => setPick(i)}>
-                  {x.label.replace(/ instead$/, '')}
+                  {short(x.label)}
                 </button>
               ))}
             </div>
-            <ol className="lp-sc-list after">
-              <li className="changed">
-                <b>{t(o.start)}</b> {o.label.replace(/ instead$/, '')}
-                <span>{o.facts.map((f) => f.text).filter((x) => /Open|Leaves|No trip|min to get/.test(x)).join(' · ')}</span>
-              </li>
-              <li className="set">
-                <b>3:30 PM</b> Class <span>Unchanged</span>
-              </li>
-            </ol>
-            <p className="lp-sc-note">Nothing changes until you choose “Use this”.</p>
+            {route(true)}
+            <button type="button" className="lp-action" onClick={() => setStep(3)}>
+              Use this
+            </button>
+          </>
+        )}
+        {step === 3 && (
+          <>
+            <h3>You decide</h3>
+            <p>Nothing moved until you chose. Class stays at {clock(cls.start)}, and Undo is one tap away.</p>
+            {route(true)}
+            <div className="lp-stage-end">
+              <a className="lp-primary" href="/app" onClick={openApp}>
+                Try Segue
+              </a>
+              <button type="button" className="lp-text" onClick={() => setStep(0)}>
+                Start over
+              </button>
+            </div>
           </>
         )}
       </div>
       <p className="lp-sc-foot">
-        Sample scenario: sample weather and real places from an OpenStreetMap snapshot of Makati, run through Segue’s actual planner.{' '}
-        <a href="/demo">Try the full demo</a>
+        A sample day: sample weather and real places from an OpenStreetMap snapshot of Makati, run through Segue’s actual planner.{' '}
+        <a href="/demo">Open the full-screen demo</a>
       </p>
     </div>
   );
 }
 
-function TryIt() {
-  const [text, setText] = useState('Gym 1h after 5pm');
-  const parsed = useMemo(() => (text.trim() ? parseQuickAdd(text, new Date()) : null), [text]);
-  return (
-    <div className="lp-try-box">
-      <label htmlFor="lp-try" className="visually-hidden">
-        Type something you want to do today
-      </label>
-      <input id="lp-try" value={text} onChange={(e) => setText(e.target.value)} placeholder="Try: Lunch with Ana 12:30 at Greenbelt" autoComplete="off" />
-      <div className="lp-try-result" aria-live="polite">
-        {parsed ? (
-          <>
-            <strong>{parsed.block.title}</strong>
-            <span className="chips">
-              {parsed.chips.map((c) => (
-                <span key={c} className="chip static">
-                  {c}
-                </span>
-              ))}
-            </span>
-          </>
-        ) : (
-          <span className="muted">Type something you want to do today.</span>
-        )}
-      </div>
-      <div className="chips">
-        {EXAMPLES.map((e) => (
-          <button key={e} type="button" className="chip" onClick={() => setText(e)}>
-            {e}
-          </button>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-/** Into the app without a page load, so a Google sign-in made here carries over. */
+/** Into the app without a page load. */
 function openApp(e: MouseEvent) {
   if (e.metaKey || e.ctrlKey || e.shiftKey) return;
   e.preventDefault();
   enterApp('');
 }
 
-/** Start planning (the app, no account needed), or see the one-minute sample day; Google sign-up underneath. */
-function SignUp({ account, busy, error, onSignUp, place }: { account: Account | null; busy: boolean; error: string | null; onSignUp: () => void; place: 'hero' | 'final' }) {
+/** The one main action, named for what it does. */
+function MainAction({ returning, className = 'lp-primary' }: { returning: boolean; className?: string }) {
   return (
-    <>
-      <div className="lp-ctas">
-        <a className="lp-primary" href="/app" onClick={openApp}>
-          {account ? `Continue as ${firstName(account)}` : 'Get started'}
-        </a>
-        <a className={place === 'hero' ? 'lp-secondary' : 'lp-secondary dark'} href="/demo">
-          See how it works
-        </a>
-      </div>
-      {!account && GOOGLE_CLIENT_ID && (
-        <div className="lp-google-row">
-          <span className="lp-micro">Use Google Calendar? Bring it in from the start:</span>
-          <GoogleButton className="lp-google" busy={busy} onClick={onSignUp} />
-        </div>
-      )}
-      <p className="lp-micro">Free. No account needed to start. “See how it works” is a sample day, not your data.</p>
-      {error && (
-        <p className="lp-error" role="alert">
-          {error}{' '}
-          <a href="/demo">Try the demo</a> ·{' '}
-          <a href="/app" onClick={openApp}>
-            Use Segue without Google
-          </a>
-        </p>
-      )}
-    </>
+    <a className={className} href="/app" onClick={openApp}>
+      {returning ? 'Open Segue' : 'Try Segue'}
+    </a>
   );
+}
+
+/** Problems come in one at a time as they scroll into view (all at once with reduced motion). */
+function useReveal() {
+  useEffect(() => {
+    const els = document.querySelectorAll('.lp-reveal');
+    if (!('IntersectionObserver' in window)) {
+      els.forEach((el) => el.classList.add('in'));
+      return;
+    }
+    const io = new IntersectionObserver(
+      (entries) => {
+        for (const e of entries) {
+          if (e.isIntersecting) {
+            e.target.classList.add('in');
+            io.unobserve(e.target);
+          }
+        }
+      },
+      { threshold: 0.25 },
+    );
+    els.forEach((el) => io.observe(el));
+    return () => io.disconnect();
+  }, []);
 }
 
 const CONTACT_EMAIL = 'pdyntechnology@gmail.com';
@@ -243,31 +298,13 @@ function PdynLockup() {
 }
 
 export function Landing() {
-  const [account, setAccount] = useState<Account | null>(null);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [returning, setReturning] = useState(false);
+  useReveal();
 
   useEffect(() => {
-    void loadAccount().then((a) => setAccount(a ?? null));
-    // Load Google's sign-in early so its window opens straight from the tap.
-    if (GOOGLE_CLIENT_ID) preloadGoogle().catch(() => {});
-  }, []);
-
-  async function signUp() {
-    setBusy(true);
-    setError(null);
-    try {
-      await signUpWithGoogle();
-      enterApp('');
-    } catch (e) {
-      setError(calendarErrorMessage(e));
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  useEffect(() => {
-    document.title = 'Segue · Intelligent daily planner';
+    void loadAccount().then((a) => setReturning((r) => r || !!a));
+    setReturning(!!getSession());
+    document.title = 'Segue · Your route-aware daily planner';
   }, []);
 
   return (
@@ -281,118 +318,82 @@ export function Landing() {
           <div className="lp-links">
             <a href="#how">How it works</a>
             <a href="#tour">Features</a>
-            <a href="/demo">Demo</a>
+            <a href="#privacy">Privacy</a>
           </div>
-          <a className="lp-open" href="/app" onClick={openApp}>
-            Open Segue
-          </a>
+          <MainAction returning={returning} className="lp-open" />
         </nav>
 
         <div className="lp-hero-inner">
           <div className="lp-copy">
-            <p className="lp-kicker">Intelligent daily planner</p>
-            <h1>Your day, planned around real life.</h1>
-            <p className="lp-sub">
-              Segue organizes your tasks, routines and Google Calendar into one realistic day. When it rains, a meeting runs late or a place is closed, it
-              suggests what to do next, and you decide.
-            </p>
-            <SignUp account={account} busy={busy} error={error} onSignUp={() => void signUp()} place="hero" />
+            <p className="lp-kicker">Your route-aware daily planner</p>
+            <h1>Your day has a route. Segue helps you find your way.</h1>
+            <p className="lp-sub">Plan your stops, routines, and commitments in one place. When something changes, Segue helps you find a practical way forward.</p>
+            <div className="lp-ctas">
+              <MainAction returning={returning} />
+              <a className="lp-secondary" href="#how">
+                How it works
+              </a>
+            </div>
+            <p className="lp-micro">Free, and it works without an account.</p>
           </div>
           <TodayPreview />
         </div>
       </header>
 
       <main>
-        <section className="lp-section lp-problem" aria-labelledby="problem-title">
-          <p className="lp-eyebrow">The problem</p>
-          <h2 id="problem-title">You planned your day. Then the day happened.</h2>
-          <ul className="lp-problems">
-            {PROBLEMS.map(([a, b]) => (
-              <li key={a}>
-                <strong>{a}</strong> {b}
-              </li>
-            ))}
-          </ul>
-          <p className="lp-big">
-            You planned to work out outside. Then it started raining, and your class is still at 3:30. Now what? A calendar shows what you planned. Segue
-            helps with what to do next.
-          </p>
+        <section className="lp-band lp-cream">
+          <div className="lp-section lp-problem" aria-labelledby="problem-title">
+            <p className="lp-eyebrow">The problem</p>
+            <h2 id="problem-title">You planned your day. Then the day happened.</h2>
+            <ul className="lp-problems">
+              {PROBLEMS.map(([a, b], i) => (
+                <li key={a} className="lp-reveal" style={{ transitionDelay: `${i * 140}ms` }}>
+                  <strong>{a}</strong> {b}
+                </li>
+              ))}
+            </ul>
+            <p className="lp-big">A calendar shows what you planned. Segue helps you find a practical way forward.</p>
+          </div>
         </section>
 
-        <section id="how" className="lp-section" aria-labelledby="how-title">
-          <p className="lp-eyebrow">How it works</p>
-          <h2 id="how-title">Plan, understand, adapt</h2>
-          <ol className="lp-how">
-            <li>
-              <span className="lp-step-n">01</span>
-              <div>
-                <h3>Plan</h3>
-                <p>Add your tasks, routines and commitments, and say what matters most. Type them the way you’d say them. Try one:</p>
-                <TryIt />
-              </div>
-            </li>
-            <li>
-              <span className="lp-step-n">02</span>
-              <div>
-                <h3>Understand</h3>
-                <p>Segue finds a time and a place for each thing, checking:</p>
-                <ul className="lp-checks">
-                  {CONTEXT.map((c) => (
-                    <li key={c}>{c}</li>
-                  ))}
-                </ul>
-              </div>
-            </li>
-            <li>
-              <span className="lp-step-n">03</span>
-              <div>
-                <h3>Adapt</h3>
-                <p>
-                  When rain, a late meeting or a closed door gets in the way, Segue offers realistic alternatives for the part of your day that’s affected. You see
-                  what would change, and nothing moves until you say yes.
-                </p>
-              </div>
-            </li>
-          </ol>
+        <section id="how" className="lp-band lp-skyband" aria-labelledby="how-title">
+          <div className="lp-section">
+            <p className="lp-eyebrow">How it works</p>
+            <h2 id="how-title">One day, four steps</h2>
+            <p className="lp-lead">Press through a real day on Segue’s planner. One step at a time.</p>
+            <RouteStory />
+          </div>
         </section>
 
-        <section id="tour" className="lp-section" aria-labelledby="tour-title">
-          <p className="lp-eyebrow">Inside Segue</p>
-          <h2 id="tour-title">Five places, one day</h2>
-          <p className="lp-lead">The same five tabs you’ll find along the bottom of the app.</p>
-          <ul className="lp-tour">
-            {TOUR.map((t) => (
-              <li key={t.tab}>
-                <span className="lp-tour-icon" aria-hidden="true">
-                  <svg viewBox="0 0 24 24" width="24" height="24">
-                    {NAV_ICONS[t.tab]}
-                  </svg>
-                </span>
-                <div>
-                  <h3>{NAV_LABELS[t.tab]}</h3>
-                  <p>{t.body}</p>
-                </div>
-              </li>
-            ))}
-          </ul>
+        <section id="tour" className="lp-band" aria-labelledby="tour-title">
+          <div className="lp-section">
+            <p className="lp-eyebrow">Inside Segue</p>
+            <h2 id="tour-title">Five places, one day</h2>
+            <p className="lp-lead">The same five tabs you’ll find along the bottom of the app.</p>
+            <ul className="lp-tour">
+              {TOUR.map((t) => (
+                <li key={t.tab}>
+                  <span className="lp-tour-icon" aria-hidden="true">
+                    <svg viewBox="0 0 24 24" width="24" height="24">
+                      {NAV_ICONS[t.tab]}
+                    </svg>
+                  </span>
+                  <div>
+                    <h3>{NAV_LABELS[t.tab]}</h3>
+                    <p>{t.body}</p>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          </div>
         </section>
 
-        <section id="example" className="lp-section lp-example" aria-labelledby="example-title">
-          <p className="lp-eyebrow">When plans change</p>
-          <h2 id="example-title">A workout at 2, class at 3:30, and then it rains</h2>
-          <p className="lp-lead">
-            Segue spots the outdoor plan the rain affects, finds real places nearby that are open, checks there’s still time to reach your class, and lets you
-            choose. Press the button to see it on the real planner.
-          </p>
-          <Scenario />
-        </section>
-
-        <section id="together" className="lp-section lp-together" aria-labelledby="together-title">
-          <div className="lp-split">
+        <section id="together" className="lp-band lp-navy" aria-labelledby="together-title">
+          <div className="lp-section lp-split">
             <div>
               <p className="lp-eyebrow">Plan together</p>
-              <h2 id="together-title">Make time for the people who matter</h2>
-              <p className="lp-lead">Share an activity with people you trust, invite them, and agree on a time, without handing over your whole calendar.</p>
+              <h2 id="together-title">Make time for the people and places that matter</h2>
+              <p className="lp-lead">Share where you’re headed with people you trust, and let them ask to come along.</p>
             </div>
             <ul className="lp-checks">
               {TOGETHER_POINTS.map((p) => (
@@ -402,8 +403,8 @@ export function Landing() {
           </div>
         </section>
 
-        <section id="privacy" className="lp-section lp-privacy" aria-labelledby="privacy-title">
-          <div className="lp-split">
+        <section id="privacy" className="lp-band" aria-labelledby="privacy-title">
+          <div className="lp-section lp-split">
             <div>
               <p className="lp-eyebrow">Privacy</p>
               <h2 id="privacy-title">Your day stays yours</h2>
@@ -422,8 +423,10 @@ export function Landing() {
         <section className="lp-final" aria-labelledby="final-title">
           <img src="/icon.svg" alt="" width="88" height="88" />
           <h2 id="final-title">Start planning your day</h2>
-          <p>Free, and it works without an account. Bring in your Google Calendar whenever you like, or watch a one-minute sample day first.</p>
-          <SignUp account={account} busy={busy} error={error} onSignUp={() => void signUp()} place="final" />
+          <p>Free, and it works without an account. Bring in your Google Calendar from inside the app whenever you like.</p>
+          <div className="lp-ctas">
+            <MainAction returning={returning} />
+          </div>
         </section>
       </main>
 
@@ -435,18 +438,17 @@ export function Landing() {
               <img src="/wordmark.svg" alt="Segue" className="lp-footer-mark" />
             </picture>
             <p>
-              <em>Segue</em> (n.): in music, moving from one piece into the next without a pause. A day planner that adapts when your day changes.
+              <em>Segue</em> (n.): moving from one thing into the next without a pause. A daily planner built around your route, that adapts when your day changes.
             </p>
           </div>
 
           <nav className="lp-footer-col" aria-labelledby="ft-explore">
             <h2 id="ft-explore">Explore</h2>
             <ul>
-              <li><a href="/demo">Demo</a></li>
               <li><a href="#how">How it works</a></li>
-              <li><a href="#example">The rain example</a></li>
               <li><a href="#tour">Features</a></li>
               <li><a href="#together">Plan together</a></li>
+              <li><a href="/demo">Full-screen demo</a></li>
             </ul>
           </nav>
 
@@ -463,7 +465,7 @@ export function Landing() {
           <nav className="lp-footer-col" aria-labelledby="ft-app">
             <h2 id="ft-app">Use Segue</h2>
             <ul>
-              <li><a href="/app" onClick={openApp}>Open Segue</a></li>
+              <li><MainAction returning={returning} className="" /></li>
               <li><a href="#final-title">Add it to your home screen</a></li>
             </ul>
           </nav>

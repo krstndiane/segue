@@ -3,7 +3,7 @@ import '../landing.css';
 import { ASSISTANT_ENABLED } from '../lib/features';
 
 const CONTACT_EMAIL = 'pdyntechnology@gmail.com';
-const UPDATED = 'October 25, 2026';
+const UPDATED = 'November 4, 2026';
 
 /** The privacy policy, at /privacy. Written to match what the code does; change both together. */
 export function PrivacyPage() {
@@ -40,7 +40,7 @@ export function PrivacyPage() {
               Without an account, your plans, routines, saved places and Google details stay on your own device. A Segue account is optional: it
               keeps your plans on every device and lets you share notes and invite people.
             </li>
-            <li>Nothing you write is shared unless you choose to share it, note by note. Google Calendar events and your exact location never go into an account.</li>
+            <li>Nothing you write is shared unless you choose to share it, note by note. Google Calendar events and your exact location are never saved to an account.</li>
             <li>When you re-route, Segue&apos;s server gets what it needs to plan your day, answers, and does not save it.</li>
             <li>We never sell your information, show ads, or use your calendar for anything except planning your day.</li>
           </ul>
@@ -51,13 +51,12 @@ export function PrivacyPage() {
           <p>
             Segue keeps these in your browser&apos;s storage on this device only: your blocks and routines, today&apos;s plan and the plans from past
             days (up to about four months, for the calendar), things you planned ahead for other days, settings, saved places, places you have been,
-            places found on your last connection (so planning works offline), and, if you sign up with Google, your name, email address, profile photo
-            and the calendar events (title, time and place) for today and for the days you open on Segue&apos;s calendar, kept for up to about four
+            places found on your last connection (so planning works offline), and, if you connect Google Calendar, the calendar events (title, time and place) for today and for the days you open on Segue&apos;s calendar, kept for up to about four
             months so the calendar works offline. Disconnecting Google Calendar or signing out removes the saved events.
           </p>
           <p>
-            Your Google access token is never saved. It lives in memory while the page is open and goes only to Google. Clearing it is one tap:
-            Settings, then sign out or <em>Start over</em>.
+            Without a Segue account, your Google access token is never saved: it lives in memory while the page is open, goes only to Google, and
+            lasts about an hour. Clearing it is one tap: disconnect, or <em>Start over</em>.
           </p>
         </section>
 
@@ -104,25 +103,25 @@ export function PrivacyPage() {
               and past days&apos; plans. Never your current or last position, and never anything from Google Calendar: those stay on the device.
             </li>
             <li>
-              <strong>What you write and do with others:</strong> your notes and who each is shared with, your hearts, invitations you send or receive
+              <strong>What you write and do with others:</strong> the plans you share and who each is shared with, your requests to join plans and any message with them, invitations you send or receive
               (title, details, time, place, who is invited and their answers), and your notifications.
             </li>
           </ul>
           <p>Who sees what:</p>
           <ul>
-            <li>Notes are private unless you share them with people you pick, or make them discoverable. You can change or take this back any time.</li>
+            <li>Plans are private unless you share them with people you pick, or make them discoverable. You can change or take this back any time.</li>
             <li>
-              If you let people find you, they can see your name, username, photo, &ldquo;about you&rdquo; and your discoverable notes. Nobody sees your
+              If you let people find you, they can see your name, username, photo, &ldquo;about you&rdquo; and your discoverable plans. People who can see a plan also see how many are going (a number, not who). Nobody sees your
               email address, your planner, your location or your calendar.
             </li>
             <li>
-              A heart on a note tells its author you would like to be invited. An invitation is seen only by the person who sent it and the people
+              Asking to join a plan (&ldquo;Can I join?&rdquo;) tells only its owner, with your message if you add one; the owner approves or declines. An invitation is seen only by the person who sent it and the people
               invited. Accepting one never changes your plan; adding it to your day is a separate choice on your device.
             </li>
           </ul>
           <p>
-            We keep this until you delete it. Deleting a note removes it and its hearts at once. <em>Delete my account</em> (Settings, Profile and
-            privacy) deletes your profile, notes, hearts, invitations, notifications and synced planner, and your sign-in. Copies may remain in the
+            We keep this until you delete it. Deleting a shared plan removes it and its join requests at once. <em>Delete my account</em> (Settings, Profile and
+            privacy) deletes your profile, shared plans, join requests, invitations, notifications and synced planner, and your sign-in. Copies may remain in the
             database provider&apos;s backups for a short time before they are overwritten. Signing out keeps a copy of your plans on that device until
             you use <em>Start over</em>.
           </p>
@@ -133,11 +132,11 @@ export function PrivacyPage() {
         </section>
 
         <section aria-labelledby="pp-google">
-          <h2 id="pp-google">Google sign-in and Calendar</h2>
-          <p>Signing up with Google asks for these permissions, and no others:</p>
+          <h2 id="pp-google">Google Calendar</h2>
+          <p>Connecting Google Calendar asks for these permissions, and no others:</p>
           <ul>
             <li>
-              <strong>Name, email address and profile photo</strong> (openid, email, profile): to greet you and show who is signed in.
+              <strong>Your Google account&apos;s email address</strong> (openid, email): to show which Google account is connected.
             </li>
             <li>
               <strong>See your calendar events</strong> (<code>calendar.events.readonly</code>): so today&apos;s meetings become fixed parts of your
@@ -150,6 +149,13 @@ export function PrivacyPage() {
             </li>
           </ul>
           <p>
+            <strong>Staying connected.</strong> When you are signed in to a Segue account, Segue&apos;s server keeps the read-only access Google
+            gives it (a refresh token), encrypted, so you are not asked to sign in to Google again on each visit or device. The server uses it
+            only to read the calendar events Segue shows you, passes them straight to your device, and does not store them. It keeps your Google
+            account&apos;s email address and when it last read your calendar. Disconnecting, or deleting your Segue account, removes the access
+            from Segue and asks Google to revoke it.
+          </p>
+          <p>
             Segue only reads. It never changes, adds or deletes anything in your calendar. Your Google data is used only to plan your day, is not used
             for advertising, is not sold, and is not used to train AI models. A person at Segue does not read it.
           </p>
@@ -161,7 +167,7 @@ export function PrivacyPage() {
             , including the Limited Use requirements.
           </p>
           <p>
-            You can disconnect at any time in Segue&apos;s Settings, or remove Segue&apos;s access at{' '}
+            You can disconnect at any time on Segue&apos;s Google Calendar page, or remove Segue&apos;s access at{' '}
             <a href="https://myaccount.google.com/permissions">myaccount.google.com/permissions</a>.
           </p>
         </section>

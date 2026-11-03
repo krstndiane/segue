@@ -11,8 +11,6 @@ const EVENTS_SCOPE = 'https://www.googleapis.com/auth/calendar.events.readonly';
 // Optional: lets Segue read every calendar you have switched on, not just your main one.
 const LIST_SCOPE = 'https://www.googleapis.com/auth/calendar.calendarlist.readonly';
 const SCOPE = `${EVENTS_SCOPE} ${LIST_SCOPE}`;
-/** Signing up also asks for your name, email and photo, to greet you and show who's signed in. */
-const PROFILE_SCOPE = 'openid email profile';
 const API = 'https://www.googleapis.com/calendar/v3';
 /** Enough for work, personal and a few shared calendars without slowing sync down. */
 const MAX_CALENDARS = 10;
@@ -37,6 +35,14 @@ interface Gis {
         callback: (r: TokenResponse) => void;
         error_callback?: (e: { type: string }) => void;
       }): TokenClient;
+      initCodeClient(cfg: {
+        client_id: string;
+        scope: string;
+        ux_mode: 'popup';
+        select_account?: boolean;
+        callback: (r: { code?: string; scope?: string; error?: string }) => void;
+        error_callback?: (e: { type: string }) => void;
+      }): { requestCode(): void };
       hasGrantedAllScopes(r: TokenResponse, scope: string): boolean;
       revoke(token: string, done?: () => void): void;
     };
@@ -55,8 +61,11 @@ export interface GoogleToken {
 
 /** Why a calendar action failed, so the UI can say what to do. */
 export class CalendarError extends Error {
-  constructor(readonly kind: 'cancelled' | 'denied' | 'expired' | 'network' | 'unavailable' | 'busy') {
-    super(kind);
+  constructor(
+    readonly kind: 'cancelled' | 'denied' | 'expired' | 'network' | 'unavailable' | 'busy' | 'reconnect' | 'other-account',
+    message?: string,
+  ) {
+    super(message ?? kind);
   }
 }
 
@@ -83,8 +92,7 @@ export const tokenValid = (t: GoogleToken | null): t is GoogleToken => !!t && t.
 
 /**
  * The one Google token for this page: memory only, never saved, never sent to
- * the Segue API. Shared so signing up on the landing page carries into the app
- * (they switch without a page load).
+ * the Segue API. Used only when the server isn't keeping the connection.
  */
 let current: GoogleToken | null = null;
 export const currentToken = () => current;
@@ -100,28 +108,20 @@ export interface GoogleProfile {
   picture?: string;
 }
 
-export async function fetchProfile(token: GoogleToken): Promise<GoogleProfile> {
-  const p = await getJson<{ sub: string; name?: string; given_name?: string; email?: string; picture?: string }>(
-    token,
-    'https://www.googleapis.com/oauth2/v3/userinfo',
-  );
-  return { sub: p.sub, name: p.name ?? p.given_name ?? 'there', email: p.email ?? '', picture: p.picture };
-}
-
 /**
  * Ask Google for a read-only token. Call it straight from a tap: when the
  * script is already loaded the popup opens in the same tick, which keeps
  * popup blockers happy. `consent` shows the full prompt; '' reuses an
  * earlier grant and usually closes on its own.
  */
-export function requestToken(prompt: '' | 'consent', { profile = false } = {}): Promise<GoogleToken> {
+export function requestToken(prompt: '' | 'consent'): Promise<GoogleToken> {
   return new Promise((resolve, reject) => {
     const open = () => {
       const oauth = window.google!.accounts.oauth2;
       oauth
         .initTokenClient({
           client_id: GOOGLE_CLIENT_ID!,
-          scope: profile ? `${PROFILE_SCOPE} ${SCOPE}` : SCOPE,
+          scope: SCOPE,
           callback: (r) => {
             if (r.error || !r.access_token) return reject(new CalendarError('denied'));
             if (!oauth.hasGrantedAllScopes(r, EVENTS_SCOPE)) return reject(new CalendarError('denied'));
@@ -176,10 +176,21 @@ async function calendarIds(token: GoogleToken): Promise<string[]> {
   }
 }
 
+/**
+ * Where events come from: Segue's server (it keeps the connection) or this
+ * page's own short-lived Google token. Either way, the raw Google items.
+ */
+export type EventSource = (start: string, end: string) => Promise<GoogleEvent[]>;
+export const tokenSource =
+  (token: GoogleToken): EventSource =>
+  (start, end) =>
+    fetchItems(token, start, end);
+const asSource = (s: GoogleToken | EventSource): EventSource => (typeof s === 'function' ? s : tokenSource(s));
+
 /** Today's busy events, and its all-day events, from every calendar that's switched on. */
-export async function fetchTodayEvents(token: GoogleToken, day: Date): Promise<{ events: CalendarEvent[]; allDay: AllDayEvent[] }> {
+export async function fetchTodayEvents(from: GoogleToken | EventSource, day: Date): Promise<{ events: CalendarEvent[]; allDay: AllDayEvent[] }> {
   const { start, end } = dayBounds(day);
-  const items = await fetchItems(token, start, end);
+  const items = await asSource(from)(start, end);
   return { events: parseEvents(items, start, end), allDay: parseAllDay(items, keyOf(day)) };
 }
 
@@ -187,8 +198,37 @@ export async function fetchTodayEvents(token: GoogleToken, day: Date): Promise<{
  * Busy events between two ISO times, from every calendar that's switched on.
  * Used for today and for the days you open on the calendar.
  */
-export async function fetchEvents(token: GoogleToken, start: string, end: string): Promise<CalendarEvent[]> {
-  return parseEvents(await fetchItems(token, start, end), start, end);
+export async function fetchEvents(from: GoogleToken | EventSource, start: string, end: string): Promise<CalendarEvent[]> {
+  return parseEvents(await asSource(from)(start, end), start, end);
+}
+
+/**
+ * Ask Google for a one-time code that Segue's server swaps for a lasting,
+ * read-only connection. Call straight from a tap (it opens Google's popup).
+ * Includes "email" so the server can say which Google account is connected.
+ */
+export function requestCode(): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const open = () => {
+      window
+        .google!.accounts.oauth2.initCodeClient({
+          client_id: GOOGLE_CLIENT_ID!,
+          scope: `openid email ${SCOPE}`,
+          ux_mode: 'popup',
+          select_account: true,
+          callback: (r) => {
+            if (r.error || !r.code) return reject(new CalendarError('denied'));
+            if (!(r.scope ?? '').split(/\s+/).includes(EVENTS_SCOPE)) return reject(new CalendarError('denied'));
+            resolve(r.code);
+          },
+          error_callback: (e) => reject(new CalendarError(e.type === 'popup_closed' ? 'cancelled' : 'unavailable')),
+        })
+        .requestCode();
+    };
+    if (!GOOGLE_CLIENT_ID) return reject(new CalendarError('unavailable'));
+    if (window.google?.accounts?.oauth2) return open();
+    preloadGoogle().then(open, reject);
+  });
 }
 
 /** Every page of one calendar's events in the window (recurring events expanded). */
@@ -240,6 +280,10 @@ export function calendarErrorMessage(e: unknown): string {
       return "Couldn't open Google sign-in. Allow pop-ups for this site, then try again.";
     case 'busy':
       return 'Google Calendar is busy right now. Try again in a minute.';
+    case 'reconnect':
+      return 'Your Google Calendar connection needs attention. Reconnect Google Calendar to bring your events back.';
+    case 'other-account':
+      return e instanceof CalendarError && e.message !== kind ? e.message : 'Segue is connected to a different Google account.';
     default:
       return "Couldn't reach Google Calendar. Check your connection and try again.";
   }

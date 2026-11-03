@@ -4,6 +4,7 @@ import type { AuthUser, Verifier } from '../auth';
 import type { Db } from '../db';
 import { HttpError } from '../http';
 import type { AvatarStorage } from './avatars';
+import type { GoogleCalendarConfig } from './google';
 import type { Row } from './views';
 
 export interface SocialDeps {
@@ -13,6 +14,8 @@ export interface SocialDeps {
   deleteAuthUser?: (userId: string) => Promise<boolean>;
   /** Where profile pictures are kept; without it, photo upload answers 503 "avatars_off". */
   avatars?: AvatarStorage;
+  /** Keeps Google Calendar connected (refresh tokens, encrypted). Without it, /v1/google/calendar says available: false. */
+  google?: GoogleCalendarConfig;
   limits?: { writesPerHour?: number; searchesPerHour?: number; syncWritesPerHour?: number; usernameChecksPerHour?: number };
   /** Extra reserved usernames on top of the built-in list (RESERVED_USERNAMES). */
   reservedUsernames?: string[];

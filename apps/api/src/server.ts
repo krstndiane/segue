@@ -8,6 +8,7 @@ import { createVerifier, deleteAuthUser } from './auth';
 import { supabaseAvatarStorage } from './social/avatars';
 import { connect, migrate } from './db';
 import { createSocial, type SocialRoutes } from './social';
+import { parseTokenKey, type GoogleCalendarConfig } from './social/google';
 
 const config = loadConfig();
 if (process.env.NODE_ENV === 'production' && !config.corsOrigins.some((o) => o === '*' || o.startsWith('https://'))) {
@@ -19,6 +20,22 @@ const understand = config.smartAdd ? claudeUnderstand() : undefined;
 const verifier = config.supabaseUrl || config.supabaseJwtSecret ? createVerifier({ supabaseUrl: config.supabaseUrl, jwtSecret: config.supabaseJwtSecret }) : undefined;
 // The AI assistant is still in development: it needs ASSISTANT_AI=on as well as the Anthropic key (shared with smart add) and sign-ins.
 const assistant = config.assistantAi && config.smartAdd && verifier ? { ask: claudeAssistant(), verifier } : undefined;
+
+/** Google Calendar stays connected only with a client id, its secret and a key for the saved tokens. */
+function googleCalendar(): GoogleCalendarConfig | undefined {
+  const { googleOAuthClientId: clientId, googleOAuthClientSecret: clientSecret, googleTokenKey } = config;
+  if (!clientId && !clientSecret && !googleTokenKey) return undefined;
+  if (!clientId || !clientSecret || !googleTokenKey) {
+    console.warn('Google Calendar stays in the browser: set GOOGLE_OAUTH_CLIENT_ID, GOOGLE_OAUTH_CLIENT_SECRET and GOOGLE_TOKEN_KEY together.');
+    return undefined;
+  }
+  try {
+    return { clientId, clientSecret, key: parseTokenKey(googleTokenKey) };
+  } catch (e) {
+    console.warn(`Google Calendar stays in the browser: ${(e as Error).message}`);
+    return undefined;
+  }
+}
 
 /** Accounts need both a database and a way to check sign-ins; without them the planner still works. */
 async function buildSocial(): Promise<SocialRoutes | undefined> {
@@ -38,6 +55,7 @@ async function buildSocial(): Promise<SocialRoutes | undefined> {
     verifier: verifier!,
     deleteAuthUser: supabaseUrl && supabaseServiceRoleKey ? (id) => deleteAuthUser(supabaseUrl, supabaseServiceRoleKey, id) : undefined,
     avatars: supabaseUrl && supabaseServiceRoleKey ? supabaseAvatarStorage(supabaseUrl, supabaseServiceRoleKey) : undefined,
+    google: googleCalendar(),
     reservedUsernames: config.reservedUsernames,
     limits: { writesPerHour: config.socialWriteRateLimit, searchesPerHour: config.searchRateLimit },
     log: (l) => console.log(l),

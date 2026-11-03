@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { HttpError } from '../http';
 import { parse, path, type Route } from './core';
 import { removeAvatarObject } from './avatars';
+import { forgetGoogle } from './google';
 import { acceptedUsername } from './usernames';
 import { blockedBetween, DEFAULT_NOTIFY, likeEscape, mutualWith, myProfile, profileCols, publicProfile } from './views';
 
@@ -88,6 +89,8 @@ export const profileRoutes: Route[] = [
     async handler(ctx) {
       ctx.limit('write');
       parse(DeleteSchema, await ctx.body());
+      // Let go of Google Calendar at Google too, not just in Segue's table.
+      await forgetGoogle(ctx).catch((e: Error) => ctx.deps.log?.(`google revoke on delete failed: ${e.message}`));
       const gone = (await ctx.db.query('delete from segue.profiles where id = $1 returning avatar_key', [ctx.user.id]))[0];
       await removeAvatarObject(ctx, gone?.avatar_key);
       let signInRemoved = false;

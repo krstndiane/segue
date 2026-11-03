@@ -487,4 +487,18 @@ alter table segue.notes drop column if exists start_time;
 `,
 };
 
-export const MIGRATIONS: Migration[] = [social, profilesConnections, usernameRules, calendarSync, joinRequests, todayProgress, planTimesAndMessages];
+/**
+ * Google Calendar stays connected (the tables from 004, first used now): when
+ * the server last read it, so "Last synced" is a real time. Additive.
+ */
+const googleLastSynced: Migration = {
+  id: '008_google_last_synced',
+  up: /* sql */ `
+alter table segue.google_accounts add column last_synced_at timestamptz;
+`,
+  down: /* sql */ `
+alter table segue.google_accounts drop column if exists last_synced_at;
+`,
+};
+
+export const MIGRATIONS: Migration[] = [social, profilesConnections, usernameRules, calendarSync, joinRequests, todayProgress, planTimesAndMessages, googleLastSynced];

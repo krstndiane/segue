@@ -1,5 +1,5 @@
 /**
- * The Together tab: notes, invitations and updates. Needs a Segue account;
+ * The Together tab: Discover, Connections, Invitations, Join requests and My plans, plus Updates. Needs a Segue account;
  * without one it explains what it's for and offers to create one. Your own
  * planner never depends on any of this.
  */
@@ -14,11 +14,10 @@ import type { AccountState } from '../../lib/useAccount';
 import type { Together } from '../../lib/useTogether';
 import { Avatar } from '../Account';
 import { InvitationsSection, InviteSheet, type InviteDraft } from './Invitations';
-import { OverviewSection } from './Overview';
 import { PeopleSection } from './People';
 import { DiscoverSection, MyPlansSection, RequestsSection } from './Plans';
 
-export type TogetherTab = 'overview' | 'discover' | 'invites' | 'requests' | 'plans' | 'people' | 'updates';
+export type TogetherTab = 'discover' | 'people' | 'invites' | 'requests' | 'plans' | 'updates';
 
 interface Props {
   accountState: AccountState;
@@ -83,7 +82,7 @@ export function TogetherPage(props: Props) {
         <header className="page-head">
           <div>
             <h2 className="page-title">Together</h2>
-            <p className="muted">Share plans, ask to join, and agree on plans together.</p>
+            <p className="muted">Make time for the people and places that matter.</p>
           </div>
         </header>
         <section className="panel">
@@ -91,7 +90,7 @@ export function TogetherPage(props: Props) {
           {props.accountState === 'signed-out' && (
             <>
               <ul className="promises">
-                <li>Your plans stay private. You choose what to share, note by note.</li>
+                <li>Your plans stay private. You choose what to share, one plan at a time.</li>
                 <li>“Can I join?” only asks. Nothing is agreed until the other person says yes.</li>
                 <li>Invitations never change your day unless you add them yourself.</li>
               </ul>
@@ -160,12 +159,11 @@ export function TogetherPage(props: Props) {
   const REQUEST_TYPES = ['note_hearted', 'join_accepted', 'join_declined'];
   const requests = t.notifications.filter((n) => !n.readAt && REQUEST_TYPES.includes(n.type)).length;
   const tabs: { value: Exclude<TogetherTab, 'updates'>; label: string; count?: number }[] = [
-    { value: 'overview', label: 'Overview' },
     { value: 'discover', label: 'Discover' },
+    { value: 'people', label: 'Connections', count: t.requestCount },
     { value: 'invites', label: 'Invitations', count: t.waiting.length },
-    { value: 'requests', label: 'Requests', count: requests },
+    { value: 'requests', label: 'Join requests', count: requests },
     { value: 'plans', label: 'My plans' },
-    { value: 'people', label: 'People', count: t.requestCount },
   ];
 
   return (
@@ -173,14 +171,14 @@ export function TogetherPage(props: Props) {
       <header className="tg-head">
         <div className="tg-title">
           <h2 className="page-title">Together</h2>
-          <p className="muted">Make time for the people who matter. You choose what to share.</p>
+          <p className="muted">Make time for the people and places that matter.</p>
         </div>
         <button
           type="button"
           className={`tg-updates${props.tab === 'updates' ? ' on' : ''}`}
           aria-label={t.unread ? `Updates, ${t.unread} new` : 'Updates'}
           aria-pressed={props.tab === 'updates'}
-          onClick={() => props.onTab(props.tab === 'updates' ? 'overview' : 'updates')}
+          onClick={() => props.onTab(props.tab === 'updates' ? 'discover' : 'updates')}
         >
           <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true">
             <path d="M6 16.5V11a6 6 0 0 1 12 0v5.5l1.5 1.5h-15z" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinejoin="round" />
@@ -229,25 +227,6 @@ export function TogetherPage(props: Props) {
       </div>
 
       <div id="tg-panel" role="tabpanel" aria-labelledby={props.tab === 'updates' ? undefined : `tg-tab-${props.tab}`} aria-label={props.tab === 'updates' ? 'Updates' : undefined}>
-      {props.tab === 'overview' && (
-        <OverviewSection
-          today={props.today}
-          together={t}
-          eventsOn={props.eventsOn}
-          notify={props.notify}
-          onOpenInvitation={(id) => {
-            setHighlight(id);
-            props.onTab('invites');
-            setTimeout(() => document.getElementById(`inv-${id}`)?.scrollIntoView({ block: 'center', behavior: 'smooth' }), 50);
-          }}
-          onShare={() => {
-            props.onTab('plans');
-            setShareNew((n) => n + 1);
-          }}
-          onFindPeople={() => props.onTab('people')}
-          onTab={props.onTab}
-        />
-      )}
       {props.tab === 'discover' && <DiscoverSection today={props.today} notify={props.notify} onFindPeople={() => props.onTab('people')} />}
       {props.tab === 'requests' && <RequestsSection today={props.today} notify={props.notify} onJoined={t.upsert} onDiscover={() => props.onTab('discover')} />}
       {props.tab === 'plans' && (

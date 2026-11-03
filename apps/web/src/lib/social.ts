@@ -211,3 +211,22 @@ export interface AssistantAiAnswer {
 
 /** Ask the AI mode. Only a small snapshot of today goes, never location, notes or other days. */
 export const askAssistantAi = (body: unknown, signal?: AbortSignal) => api<AssistantAiAnswer>('POST', '/v1/assistant', body, signal);
+
+// ---- Google Calendar, kept connected by the server ----
+
+/** The server is the only source of truth for whether Google Calendar is connected. */
+export interface GoogleLink {
+  /** This server can keep a connection (it has Google credentials). */
+  available: boolean;
+  status: 'connected' | 'needs_attention' | 'disconnected';
+  email?: string;
+  connectedAt?: string;
+  lastSyncedAt?: string;
+}
+
+export const getGoogleLink = () => api<GoogleLink>('GET', '/v1/google/calendar');
+/** `replace`: deliberately switch to a different Google account than the one connected now. */
+export const connectGoogleLink = (code: string, replace = false) => api<GoogleLink>('POST', '/v1/google/calendar', { code, ...(replace ? { replace } : {}) });
+export const disconnectGoogleLink = () => api<GoogleLink>('DELETE', '/v1/google/calendar');
+export const googleLinkEvents = (start: string, end: string) =>
+  api<{ items: import('./calendar').GoogleEvent[]; syncedAt: string; email?: string }>('GET', `/v1/google/calendar/events${qs({ start, end })}`);
