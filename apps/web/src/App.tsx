@@ -7,6 +7,9 @@ import { ASSISTANT_ENABLED } from './lib/features';
 import { assistantAiAvailable } from './lib/smartAdd';
 import { askAssistantAi } from './lib/social';
 import { BlockForm, RoutinesView } from './components/Blocks';
+import { RoutineNudge, RoutineReview, WeekOverview } from './components/RoutineReview';
+import { applyRoutines, learnedOf, relinked, type LearnedRoutine } from './lib/routines';
+import { useRoutineLearning } from './lib/useRoutineLearning';
 import { CalendarCard } from './components/CalendarCard';
 import type { ConnectionProps } from './components/CalendarConnection';
 import { CalendarPage } from './components/CalendarPage';
@@ -147,6 +150,8 @@ export function App() {
   const me = useAccount();
   // Google Calendar stays connected through the server once you're signed in (when the server is set up for it).
   const cal = useCalendar(ready, notify, { userId: me.state === 'ready' ? (me.userId ?? me.profile?.id ?? null) : null });
+  // Learning the weekly routine from the calendar: suggestions wait for the person; confirmed ones become routines.
+  const learning = useRoutineLearning({ ready, connected: cal.calendar.connected, syncedAt: cal.calendar.syncedAt, blocks, setBlocks, fetchWindow: cal.fetchWindow, notify });
   // Today's progress syncs; the plan itself is built on each device.
   const today_ = day.progressAt ? { date: day.date, done: day.doneIds, skipped: day.skippedIds, updatedAt: day.progressAt } : null;
   const synced: Synced = { blocks, settings, favorites, placeHistory: history, dayArchive: archive, today: today_ };
@@ -338,16 +343,19 @@ export function App() {
         const area = areaForZone(deviceZone());
         const location = located ?? where.fix?.location ?? area?.location ?? DEFAULT_LOCATION;
         const excluded = new Set(day.excludedIds ?? []);
-        const planned = blocks.filter((b) => plannedToday(b, localDate(start)) && b.id !== BUSY_BLOCK_ID && !excluded.has(b.id));
-        const room = MAX_BLOCKS - planned.length - adj.extraBlocks.length;
+        const candidates = blocks.filter((b) => plannedToday(b, localDate(start)) && b.id !== BUSY_BLOCK_ID && !excluded.has(b.id));
+        const room = MAX_BLOCKS - candidates.length - adj.extraBlocks.length;
         const fromCalendar = await cal.forReroute(adj.start, room);
+        // Confirmed routines: fixed ones protected (from today's calendar when it has them), flexible ones given a window.
+        const routines = applyRoutines(candidates, fromCalendar.todayEvents);
+        const planned = routines.blocks;
         const o = await rerouteDay({
           blocks: planned,
           day,
           placeCache,
           favorites,
           affinity: affinityFrom(history, favorites),
-          extraBlocks: [...adj.extraBlocks, ...fromCalendar.extra.filter((b) => !excluded.has(b.id))],
+          extraBlocks: [...adj.extraBlocks, ...fromCalendar.extra.filter((b) => !excluded.has(b.id) && !routines.replacesCalendar.has(b.id))],
           context: {
             now: adj.start.toISOString(),
             endOfDay,
@@ -562,9 +570,13 @@ export function App() {
   /** Today's blocks as the engine sees them, calendar events included. */
   async function engineBlocksFor(start: Date) {
     const excluded = new Set(day.excludedIds ?? []);
-    const planned = blocks.filter((b) => plannedToday(b, localDate(start)) && !excluded.has(b.id));
-    const fromCalendar = await cal.forReroute(start, MAX_BLOCKS - planned.length);
-    return [...planned.map((b) => toEngineBlock(b, start)), ...fromCalendar.extra.filter((b) => !excluded.has(b.id))];
+    const candidates = blocks.filter((b) => plannedToday(b, localDate(start)) && !excluded.has(b.id));
+    const fromCalendar = await cal.forReroute(start, MAX_BLOCKS - candidates.length);
+    const routines = applyRoutines(candidates, fromCalendar.todayEvents);
+    return [
+      ...routines.blocks.map((b) => toEngineBlock(b, start)),
+      ...fromCalendar.extra.filter((b) => !excluded.has(b.id) && !routines.replacesCalendar.has(b.id)),
+    ];
   }
 
   /** Where Segue plans from: the last known position, or the time zone's main city. */
@@ -693,7 +705,9 @@ export function App() {
     setToast({ text: added.every((b) => b.date) ? `Added ${what} for ${dayLabel(date, { weekday: 'short', month: 'short', day: 'numeric' })}.` : `Added ${what} to your routines.` });
   }
 
-  const saveBlock = (b: StoredBlock) => {
+  const saveBlock = (edited: StoredBlock) => {
+    // A routine learned from the calendar keeps its link in step with what the person set.
+    const b = learnedOf(edited) ? relinked(edited as LearnedRoutine) : edited;
     const isNew = !blocks.some((x) => x.id === b.id);
     setBlocks((list) => (isNew ? [...list, b] : list.map((x) => (x.id === b.id ? b : x))));
     setSheet(null);
@@ -791,9 +805,16 @@ export function App() {
   };
   const calendarCard = <CalendarCard calendar={cal.calendar} today={today} connection={connection} />;
   const calendarEvents = cal.calendar.date === day.date ? cal.calendar.events : [];
+  // Why each routine is in today's plan (shown on Today). Plain code: this runs after the early returns above.
+  const todayRoutines = applyRoutines(
+    blocks.filter((b) => plannedToday(b, today)),
+    cal.calendar.connected && cal.calendar.date === today ? cal.calendar.events : null,
+  );
+  const routineWhy = todayRoutines.why;
   // Events added, moved or removed in Google Calendar since today's plan was made.
   // (Plain code, not a hook: this runs after the early returns above.)
-  const calendarChanges = calendarDiff(cal.calendar.date === today ? cal.calendar.events : [], day.plan, day.excludedIds);
+  // Events a flexible routine stands in for (the gym, planned around its time) aren't "missing" from the plan.
+  const calendarChanges = calendarDiff(cal.calendar.date === today ? cal.calendar.events : [], day.plan, [...(day.excludedIds ?? []), ...todayRoutines.replacesCalendar]);
   const excludedSet = new Set(day.excludedIds ?? []);
   const marks = (k: string) => marksFor(k, { today, day, blocks, archive, events: cal.days.days, todayEvents: calendarEvents });
   const openDay = (k: string) => {
@@ -913,6 +934,7 @@ export function App() {
               }}
             />
           )}
+          {route === 'today' && <RoutineNudge learning={learning} onOpen={() => navigate('routines')} />}
           {route === 'together' && (
             <TogetherPage
               accountState={me.state}
@@ -937,6 +959,7 @@ export function App() {
               now={now}
               mode={settings.mode}
               calendarEvents={calendarEvents}
+              why={routineWhy}
               nudges={shownNudges}
               calendar={
                 <CalendarNotice
@@ -993,6 +1016,8 @@ export function App() {
               onEdit={(id) => setSheet({ kind: 'block', id })}
               onAdd={() => setSheet({ kind: 'block', id: null })}
               onToggle={(id) => setBlocks((list) => list.map((b) => (b.id === id ? { ...b, active: !b.active } : b)))}
+              learning={<RoutineReview learning={learning} blocks={blocks} />}
+              week={<WeekOverview blocks={blocks} />}
             />
           )}
           {route === 'plan' && (

@@ -1,3 +1,4 @@
+import { eventMatches, learnedOf, type LearnedRoutine } from '../lib/routines';
 import { useEffect, useState, type ReactNode } from 'react';
 import type { CalendarEvent } from '../lib/calendar';
 import {
@@ -265,7 +266,11 @@ export function DaysPage(props: Props) {
   const events = isToday ? props.todayEvents : props.events[selected];
   const loadedHere = isToday || selected in props.events;
   const ahead = oneOffsOn(blocks, selected);
-  const routineCount = blocks.filter((b) => !b.date && plannedToday(b, selected)).length;
+  // Routines learned from the calendar are already there as events on days the calendar has them: don't count them twice.
+  const routineCount = blocks.filter((b) => {
+    if (b.date || !plannedToday(b, selected)) return false;
+    return !(learnedOf(b)?.source === 'google' && (events ?? []).some((e) => eventMatches(b as LearnedRoutine, e)));
+  }).length;
   const past = archive[selected];
   const finished = new Set([...day.doneIds, ...day.skippedIds]);
 

@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
-import { EMPTY_CALENDAR, calendarBlocks, type CalendarState } from './calendar';
+import type { Block } from '@segue/engine';
+import { EMPTY_CALENDAR, calendarBlocks, type CalendarEvent, type CalendarState } from './calendar';
 import { EMPTY_DAYS, addDays, mergeDays, rangeBounds, type CalendarDays } from './days';
 import { clock } from './format';
 import {
@@ -360,10 +361,26 @@ export function useCalendar(ready: boolean, notify: (message: string) => void, {
     }
   }
 
-  /** Calendar blocks for a re-route, refreshed first when that's possible without a tap. */
-  async function forReroute(start: Date, room: number) {
+  /**
+   * Busy events over a longer window (past weeks and the weeks ahead), for
+   * learning routines. Never opens Google's window: null when that would be needed.
+   */
+  async function fetchWindow(startIso: string, endIso: string): Promise<CalendarEvent[] | null> {
+    if (!calendar.connected && !serverConnected) return null;
+    const src = source();
+    if (!src) return null;
+    try {
+      return await fetchEvents(src, startIso, endIso);
+    } catch (e) {
+      afterFailure(e);
+      return null;
+    }
+  }
+
+  /** Calendar blocks for a re-route, refreshed first when that's possible without a tap; and today's events (null when today's aren't loaded). */
+  async function forReroute(start: Date, room: number): Promise<{ extra: Block[]; warnings: string[]; todayEvents: CalendarEvent[] | null }> {
     let cal = calendar;
-    if (!cal.connected && !serverConnected) return { extra: [], warnings: [] as string[] };
+    if (!cal.connected && !serverConnected) return { extra: [], warnings: [] as string[], todayEvents: null };
     const src = source();
     if (src) {
       try {
@@ -384,7 +401,7 @@ export function useCalendar(ready: boolean, notify: (message: string) => void, {
           ? 'Your Google Calendar connection needs attention, so its events aren’t in this plan. Reconnect it on the Google Calendar page.'
           : "Calendar hasn't synced today, so its events aren't in this plan. Sync it on the Google Calendar page.",
       );
-      return { extra: [], warnings };
+      return { extra: [], warnings, todayEvents: null };
     }
     if (cal.syncedAt && start.getTime() - Date.parse(cal.syncedAt) > CALENDAR_STALE_MS) {
       warnings.push(`Calendar events are from ${clock(cal.syncedAt)}. Sync on the Google Calendar page if anything changed.`);
@@ -392,7 +409,7 @@ export function useCalendar(ready: boolean, notify: (message: string) => void, {
     if (cal.events.length > room) {
       warnings.push(`Only ${room} of today's ${cal.events.length} calendar events fit in one plan.`);
     }
-    return { extra: calendarBlocks(cal.events, room), warnings };
+    return { extra: calendarBlocks(cal.events, room), warnings, todayEvents: cal.events };
   }
 
   return {
@@ -412,6 +429,7 @@ export function useCalendar(ready: boolean, notify: (message: string) => void, {
     refresh,
     disconnect,
     forReroute,
+    fetchWindow,
     loadRange,
     rangeBusy,
     rangeError,

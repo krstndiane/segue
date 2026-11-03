@@ -1,14 +1,23 @@
-import { useState } from 'react';
+import { useState, type ReactNode } from 'react';
 import type { Energy, PlaceCategory, Priority, Requirement, TimePref } from '@segue/engine';
 import { duration } from '../lib/format';
 import { CATEGORY_LABEL, PRIORITY_LABEL, REQUIREMENT_LABEL, WEEKDAY_SHORT, localDate, newId, repeatLabel, type StoredBlock } from '../lib/model';
+import { CATEGORY_WORDS, learnedOf } from '../lib/routines';
 import { Segmented, Sheet } from './Sheet';
 
 function BlockRow({ b, onEdit, onToggle }: { b: StoredBlock; onEdit: (id: string) => void; onToggle: (id: string) => void }) {
+  const learned = learnedOf(b);
   return (
     <li className={b.active ? '' : 'paused'}>
       <button type="button" className="block-main" onClick={() => onEdit(b.id)}>
         <span className="stave-title">{b.title}</span>
+        {learned && (
+          <span className="block-origin">
+            <span className={`rl-cat c-${learned.category}`}>{CATEGORY_WORDS[learned.category]}</span>
+            <span className="rl-kind">{b.fixedStart ? 'Fixed' : 'Flexible'}</span>
+            <span className="muted small">{learned.source === 'google' ? 'From your Google Calendar' : 'Added by you'}</span>
+          </span>
+        )}
         <span className="stave-sub">
           {!b.date && b.days?.length && b.days.length < 7 ? `${repeatLabel(b.days)} · ` : ''}
           {b.fixedStart ? `${b.fixedStart}–${b.fixedEnd}` : duration(b.maxMinutes)} · {CATEGORY_LABEL[b.category]}
@@ -31,18 +40,25 @@ export function RoutinesView({
   onEdit,
   onAdd,
   onToggle,
+  learning,
+  week,
 }: {
   blocks: StoredBlock[];
   today: string;
   onEdit: (id: string) => void;
   onAdd: () => void;
   onToggle: (id: string) => void;
+  /** what Segue learned from the calendar, waiting to be confirmed */
+  learning?: ReactNode;
+  /** the week at a glance */
+  week?: ReactNode;
 }) {
   const oneOffs = blocks.filter((b) => b.date === today);
   const routines = blocks.filter((b) => !b.date);
   return (
     <>
       <p className="muted intro">Routines repeat on the days you choose. Switch one off to pause it; switch it back on to resume. Segue finds the time and place each day.</p>
+      {learning}
       {oneOffs.length > 0 && (
         <section aria-label="Today only">
           <h3 className="section-title">Today only</h3>
@@ -71,6 +87,7 @@ export function RoutinesView({
       <button type="button" className="ghost wide" onClick={onAdd}>
         Add a routine
       </button>
+      {week}
     </>
   );
 }
