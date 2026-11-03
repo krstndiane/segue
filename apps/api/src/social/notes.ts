@@ -30,10 +30,11 @@ const NOTE_SELECT = `
   case when n.author_id = $1 then (
     select count(*) from segue.note_interests hi where hi.note_id = n.id and hi.withdrawn_at is null and ${interestStillVisible('n', 'hi')}
   ) end as heart_count,
-  case when n.author_id = $1 then (
-    select count(*) from segue.note_interests gi join segue.invitations gv on gv.id = gi.invitation_id
-    where gi.note_id = n.id and gi.withdrawn_at is null and gv.status = 'accepted'
-  ) end as going_count,
+  -- People going (said yes to an invitation from this plan, or were approved). A count only, so everyone who can see the plan gets it.
+  (
+    select count(distinct gv.recipient_id) from segue.activities ga join segue.invitations gv on gv.activity_id = ga.id
+    where ga.source_note_id = n.id and ga.status = 'active' and gv.status = 'accepted'
+  ) as going_count,
   case when n.author_id = $1 then (
     select count(*) from segue.note_interests pi where pi.note_id = n.id and pi.withdrawn_at is null and pi.declined_at is null
       and pi.invitation_id is null and ${interestStillVisible('n', 'pi')}
@@ -62,11 +63,11 @@ function noteView(r: Row, viewer: string, shares?: PublicProfile[]): NoteView {
     mine,
     openToJoin: r.open_to_join !== false,
   };
+  view.goingCount = Number(r.going_count ?? 0);
   if (mine) {
     view.pinned = !!r.pinned;
     view.blockId = (r.block_id as string | null) ?? null;
     view.heartCount = Number(r.heart_count ?? 0);
-    view.goingCount = Number(r.going_count ?? 0);
     view.pendingCount = Number(r.pending_count ?? 0);
     view.sharedWith = shares ?? [];
   } else {

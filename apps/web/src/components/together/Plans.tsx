@@ -56,6 +56,14 @@ export function planWhen(n: Pick<NoteView, 'onDate' | 'startTime' | 'endTime'>, 
   return `${day} · ${same ? start.slice(0, -3) : start}–${end}`;
 }
 
+/** "Just Ana so far", "2 participants": the owner plus everyone going. A count, never who. */
+export function participantsWords(n: Pick<NoteView, 'goingCount' | 'author' | 'mine'>): string | null {
+  if (n.goingCount == null) return null;
+  const total = n.goingCount + 1;
+  if (total === 1) return n.mine ? 'Just you so far' : `Just ${n.author.displayName} so far`;
+  return `${total} participants`;
+}
+
 /** Who can see a plan, in words, for the small label on its card. */
 function seenBy(n: NoteView): string {
   if (n.mine) return n.visibility === 'private' ? 'Only you' : n.visibility === 'discoverable' ? 'Anyone who finds you' : `${n.sharedWith?.length ?? 0} ${(n.sharedWith?.length ?? 0) === 1 ? 'person' : 'people'} you chose`;
@@ -155,6 +163,7 @@ export function PlanCard({ note, today, status, primary, secondary, menu }: { no
           <PinIcon /> {note.placeName}
         </p>
       )}
+      {!note.mine && participantsWords(note) && <p className="pc-people">{participantsWords(note)}</p>}
       {(status || primary || secondary) && (
         <div className="pc-foot">
           <span className="pc-status">{status}</span>
@@ -231,6 +240,7 @@ export function DiscoverSection({ today, notify, onFindPeople }: { today: string
   const [notes, setNotes] = useState<NoteView[]>([]);
   const [state, setState] = useState<Load>('loading');
   const [asking, setAsking] = useState<NoteView | null>(null);
+  const [viewing, setViewing] = useState<NoteView | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
 
   const load = useCallback(async () => {
@@ -278,10 +288,43 @@ export function DiscoverSection({ today, notify, onFindPeople }: { today: string
         />
       ) : (
         <ul className="plan-list">
-          {notes.map((n) => (
-            <PlanCard key={n.id} note={n} today={today} {...joinParts(n, () => setAsking(n), () => void cancel(n), busy === n.id)} />
-          ))}
+          {notes.map((n) => {
+            const parts = joinParts(n, () => setAsking(n), () => void cancel(n), busy === n.id);
+            const view = (
+              <button type="button" className="ghost small-button" onClick={() => setViewing(n)}>
+                View plan
+              </button>
+            );
+            return (
+              <PlanCard
+                key={n.id}
+                note={n}
+                today={today}
+                status={parts.status}
+                primary={parts.primary}
+                secondary={
+                  <>
+                    {parts.secondary}
+                    {view}
+                  </>
+                }
+              />
+            );
+          })}
         </ul>
+      )}
+      {viewing && (
+        <PlanSheet
+          note={notes.find((x) => x.id === viewing.id) ?? viewing}
+          today={today}
+          busy={busy === viewing.id}
+          onClose={() => setViewing(null)}
+          onAsk={() => {
+            setAsking(viewing);
+            setViewing(null);
+          }}
+          onCancel={() => void cancel(notes.find((x) => x.id === viewing.id) ?? viewing)}
+        />
       )}
       {asking && (
         <JoinSheet
@@ -296,6 +339,53 @@ export function DiscoverSection({ today, notify, onFindPeople }: { today: string
         />
       )}
     </section>
+  );
+}
+
+/** View plan: everything someone chose to share about it, where you stand, and the one thing to do. */
+export function PlanSheet({ note, today, busy, onClose, onAsk, onCancel }: { note: NoteView; today: string; busy: boolean; onClose: () => void; onAsk: () => void; onCancel: () => void }) {
+  const parts = joinParts(note, onAsk, onCancel, busy);
+  const people = participantsWords(note);
+  return (
+    <Sheet title={note.title} onClose={onClose}>
+      <div className="plan-sheet">
+        <p className="pc-owner">
+          <Avatar person={note.author} size={40} />
+          <span>
+            <strong>{note.author.displayName}</strong>
+            <span className="muted small block">
+              {note.author.username ? `@${note.author.username} · ` : ''}
+              {seenBy(note)}
+            </span>
+          </span>
+        </p>
+        <dl className="plan-facts">
+          <div>
+            <dt>When</dt>
+            <dd>{planWhen(note, today)}</dd>
+          </div>
+          {note.placeName && (
+            <div>
+              <dt>Where</dt>
+              <dd>{note.placeName}</dd>
+            </div>
+          )}
+          {people && (
+            <div>
+              <dt>Who&apos;s going</dt>
+              <dd>{people}</dd>
+            </div>
+          )}
+        </dl>
+        {note.body && <p className="plan-sheet-body">{note.body}</p>}
+        <div className="plan-sheet-status">{parts.status}</div>
+        <p className="muted small">Only this plan is shared with you. {note.author.displayName}&apos;s calendar, routines and other plans stay private.</p>
+        <div className="plan-sheet-actions">
+          {parts.secondary}
+          {parts.primary}
+        </div>
+      </div>
+    </Sheet>
   );
 }
 
@@ -744,6 +834,7 @@ export function ShareSheet({
       setStartTime(b.fixedStart);
       setEndTime(b.fixedEnd ?? '');
     }
+    if (!placeName && b.fixedPlace) setPlaceName(b.fixedPlace);
   }
 
   async function save(e: FormEvent) {
@@ -803,7 +894,7 @@ export function ShareSheet({
       <form className="form" onSubmit={(e) => void save(e)}>
         {!note && linkable.length > 0 && (
           <label className="field">
-            <span>Start from one of your plans (optional)</span>
+            <span>Start from one of your plans or routines (optional)</span>
             <select value={blockId} onChange={(e) => pick(e.target.value)}>
               <option value="">Something new</option>
               {linkable.map((b) => (
@@ -820,8 +911,8 @@ export function ShareSheet({
           <input required maxLength={120} value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Study session at a café" />
         </label>
         <label className="field">
-          <span>Details (optional)</span>
-          <textarea rows={3} maxLength={4000} value={body} onChange={(e) => setBody(e.target.value)} placeholder="Working on our programming project" />
+          <span>Details or a message (optional)</span>
+          <textarea rows={3} maxLength={4000} value={body} onChange={(e) => setBody(e.target.value)} placeholder="Working on our programming project. Join if you like!" />
         </label>
         <div className="pair">
           <label className="field">
@@ -880,6 +971,22 @@ export function ShareSheet({
           <input type="checkbox" checked={pinned} onChange={(e) => setPinned(e.target.checked)} />
           <span>Keep it at the top of My plans</span>
         </label>
+        {title.trim() && (
+          <section className="share-preview" aria-label="What they'll see">
+            <h4>{visibility === 'private' ? 'Only you will see this' : 'What they’ll see'}</h4>
+            <p className="share-preview-title">{title.trim()}</p>
+            <p className="muted small">
+              {planWhen({ onDate: onDate || null, startTime: onDate && startTime ? startTime : null, endTime: onDate && startTime && endTime ? endTime : null }, today)}
+              {placeName.trim() ? ` · ${placeName.trim()}` : ''}
+            </p>
+            {body.trim() && <p className="small share-preview-body">{body.trim()}</p>}
+            <p className="muted small">
+              {visibility === 'private'
+                ? 'Nothing is shared.'
+                : `${visibility === 'selected' ? (people.length ? `Seen by ${people.map((p) => p.displayName).join(', ')}.` : 'Choose who can see it.') : 'Seen by anyone who can find your profile.'} Not your calendar, routines, other plans or location.${openToJoin ? ' They can ask to join.' : ''}`}
+            </p>
+          </section>
+        )}
         {error && (
           <p className="error" role="alert">
             {error}

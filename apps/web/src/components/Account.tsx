@@ -445,14 +445,14 @@ export function ProfileSheet({
               <span>{label}</span>
             </label>
           ))}
-          <span className="muted small">If someone hearts your note and you say “invite me”, you can still be invited to that one.</span>
+          <span className="muted small">If someone asks to join your plan and you say yes, that still works, whatever you choose here.</span>
         </fieldset>
 
         <fieldset className="field">
           <legend>Tell me when</legend>
           <label className="check">
             <input type="checkbox" checked={notify.hearts} onChange={(e) => setNotify({ ...notify, hearts: e.target.checked })} />
-            <span>Someone hearts my note</span>
+            <span>Someone asks to join my plan, or answers my request</span>
           </label>
           <label className="check">
             <input type="checkbox" checked={notify.invitations} onChange={(e) => setNotify({ ...notify, invitations: e.target.checked })} />
@@ -487,7 +487,7 @@ export function ProfileSheet({
             ) : (
               <>
                 <p className="small">
-                  This deletes your profile, notes, hearts, invitations and the plans saved to your account. It can't be undone. The plans on this
+                  This deletes your profile, shared plans, join requests, invitations and the plans saved to your account. It can't be undone. The plans on this
                   device stay here.
                 </p>
                 <label className="field">

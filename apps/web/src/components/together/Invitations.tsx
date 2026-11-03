@@ -23,9 +23,9 @@ import { Sheet } from '../Sheet';
 import { PeoplePicker, PersonLine } from './People';
 
 const STATUS_WORDS: Record<InvitationStatus, string> = {
-  pending: 'Waiting for an answer',
-  accepted: 'Going',
-  declined: "Can't make it",
+  pending: 'Pending',
+  accepted: 'Accepted',
+  declined: 'Declined',
   cancelled: 'Cancelled',
   expired: 'Expired',
 };
@@ -100,7 +100,7 @@ export function InvitationsSection(props: SectionProps) {
           Invite people
         </button>
       </div>
-      {empty && <p className="empty muted">No invitations yet. Heart a note to say you'd like to join, or invite someone yourself.</p>}
+      {empty && <p className="empty muted">No invitations yet. Ask to join a plan in Discover, or invite someone to one of yours.</p>}
 
       {waiting.length > 0 && (
         <InviteGroup title="Waiting for you">
@@ -309,7 +309,7 @@ function SentCard({
   const first = group[0]!;
   const active = first.activity.status === 'active';
   const counts = group.reduce<Record<string, number>>((c, i) => ((c[i.status] = (c[i.status] ?? 0) + 1), c), {});
-  const summary = [counts.accepted && `${counts.accepted} going`, counts.pending && `${counts.pending} waiting`, counts.declined && `${counts.declined} can't`]
+  const summary = [counts.accepted && `${counts.accepted} accepted`, counts.pending && `${counts.pending} pending`, counts.declined && `${counts.declined} declined`]
     .filter(Boolean)
     .join(' · ');
   const [confirm, setConfirm] = useState(false);

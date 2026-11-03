@@ -229,7 +229,7 @@ export interface NoteView {
   pinned?: boolean;
   blockId?: string | null;
   heartCount?: number;
-  /** people whose request the author said yes to (author only) */
+  /** people going: said yes to an invitation from this plan, or were approved (a count, for anyone who can see the plan) */
   goingCount?: number;
   /** requests still waiting for the author's answer (author only) */
   pendingCount?: number;

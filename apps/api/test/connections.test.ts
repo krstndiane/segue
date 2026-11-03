@@ -335,7 +335,8 @@ describe.skipIf(!DB_URL)('profiles, connections and blocks (Postgres)', () => {
       expect((await c.as('GET', `/v1/notes/${note.id}/interests`)).status).toBe(403);
       const seenByC = (await c.as('GET', `/v1/notes/${note.id}`)).body.note;
       expect(seenByC.heartCount).toBeUndefined();
-      expect(seenByC.goingCount).toBeUndefined();
+      expect(seenByC.pendingCount).toBeUndefined();
+      expect(seenByC.goingCount).toBe(0);
       expect(JSON.stringify(seenByC)).not.toContain('bring water');
       // Too long a message is refused.
       expect((await c.as('POST', `/v1/notes/${note.id}/heart`, { message: 'x'.repeat(281) })).status).toBe(400);
@@ -346,6 +347,10 @@ describe.skipIf(!DB_URL)('profiles, connections and blocks (Postgres)', () => {
       const mine = (await a.as('GET', `/v1/notes/${note.id}`)).body.note;
       expect([mine.heartCount, mine.goingCount, mine.pendingCount]).toEqual([1, 1, 0]);
       expect((await b.as('GET', `/v1/notes/${note.id}`)).body.note.interest).toBe('accepted');
+      // Others who can see the plan see how many are going (a number, not who).
+      const cNow = (await c.as('GET', `/v1/notes/${note.id}`)).body.note;
+      expect(cNow.goingCount).toBe(1);
+      expect(cNow.pendingCount).toBeUndefined();
 
       // c asks and takes it back: no longer listed for the author.
       await c.as('POST', `/v1/notes/${note.id}/heart`, { message: 'Maybe?' });

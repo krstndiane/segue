@@ -3858,3 +3858,96 @@ details.more[open] {
     width: 100%;
   }
 }
+
+/* ---------- Together: participants, View plan, share preview ---------- */
+.pc-people {
+  margin: 2px 0 0;
+  font-size: var(--step--1);
+  color: var(--slate);
+}
+.plan-sheet {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.plan-sheet .pc-owner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0;
+}
+.plan-facts {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+}
+.plan-facts > div {
+  display: grid;
+  grid-template-columns: 7.5em 1fr;
+  gap: 8px;
+}
+.plan-facts dt {
+  color: var(--slate);
+  font-size: var(--step--1);
+}
+.plan-facts dd {
+  margin: 0;
+  font-weight: 600;
+}
+.plan-sheet-body {
+  margin: 0;
+  white-space: pre-wrap;
+}
+.plan-sheet-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px 12px;
+}
+.plan-sheet-actions .primary {
+  min-height: 46px;
+}
+@media (max-width: 480px) {
+  .plan-sheet-actions {
+    flex-direction: column-reverse;
+    align-items: stretch;
+  }
+}
+.share-preview {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 12px 14px;
+  border-radius: var(--radius-m, 14px);
+  background: var(--fog);
+  box-shadow: inset 0 0 0 1px var(--line);
+}
+.share-preview h4 {
+  margin: 0 0 2px;
+  font-size: var(--step--1);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--slate);
+}
+.share-preview p {
+  margin: 0;
+}
+.share-preview-title {
+  font-weight: 700;
+}
+.share-preview-body {
+  white-space: pre-wrap;
+}
+/* On narrow phones the card's actions get the whole row, same height, the main one last (right). */
+@media (max-width: 420px) {
+  .pc-actions {
+    width: 100%;
+    margin-left: 0;
+  }
+  .pc-actions > .small-button,
+  .pc-actions > .primary,
+  .pc-actions > .ghost {
+    flex: 1;
+    min-height: 44px;
+  }
+}

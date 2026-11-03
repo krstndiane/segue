@@ -103,25 +103,25 @@ export function PrivacyPage() {
               and past days&apos; plans. Never your current or last position, and never anything from Google Calendar: those stay on the device.
             </li>
             <li>
-              <strong>What you write and do with others:</strong> your notes and who each is shared with, your hearts, invitations you send or receive
+              <strong>What you write and do with others:</strong> the plans you share and who each is shared with, your requests to join plans and any message with them, invitations you send or receive
               (title, details, time, place, who is invited and their answers), and your notifications.
             </li>
           </ul>
           <p>Who sees what:</p>
           <ul>
-            <li>Notes are private unless you share them with people you pick, or make them discoverable. You can change or take this back any time.</li>
+            <li>Plans are private unless you share them with people you pick, or make them discoverable. You can change or take this back any time.</li>
             <li>
-              If you let people find you, they can see your name, username, photo, &ldquo;about you&rdquo; and your discoverable notes. Nobody sees your
+              If you let people find you, they can see your name, username, photo, &ldquo;about you&rdquo; and your discoverable plans. People who can see a plan also see how many are going (a number, not who). Nobody sees your
               email address, your planner, your location or your calendar.
             </li>
             <li>
-              A heart on a note tells its author you would like to be invited. An invitation is seen only by the person who sent it and the people
+              Asking to join a plan (&ldquo;Can I join?&rdquo;) tells only its owner, with your message if you add one; the owner approves or declines. An invitation is seen only by the person who sent it and the people
               invited. Accepting one never changes your plan; adding it to your day is a separate choice on your device.
             </li>
           </ul>
           <p>
-            We keep this until you delete it. Deleting a note removes it and its hearts at once. <em>Delete my account</em> (Settings, Profile and
-            privacy) deletes your profile, notes, hearts, invitations, notifications and synced planner, and your sign-in. Copies may remain in the
+            We keep this until you delete it. Deleting a shared plan removes it and its join requests at once. <em>Delete my account</em> (Settings, Profile and
+            privacy) deletes your profile, shared plans, join requests, invitations, notifications and synced planner, and your sign-in. Copies may remain in the
             database provider&apos;s backups for a short time before they are overwritten. Signing out keeps a copy of your plans on that device until
             you use <em>Start over</em>.
           </p>
