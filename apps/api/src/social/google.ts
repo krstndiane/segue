@@ -156,6 +156,7 @@ async function calendarGet<T>(g: GoogleCalendarConfig, access: string, url: stri
 interface EventItem {
   id: string;
   iCalUID?: string;
+  recurringEventId?: string;
   status?: string;
   summary?: string;
   location?: string;
@@ -176,6 +177,7 @@ function slim(e: Record<string, unknown>): EventItem | null {
   return {
     id: e.id,
     iCalUID: str(e.iCalUID),
+    recurringEventId: str(e.recurringEventId),
     status: str(e.status),
     summary: str(e.summary),
     location: str(e.location),

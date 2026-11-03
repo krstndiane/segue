@@ -156,6 +156,13 @@ export function PrivacyPage() {
             from Segue and asks Google to revoke it.
           </p>
           <p>
+            <strong>Learning your routine.</strong> On your device, Segue looks at the last four weeks and the next two of your calendar
+            (titles, days, times and places, never descriptions) to notice weekly patterns such as classes or a regular gym time. It only
+            suggests them; nothing becomes a routine until you confirm it. Routines you confirm are kept like any routine you add yourself
+            (on your device, and in your account if you have one, so they work on your other devices). What Segue is still only suggesting
+            stays on this device.
+          </p>
+          <p>
             Segue only reads. It never changes, adds or deletes anything in your calendar. Your Google data is used only to plan your day, is not used
             for advertising, is not sold, and is not used to train AI models. A person at Segue does not read it.
           </p>

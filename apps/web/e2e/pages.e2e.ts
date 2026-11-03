@@ -519,3 +519,139 @@ test('how it works with reduced motion: choosing a step moves the motorcycle the
   expect((await bikeOnRoad(page)).at).toBe(b.at); // nothing left moving
   await expect(page.locator('#how .lp-stage h3')).toHaveText(STEP_TITLES[2]!);
 });
+
+/**
+ * A university timetable in Google Calendar, answered for whatever window is
+ * asked: Programming 1 (Mon/Wed/Fri 8–10, a recurring series), Mathematics
+ * (Mon/Wed/Fri 1–2:30 PM, a series), Gym (Mon/Wed/Fri 5–6:30 PM, typed in each
+ * week) and a weekly "Ana" (Sunday evening: unclear what it is).
+ */
+async function timetable(page: Page) {
+  await fakeGoogle(page);
+  await page.route('https://www.googleapis.com/calendar/v3/calendars/**', (r) => {
+    const url = new URL(r.request().url());
+    if (url.pathname.includes('team%40x') || decodeURIComponent(url.pathname).includes('team@x')) return r.fulfill({ headers: cors, body: JSON.stringify({ items: [] }) });
+    const from = Date.parse(url.searchParams.get('timeMin')!);
+    const to = Date.parse(url.searchParams.get('timeMax')!);
+    const items: ({ id: string } & Record<string, unknown>)[] = [];
+    for (let t = from - 86_400_000; t < to + 86_400_000; t += 86_400_000) {
+      const date = new Date(t + 8 * 3_600_000).toISOString().slice(0, 10); // Manila date
+      const wd = new Date(`${date}T12:00:00+08:00`).getUTCDay();
+      const at = (hm: string) => `${date}T${hm}:00+08:00`;
+      const add = (id: string, summary: string, s: string, e: string, extra: object = {}) => {
+        if (Date.parse(at(s)) < to && Date.parse(at(e)) > from) items.push({ id: `${id}-${date}`, summary, start: { dateTime: at(s) }, end: { dateTime: at(e) }, ...extra });
+      };
+      if ([1, 3, 5].includes(wd)) {
+        add('prog', 'Programming 1', '08:00', '10:00', { recurringEventId: 'prog', location: 'PUP Main Building, Room 301' });
+        add('math', 'Mathematics', '13:00', '14:30', { recurringEventId: 'math' });
+        add('gym', 'Gym', '17:00', '18:30');
+      }
+      if (wd === 0) add('ana', 'Ana', '20:00', '20:30');
+    }
+    return r.fulfill({ headers: cors, body: JSON.stringify({ items: [...new Map(items.map((i) => [i.id, i])).values()] }) });
+  });
+}
+
+test('routine learning: Segue reads the calendar, suggests the weekly routine, the person confirms and corrects it, and the plan uses it', async ({ page }) => {
+  await timetable(page);
+  // A Wednesday morning, before class.
+  await page.clock.setFixedTime(new Date('2026-11-04T07:00:00+08:00'));
+  await page.goto('/app?sky=clear');
+  await page.getByRole('button', { name: /^Next/ }).click();
+  await page.getByRole('button', { name: 'Next', exact: true }).click();
+  await page.locator('.calendar-card').getByRole('button', { name: 'Connect Google Calendar' }).click();
+  await expect(page.locator('.calendar-card')).toContainText('Connected');
+  await page.getByRole('button', { name: 'Plan my day' }).click();
+
+  // Today says there's something to look at; nothing has been changed yet.
+  const nudge = page.locator('.routine-nudge');
+  await expect(nudge).toContainText('We’ve started learning your weekly routine');
+  await expect(nudge).toContainText('Nothing changes until you confirm');
+  await nudge.click();
+  await expect(page).toHaveURL(/\/app\/routines/);
+
+  const review = page.locator('.rl');
+  await expect(review.getByRole('heading', { name: 'We’ve started learning your weekly routine.' })).toBeVisible();
+  if (process.env.SHOTS) await page.screenshot({ path: `${process.env.SHOTS}/rl-review.png`, fullPage: true });
+  const card = (name: string) => review.locator('.rl-card', { has: page.getByRole('heading', { name, exact: true }) });
+  await expect(card('Programming 1')).toContainText('Class');
+  await expect(card('Programming 1')).toContainText('Fixed');
+  await expect(card('Programming 1')).toContainText('Mon, Wed, Fri · 8:00 AM–10:00 AM');
+  await expect(card('Mathematics')).toContainText('1:00 PM–2:30 PM');
+  await expect(card('Gym')).toContainText('Fitness');
+  await expect(card('Gym')).toContainText('Flexible');
+  // Unsure: it asks instead of stating.
+  await expect(card('Ana')).toContainText('Not sure about this one');
+  // Nothing is a routine yet.
+  await expect(page.locator('.blocks')).toHaveCount(0);
+
+  // "Ana" isn't a routine; Mathematics gets a correction before saving; the rest Segue is sure about.
+  await card('Ana').getByRole('button', { name: 'Not a routine' }).click();
+  await expect(card('Ana')).toHaveCount(0);
+  await card('Mathematics').getByRole('button', { name: 'Change' }).click();
+  await card('Mathematics').getByLabel('Name').fill('Math 21');
+  await card('Mathematics').getByRole('button', { name: 'Save routine' }).click();
+  await review.getByRole('button', { name: /Save the 2 Segue is sure about/ }).click();
+  await expect(page.locator('.rl')).toHaveCount(0);
+
+  // They're routines now, with where they came from and whether they can move.
+  const routines = page.getByRole('region', { name: 'Routines' });
+  for (const name of ['Programming 1', 'Math 21', 'Gym']) await expect(routines).toContainText(name);
+  await expect(routines.locator('li', { hasText: 'Gym' })).toContainText('Flexible');
+  await expect(routines.locator('li', { hasText: 'Programming 1' })).toContainText('From your Google Calendar');
+  const week = page.getByRole('region', { name: 'Your week' });
+  await expect(week.locator('li', { hasText: 'Wed' })).toContainText('8:00 AM Programming 1');
+  await expect(week.locator('li', { hasText: 'Tue' })).toContainText('Open');
+
+  // A later sync doesn't suggest them again, or duplicate them.
+  await page.reload();
+  await expect(page.locator('.rl')).toHaveCount(0);
+  await expect(routines.locator('li', { hasText: 'Programming 1' })).toHaveCount(1);
+
+  // The plan: classes at their exact times (once each), the gym flexible around 5 PM (once), and a 2-hour assignment around them.
+  await page.getByRole('navigation', { name: 'Sections' }).getByRole('link', { name: 'Today' }).click();
+  await page.locator('#quick-add').fill('Programming assignment 2h');
+  await page.keyboard.press('Enter');
+  // Adding to today proposes a new plan; accept it (it opens a moment later).
+  const sheet = page.getByRole('dialog', { name: 'Re-route from here' });
+  await sheet.getByRole('button', { name: 'Use this plan' }).click({ timeout: 10_000 });
+  await expect(sheet).toHaveCount(0);
+  await page.getByRole('navigation', { name: 'Sections' }).getByRole('link', { name: 'Today' }).click();
+
+  const plan = await page.evaluate(async () => {
+    const db = await new Promise<IDBDatabase>((res, rej) => {
+      const r = indexedDB.open('segue');
+      r.onsuccess = () => res(r.result);
+      r.onerror = () => rej(r.error);
+    });
+    const names = [...db.objectStoreNames];
+    const tx = db.transaction(names[0]!, 'readonly');
+    const day = await new Promise<{ plan?: { items: { title: string; start: string; end: string; fixed?: boolean }[] } }>((res) => {
+      const g = tx.objectStore(names[0]!).get('day');
+      g.onsuccess = () => res(g.result);
+    });
+    return day?.plan?.items ?? [];
+  });
+  const items = plan.map((i) => ({ ...i, s: Date.parse(i.start), e: Date.parse(i.end) }));
+  const at = (title: string) => items.filter((i) => i.title === title);
+  expect(at('Programming 1')).toHaveLength(1);
+  expect(new Date(at('Programming 1')[0]!.start).toISOString()).toBe(new Date('2026-11-04T08:00:00+08:00').toISOString());
+  expect(at('Mathematics')).toHaveLength(1); // today's calendar event (the routine steps aside)
+  expect(at('Math 21')).toHaveLength(0);
+  const gym = at('Gym');
+  expect(gym).toHaveLength(1);
+  expect(gym[0]!.fixed).toBeFalsy();
+  expect(gym[0]!.s).toBeGreaterThanOrEqual(Date.parse('2026-11-04T16:00:00+08:00'));
+  expect(gym[0]!.e).toBeLessThanOrEqual(Date.parse('2026-11-04T20:00:00+08:00'));
+  const task = at('Programming assignment');
+  expect(task).toHaveLength(1);
+  for (const c of [...at('Programming 1'), ...at('Mathematics')]) expect(task[0]!.e <= c.s || task[0]!.s >= c.e).toBe(true);
+  // Today says why the gym is there, and doesn't call the gym event a calendar change (the routine stands in for it).
+  await expect(page.locator('.tag-routine').first()).toBeVisible();
+  await expect(page.locator('.nudge-calendar')).toHaveCount(0);
+  if (process.env.SHOTS) {
+    await page.screenshot({ path: `${process.env.SHOTS}/rl-today.png`, fullPage: true });
+    await page.getByRole('navigation', { name: 'Sections' }).getByRole('link', { name: 'Routines' }).click();
+    await page.screenshot({ path: `${process.env.SHOTS}/rl-routines.png`, fullPage: true });
+  }
+});

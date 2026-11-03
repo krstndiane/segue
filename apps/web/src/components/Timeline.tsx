@@ -28,6 +28,8 @@ interface Props {
   onOptions: (item: PlanItem, trigger: 'rain') => void;
   onFillGap: (from: string) => void;
   onDismissNudge: (id: string) => void;
+  /** why a routine (or a calendar event that is one) is in today's plan, by block id */
+  why?: Record<string, string>;
 }
 
 /** Free time worth offering to fill. */
@@ -190,8 +192,14 @@ export function Timeline(props: Props) {
   const locked = new Set(day.lockedIds);
   const nowLive = next && Date.parse(next.start) <= now.getTime();
 
+  const why = props.why ?? {};
   const tags = (item: PlanItem) => (
     <>
+      {why[item.blockId] && (
+        <span className="tag tag-routine" title={why[item.blockId]}>
+          Routine
+        </span>
+      )}
       {isCalendarBlock(item.blockId) ? <span className="tag">Calendar</span> : item.fixed && <span className="tag">Set time</span>}
       {locked.has(item.blockId) && <span className="tag">Pinned</span>}
     </>
@@ -238,6 +246,7 @@ export function Timeline(props: Props) {
             {next.place && travelLine(next, mode) && <span className="muted"> · {travelLine(next, mode)}</span>}
           </p>
           <ConflictNote item={next} className="next-conflict" />
+          {why[next.blockId] && <p className="next-why muted small">{why[next.blockId]}</p>}
           <p className="next-meta">
             <span>{duration(minutesBetween(next.start, next.end))}</span>
             {next.confidence === 'verified' && <span className="conf conf-ok">Open then</span>}
