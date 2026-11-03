@@ -133,10 +133,16 @@ export function PrivacyPage() {
 
         <section aria-labelledby="pp-google">
           <h2 id="pp-google">Google Calendar</h2>
-          <p>Connecting Google Calendar asks for these permissions, and no others:</p>
+          <p>Continue with Google, or connecting Google Calendar, asks for these permissions, and no others:</p>
           <ul>
             <li>
-              <strong>Your Google account&apos;s email address</strong> (openid, email): to show which Google account is connected.
+              <strong>Your Google account&apos;s email address</strong> (openid, email): to show which Google account is connected and, with
+              Continue with Google, to sign you in to Segue. Segue joins it to an existing Segue account only when Google says the email address is
+              verified.
+            </li>
+            <li>
+              <strong>Your name</strong> (profile, only with Continue with Google): to set up your Segue profile the first time. You can change it
+              any time in Settings, and Segue never changes it again after that.
             </li>
             <li>
               <strong>See your calendar events</strong> (<code>calendar.events.readonly</code>): so today&apos;s meetings become fixed parts of your

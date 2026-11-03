@@ -116,6 +116,14 @@ function sessionFrom(b: TokenBody): Session | null {
   return { accessToken: b.access_token, refreshToken: b.refresh_token, expiresAt, user: { id: b.user.id, email: b.user.email } };
 }
 
+/** A session Segue's server got for us (Continue with Google): keep it like any sign-in. */
+export function adoptSession(b: TokenBody): Session {
+  const s = sessionFrom(b);
+  if (!s) throw new AuthFailure("Couldn't finish signing you in. Try again.");
+  write(s);
+  return s;
+}
+
 /** Where the emailed links bring people back to. Add it to Supabase → Authentication → URL Configuration. */
 const returnTo = () => `${window.location.origin}/app`;
 

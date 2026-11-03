@@ -4116,3 +4116,50 @@ details.more[open] {
   background: color-mix(in srgb, var(--ink) 10%, var(--surface));
   font-weight: 600;
 }
+
+/* ---------- Continue with Google (Google's button guidelines: white, the G on the left) ---------- */
+.cwg {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 6px;
+  width: 100%;
+}
+.cwg p {
+  margin: 0;
+}
+.google-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  min-height: 48px;
+  padding: 0 22px 0 16px;
+  border: 1px solid #dadce0;
+  border-radius: 999px;
+  background: #fff;
+  color: #1f1f1f;
+  font-family: Roboto, var(--font);
+  font-weight: 600;
+  font-size: var(--step-0);
+  cursor: pointer;
+  box-shadow: 0 6px 18px -12px rgb(0 0 0 / 0.45);
+}
+.google-button:hover {
+  background: #f8f9fb;
+}
+.google-button:focus-visible {
+  outline: 3px solid var(--focus);
+  outline-offset: 2px;
+}
+.google-button:disabled {
+  cursor: progress;
+  opacity: 0.85;
+}
+.auth-google {
+  margin-bottom: 4px;
+}
+.auth-or {
+  text-align: center;
+  margin: 4px 0 0;
+}
