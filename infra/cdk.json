@@ -1,0 +1,6 @@
+{
+  "app": "npx tsx bin/segue.ts",
+  "context": {
+    "lambdaWebAdapterLayerVersion": 30
+  }
+}

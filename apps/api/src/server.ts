@@ -1,7 +1,7 @@
 import { createServer } from 'node:http';
 import { createApp } from './app';
 import { loadConfig } from './config';
-import { buildGeocoder, buildPlacesProvider, buildWeatherProvider } from './providers';
+import { buildCacheStores, buildGeocoder, buildPlacesProvider, buildWeatherProvider } from './providers';
 import { claudeUnderstand } from './understand';
 import { claudeAssistant } from './assistant';
 import { createVerifier, deleteAuthUser } from './auth';
@@ -9,12 +9,15 @@ import { supabaseAvatarStorage } from './social/avatars';
 import { connect, migrate } from './db';
 import { createSocial, type SocialRoutes } from './social';
 import { parseTokenKey, type GoogleCalendarConfig } from './social/google';
+import { withRequestLog } from './requestLog';
 
 const config = loadConfig();
 if (process.env.NODE_ENV === 'production' && !config.corsOrigins.some((o) => o === '*' || o.startsWith('https://'))) {
   console.warn('CORS_ORIGINS has no https origin, so browsers on your real site will be blocked. Set it to your web app URL.');
 }
-const places = buildPlacesProvider(config);
+// Shared caches only with CACHE_STORE=dynamodb (Lambda); otherwise in memory, as before.
+const stores = await buildCacheStores(config);
+const places = buildPlacesProvider(config, console.warn, stores);
 const understand = config.smartAdd ? claudeUnderstand() : undefined;
 /** Checks Segue sign-ins (accounts and the AI assistant both need it). */
 const verifier = config.supabaseUrl || config.supabaseJwtSecret ? createVerifier({ supabaseUrl: config.supabaseUrl, jwtSecret: config.supabaseJwtSecret }) : undefined;
@@ -44,7 +47,7 @@ async function buildSocial(): Promise<SocialRoutes | undefined> {
     console.warn('DATABASE_URL is set but SUPABASE_URL is not, so accounts stay off.');
     return undefined;
   }
-  const db = connect({ url: config.databaseUrl, ssl: config.databaseSsl, ca: config.databaseCa });
+  const db = connect({ url: config.databaseUrl, ssl: config.databaseSsl, ca: config.databaseCa, max: config.dbPoolMax });
   if (config.migrateOnStart) {
     const applied = await migrate(db);
     if (applied.length) console.log(`Database migrations applied: ${applied.join(', ')}`);
@@ -70,10 +73,12 @@ const social = await buildSocial().catch((e: Error) => {
   console.error(`Accounts are off: ${e.message}`);
   return undefined;
 });
-const server = createServer(createApp({ config, places, weather: buildWeatherProvider(), understand, geocoder: buildGeocoder(config), social, assistant }));
+const app = createApp({ config, places, weather: buildWeatherProvider(console.warn, stores), understand, geocoder: buildGeocoder(config, stores), social, assistant });
+// LOG_FORMAT=json adds one JSON line per request with CloudWatch metrics (no coordinates); text keeps today's log only.
+const server = createServer(config.logFormat === 'json' ? withRequestLog(app) : app);
 
 server.listen(config.port, () => {
-  console.log(`Segue API on http://localhost:${config.port} · places: ${places.name} · smart add: ${understand ? 'on' : 'off'} · accounts: ${social ? 'on' : 'off'} · assistant: ${assistant ? 'ai' : 'basic'}`);
+  console.log(`Segue API on http://localhost:${config.port} · places: ${places.name} · smart add: ${understand ? 'on' : 'off'} · accounts: ${social ? 'on' : 'off'} · assistant: ${assistant ? 'ai' : 'basic'} · cache: ${config.cacheStore}`);
 });
 
 for (const sig of ['SIGINT', 'SIGTERM'] as const) {

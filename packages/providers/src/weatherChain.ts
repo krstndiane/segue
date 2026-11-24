@@ -7,7 +7,7 @@
  * not ask it for every visitor.
  */
 import type { LatLng, WeatherHour } from '@segue/engine';
-import { MemoryStore } from './cache';
+import { MemoryStore, type KeyValueStore } from './cache';
 import { geohash } from './geohash';
 import { ProviderError, fetchWithTimeout, type CurrentWeather, type FetchFn, type SkyCondition, type UpcomingHour, type WeatherProvider } from './types';
 
@@ -178,6 +178,8 @@ export interface WeatherCacheOptions {
   currentStaleMs?: number;
   forecastStaleMs?: number;
   clock?: () => number;
+  /** Where answers are kept. Defaults to an in-memory store; a shared store (e.g. DynamoDB) lets many servers reuse them. */
+  store?: KeyValueStore<{ value: unknown; at: number }>;
 }
 
 /**
@@ -189,10 +191,10 @@ export class CachedWeatherProvider implements WeatherProvider {
   hits = 0;
   misses = 0;
   stale = 0;
-  private readonly store: MemoryStore<{ value: unknown; at: number }>;
+  private readonly store: KeyValueStore<{ value: unknown; at: number }>;
   private readonly inflight = new Map<string, Promise<unknown>>();
   private readonly clock: () => number;
-  private readonly opts: Required<Omit<WeatherCacheOptions, 'clock'>>;
+  private readonly opts: Required<Omit<WeatherCacheOptions, 'clock' | 'store'>>;
 
   constructor(
     private readonly inner: WeatherProvider,
@@ -200,7 +202,7 @@ export class CachedWeatherProvider implements WeatherProvider {
   ) {
     this.name = `cached(${inner.name})`;
     this.clock = opts.clock ?? Date.now;
-    this.store = new MemoryStore(2000, this.clock);
+    this.store = opts.store ?? new MemoryStore(2000, this.clock);
     this.opts = {
       currentTtlMs: opts.currentTtlMs ?? 10 * 60 * 1000,
       forecastTtlMs: opts.forecastTtlMs ?? 30 * 60 * 1000,
@@ -219,7 +221,7 @@ export class CachedWeatherProvider implements WeatherProvider {
 
   private async cached<T>(kind: string, location: LatLng, ttlMs: number, staleMs: number, load: () => Promise<T>): Promise<T> {
     const key = `${kind}:${geohash(location.lat, location.lng, 5)}`;
-    const old = this.store.get(key) as { value: T; at: number } | undefined;
+    const old = (await this.store.get(key)) as { value: T; at: number } | undefined;
     if (old && this.clock() - old.at < ttlMs) {
       this.hits++;
       return old.value;
@@ -228,8 +230,8 @@ export class CachedWeatherProvider implements WeatherProvider {
     if (!pending) {
       this.misses++;
       pending = load()
-        .then((value) => {
-          this.store.set(key, { value, at: this.clock() }, staleMs);
+        .then(async (value) => {
+          await this.store.set(key, { value, at: this.clock() }, staleMs);
           return value;
         })
         .finally(() => this.inflight.delete(key));
