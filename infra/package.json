@@ -1,0 +1,24 @@
+{
+  "name": "@segue/infra",
+  "version": "0.1.0",
+  "private": true,
+  "description": "AWS CDK app for the Segue API on Lambda (showcase slice). Deploys to ap-southeast-2.",
+  "type": "module",
+  "scripts": {
+    "package": "bash scripts/package-api.sh",
+    "synth": "bash scripts/package-api.sh && cdk synth",
+    "diff": "bash scripts/package-api.sh && cdk diff",
+    "deploy": "bash scripts/package-api.sh && cdk deploy",
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "aws-cdk-lib": "^2.180.0",
+    "constructs": "^10.4.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "aws-cdk": "^2.1000.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.6.0"
+  }
+}

@@ -47,6 +47,14 @@ export interface Config {
   googleTokenKey?: string;
   /** Supabase's anon (publishable) key, for Continue with Google (the service key works too). */
   supabaseAnonKey?: string;
+  /** Postgres connections per server. 5 on a long-running host; 1 or 2 on Lambda, where many copies run at once. */
+  dbPoolMax: number;
+  /** Where place, place-name and weather answers are cached: this process (memory) or a shared DynamoDB table. */
+  cacheStore: 'memory' | 'dynamodb';
+  /** DynamoDB table for CACHE_STORE=dynamodb. */
+  cacheTable?: string;
+  /** text: the usual one-line request log. json: one JSON line per request with CloudWatch metrics (no coordinates). */
+  logFormat: 'text' | 'json';
 }
 
 /** A non-negative whole number from the environment, or the fallback when it is unset. */
@@ -64,6 +72,12 @@ function sslMode(raw: string | undefined): Config['databaseSsl'] {
   return v;
 }
 
+function oneOf<T extends string>(env: NodeJS.ProcessEnv, name: string, allowed: readonly T[], fallback: T): T {
+  const v = (env[name] ?? fallback).trim().toLowerCase();
+  if (!(allowed as readonly string[]).includes(v)) throw new Error(`${name} must be ${allowed.join(' or ')} (got "${env[name]}")`);
+  return v as T;
+}
+
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
   const provider = (env.PLACES_PROVIDER ?? 'osm').toLowerCase();
   if (!['osm', 'google', 'mock'].includes(provider)) {
@@ -72,6 +86,11 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
   if (provider === 'google' && !env.GOOGLE_PLACES_API_KEY) {
     throw new Error('PLACES_PROVIDER=google needs GOOGLE_PLACES_API_KEY');
   }
+  const cacheStore = oneOf(env, 'CACHE_STORE', ['memory', 'dynamodb'] as const, 'memory');
+  const cacheTable = env.CACHE_TABLE?.trim() || undefined;
+  if (cacheStore === 'dynamodb' && !cacheTable) throw new Error('CACHE_STORE=dynamodb needs CACHE_TABLE');
+  const dbPoolMax = count(env, 'DB_POOL_MAX', 5);
+  if (dbPoolMax < 1) throw new Error('DB_POOL_MAX must be 1 or more');
   return {
     port: Number(env.PORT ?? 8787),
     placesProvider: provider as Config['placesProvider'],
@@ -107,5 +126,9 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     googleOAuthClientSecret: env.GOOGLE_OAUTH_CLIENT_SECRET?.trim() || undefined,
     googleTokenKey: env.GOOGLE_TOKEN_KEY?.trim() || undefined,
     supabaseAnonKey: env.SUPABASE_ANON_KEY?.trim() || undefined,
+    dbPoolMax,
+    cacheStore,
+    cacheTable,
+    logFormat: oneOf(env, 'LOG_FORMAT', ['text', 'json'] as const, 'text'),
   };
 }
