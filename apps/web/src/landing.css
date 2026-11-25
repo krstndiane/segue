@@ -873,7 +873,7 @@
   color: var(--fog);
 }
 .lp-scenario .lp-sc-alert strong {
-  color: #fff;
+  color: var(--fog);
 }
 .lp-sc-foot a,
 .lp-privacy .lp-checks a {
@@ -1193,7 +1193,7 @@
   color: var(--fog);
 }
 .lp-stage .lp-sc-alert strong {
-  color: #fff;
+  color: var(--fog);
 }
 @media (prefers-color-scheme: dark) {
   .lp-action {
