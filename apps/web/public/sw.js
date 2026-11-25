@@ -1,10 +1,11 @@
 /* Segue service worker: keeps the app shell available offline.
  * - Pages: network first, so a new deploy shows on the next open; the saved shell only when offline.
  * - Other app files (hashed, so safe to reuse): stale-while-revalidate.
- * - Fonts: cache-first.
+ * - Fonts (Google Fonts): not handled here. The browser loads and caches them itself, under the page's
+ *   style-src and font-src. Fetching them from this worker fell under connect-src, which blocked them.
  * - API calls: always network; the app itself falls back to its on-device engine.
  */
-const VERSION = 'segue-v12';
+const VERSION = 'segue-v13';
 const SHELL = ['/', '/index.html', '/manifest.webmanifest', '/icon.svg', '/icon-192.png', '/icon-512.png', '/apple-touch-icon.png', '/wordmark-light.svg'];
 
 self.addEventListener('install', (event) => {
@@ -30,24 +31,8 @@ self.addEventListener('fetch', (event) => {
   if (req.method !== 'GET') return;
   const url = new URL(req.url);
 
-  const isFont = url.hostname === 'fonts.googleapis.com' || url.hostname === 'fonts.gstatic.com';
-  const sameOrigin = url.origin === self.location.origin;
-  if (!isFont && !sameOrigin) return; // API and everything else: straight to network
-
-  if (isFont) {
-    event.respondWith(
-      caches.match(req).then(
-        (hit) =>
-          hit ||
-          fetch(req).then((res) => {
-            const copy = res.clone();
-            caches.open(VERSION).then((c) => c.put(req, copy));
-            return res;
-          }),
-      ),
-    );
-    return;
-  }
+  // Only this site's own files. Fonts, the API and everything else go straight to the network.
+  if (url.origin !== self.location.origin) return;
 
   // Pages (single-page app): ask the network first. An old saved page would point at script files a
   // new deploy has already removed, which shows as a blank screen. Offline, the saved shell opens.
