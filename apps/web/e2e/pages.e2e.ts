@@ -714,10 +714,10 @@ test('the hero phone plays the story on Segue’s own screens, pauses, and the m
   await expect(phone.locator('.nudge')).toContainText("It's raining, and Outdoor workout is outdoors");
   await expect(phone.locator('.lp-phone-sheet.open .alt-option').first()).toContainText(/Leaves \d+ min before Class at 3:30 PM/, { timeout: 9000 });
   await expect(step).toContainText('Class didn’t move', { timeout: 9000 });
-  await expect(phone.locator('.lp-phone .next')).toContainText('Indoor walk');
+  await expect(phone.locator('.lp-phone .next')).toContainText('Workout');
   await expect(phone.locator('.lp-ribbon')).toContainText('3:30 PM · fixed');
   // It loops back to the planned day.
-  await expect(step).toContainText('1/7', { timeout: 7000 });
+  await expect(step).toContainText('1/8', { timeout: 9000 });
   // Pause is a real, labelled button that works from the keyboard.
   await phone.getByRole('button', { name: 'Pause the phone animation' }).focus();
   await page.keyboard.press('Enter');
@@ -735,10 +735,10 @@ test('the hero phone with reduced motion: a still frame of the rain, and Play st
   await page.clock.install();
   await page.goto('/');
   const phone = page.locator('.lp-hero-phone');
-  await expect(phone.locator('.lp-phone-step')).toContainText('2/7');
+  await expect(phone.locator('.lp-phone-step')).toContainText('3/8');
   await page.clock.runFor(10_000);
-  await expect(phone.locator('.lp-phone-step')).toContainText('2/7');
+  await expect(phone.locator('.lp-phone-step')).toContainText('3/8');
   await phone.getByRole('button', { name: 'Play the phone animation' }).click();
-  await page.clock.runFor(2100);
-  await expect(phone.locator('.lp-phone-step')).toContainText('3/7');
+  await page.clock.runFor(1900);
+  await expect(phone.locator('.lp-phone-step')).toContainText('4/8');
 });
