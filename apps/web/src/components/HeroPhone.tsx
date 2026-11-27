@@ -14,9 +14,8 @@ import { Timeline } from './Timeline';
  * components from the sample day and the real alternatives engine; nothing is
  * stored, and nothing on the phone can be pressed.
  *
- * It plays only while it's on screen and the tab is visible, can be paused,
- * and with reduced motion it starts still (on the rain) and steps without
- * movement when played.
+ * It loops on its own, only while it's on screen and the tab is visible.
+ * With reduced motion it holds still on the rain frame.
  */
 
 type SceneId = 'day' | 'scroll' | 'rain' | 'tapOptions' | 'checking' | 'options' | 'tapUse' | 'done';
@@ -60,6 +59,7 @@ export function HeroPhone() {
   );
 
   const [scene, setScene] = useState(() => (reducedMotion() ? STILL : 0));
+  // Always looping; with reduced motion it holds still on the rain frame instead.
   const [paused, setPaused] = useState(() => reducedMotion());
   const [onScreen, setOnScreen] = useState(true);
   const [tabVisible, setTabVisible] = useState(() => typeof document === 'undefined' || document.visibilityState !== 'hidden');
@@ -83,7 +83,7 @@ export function HeroPhone() {
     if (!m) return;
     const on = () => {
       setStill(m.matches);
-      if (m.matches) setPaused(true);
+      setPaused(m.matches);
     };
     m.addEventListener?.('change', on);
     return () => m.removeEventListener?.('change', on);
@@ -263,18 +263,6 @@ export function HeroPhone() {
           </b>{' '}
           {SCENES[scene]!.caption}
         </span>
-        <button
-          type="button"
-          className="lp-phone-play"
-          aria-pressed={!paused}
-          aria-label={paused ? 'Play the phone animation' : 'Pause the phone animation'}
-          onClick={() => setPaused((p) => !p)}
-        >
-          <svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true">
-            {paused ? <path d="M4.5 2.8v10.4L13 8z" fill="currentColor" /> : <path d="M4 3h3v10H4zM9 3h3v10H9z" fill="currentColor" />}
-          </svg>
-          {paused ? 'Play' : 'Pause'}
-        </button>
       </figcaption>
     </figure>
   );

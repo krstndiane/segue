@@ -364,22 +364,30 @@ async function ride(page: Page, i: number) {
 }
 const STEP_TITLES = ['Here’s today’s route', 'It starts raining', 'Segue finds a practical way forward', 'You decide'];
 
-test('how it works: the motorcycle never moves on its own', async ({ page }) => {
+test('how it works: on screen it rides on its own, a press takes over, and scrolling away and back starts it again', async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 860 });
   await page.goto('/');
   await page.locator('.lp-bike').waitFor({ state: 'attached' });
   const start = await bikeOnRoad(page);
   expect(start.onRoad).toBe(true);
-  // Not on load, not when the section scrolls into view, not after a while, not when scrolling around.
-  await page.locator('#how .lp-steps-wrap').scrollIntoViewIfNeeded();
+  // Not while the section is off screen.
   await page.waitForTimeout(2500);
   expect((await bikeOnRoad(page)).at).toBe(start.at);
-  await page.mouse.wheel(0, 600);
-  await page.waitForTimeout(400);
-  await page.mouse.wheel(0, -600);
-  await page.waitForTimeout(1500);
-  expect((await bikeOnRoad(page)).at).toBe(start.at);
+  // On screen: the engine starts at once (smoke), then it rides to step 2 by itself. No Play button.
+  await page.locator('#how .lp-steps-wrap').scrollIntoViewIfNeeded();
+  await expect(page.locator('#how .lp-smoke.on')).toHaveCount(1);
+  await expect(page.locator('#how').getByRole('button', { name: /Play|Pause/ })).toHaveCount(0);
+  await expect(page.locator('#how .lp-steps > li.on')).toContainText('Something changes', { timeout: 4000 });
+  // A press takes over: it stays where you put it.
+  await page.locator('#how .lp-steps button').nth(0).click();
+  await expect(page.locator('#how .lp-smoke.on')).toHaveCount(0);
+  await page.waitForTimeout(5000);
   await expect(page.locator('#how .lp-steps > li.on')).toContainText('The plan');
+  // Scroll away and back: it rides on its own again.
+  await page.evaluate(() => window.scrollTo(0, 0));
+  await page.waitForTimeout(400);
+  await page.locator('#how .lp-steps-wrap').scrollIntoViewIfNeeded();
+  await expect(page.locator('#how .lp-smoke.on')).toHaveCount(1);
   // The panel's text is readable on its card inside the navy section (not white on white).
   const contrast = await page.evaluate(() => {
     const lum = (c: string) => {
@@ -655,41 +663,6 @@ test('routine learning: Segue reads the calendar, suggests the weekly routine, t
   }
 });
 
-test('how it works: Play runs the four steps on its own, the map follows, and any press hands control back', async ({ page }) => {
-  await page.clock.install();
-  await page.setViewportSize({ width: 1280, height: 860 });
-  await page.goto('/');
-  const story = page.locator('#how');
-  const play = story.getByRole('button', { name: 'Play the story' });
-  const map = story.locator('.lp-map svg');
-  await expect(map).toHaveAttribute('aria-label', /The route: home, then Park, then Class 3:30 PM/);
-  // Keyboard works: Enter on Play starts it.
-  await play.focus();
-  await page.keyboard.press('Enter');
-  await expect(story.getByRole('button', { name: 'Pause' })).toHaveAttribute('aria-pressed', 'true');
-  // The engine revs for a moment, then it rides at once; after that a step every 4.2 s.
-  await expect(story.locator('.lp-smoke.on')).toHaveCount(1);
-  for (const [i, title] of STEP_TITLES.entries()) {
-    if (i === 0) continue;
-    await page.clock.runFor(i === 1 ? 900 : 4300);
-    await expect(story.locator('.lp-stage h3')).toHaveText(title);
-  }
-  // It stops at the end, the new route keeps Class where it was, and it can play again.
-  await expect(map).toHaveAttribute('aria-label', /then Class 3:30 PM, unchanged/);
-  await expect(story.getByRole('button', { name: 'Play again' })).toHaveAttribute('aria-pressed', 'false');
-  await page.clock.runFor(8000);
-  await expect(story.locator('.lp-stage h3')).toHaveText('You decide');
-  // Pressing a step while it plays stops it there.
-  await story.getByRole('button', { name: 'Play again' }).click();
-  await expect(story.locator('.lp-stage h3')).toHaveText(STEP_TITLES[0]!);
-  await story.getByRole('button', { name: 'Step 3: Segue finds alternatives' }).click();
-  await expect(story.getByRole('button', { name: 'Play the story' })).toHaveAttribute('aria-pressed', 'false');
-  await page.clock.runFor(8000);
-  await expect(story.locator('.lp-stage h3')).toHaveText(STEP_TITLES[2]!);
-  // The option looked at says why it works.
-  await expect(story.locator('.lp-sc-why')).toContainText(/Leaves \d+ min before Class/i);
-});
-
 test('re-route when nothing needs to change: one button, and the plan stays as it was', async ({ page }) => {
   await onboard(page, ['Lunch 12:30', 'Call mom 20 min']);
   await page.locator('.dock').getByRole('button', { name: 'Re-route from here' }).click();
@@ -703,7 +676,7 @@ test('re-route when nothing needs to change: one button, and the plan stays as i
   await expect(page.locator('main')).toContainText('Lunch');
 });
 
-test('the hero phone plays the story on Segue’s own screens, pauses, and the main action stays clear', async ({ page }) => {
+test('the hero phone plays the story on Segue’s own screens on a loop, and the main action stays clear', async ({ page }) => {
   test.setTimeout(60_000);
   await page.setViewportSize({ width: 1280, height: 900 });
   await page.goto('/');
@@ -720,19 +693,14 @@ test('the hero phone plays the story on Segue’s own screens, pauses, and the m
   await expect(phone.locator('.lp-ribbon')).toContainText('3:30 PM · fixed');
   // It loops back to the planned day.
   await expect(step).toContainText('1/8', { timeout: 9000 });
-  // Pause is a real, labelled button that works from the keyboard.
-  await phone.getByRole('button', { name: 'Pause the phone animation' }).focus();
-  await page.keyboard.press('Enter');
-  await expect(phone.getByRole('button', { name: 'Play the phone animation' })).toHaveAttribute('aria-pressed', 'false');
-  const held = await step.textContent();
-  await page.waitForTimeout(4000);
-  expect(await step.textContent()).toBe(held);
+  // No controls on the phone: it just loops.
+  await expect(phone.getByRole('button')).toHaveCount(0);
   await expect(page.locator('.lp-hero .lp-copy').getByRole('link', { name: 'Try Segue' })).toBeVisible();
   // Nothing on the phone itself can be pressed or focused.
   await expect(phone.locator('.lp-phone')).toHaveAttribute('inert', '');
 });
 
-test('the hero phone with reduced motion: a still frame of the rain, and Play steps through without moving', async ({ page }) => {
+test('the hero phone with reduced motion: a still frame of the rain', async ({ page }) => {
   await page.emulateMedia({ reducedMotion: 'reduce' });
   await page.clock.install();
   await page.goto('/');
@@ -740,7 +708,5 @@ test('the hero phone with reduced motion: a still frame of the rain, and Play st
   await expect(phone.locator('.lp-phone-step')).toContainText('3/8');
   await page.clock.runFor(10_000);
   await expect(phone.locator('.lp-phone-step')).toContainText('3/8');
-  await phone.getByRole('button', { name: 'Play the phone animation' }).click();
-  await page.clock.runFor(1900);
-  await expect(phone.locator('.lp-phone-step')).toContainText('4/8');
+
 });

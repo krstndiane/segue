@@ -1780,7 +1780,7 @@
   opacity: 1;
 }
 .lp-phone-step {
-  flex: 1 1 200px;
+  flex: 1 1 100%;
   min-height: 2.6em;
   color: #fff;
   font-size: 0.82rem;
