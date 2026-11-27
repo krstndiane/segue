@@ -114,7 +114,7 @@ test('plan my day: leave a routine out for today only', async ({ page }) => {
   await expect(page.getByRole('heading', { name: 'Plan your day' })).toBeVisible();
   await page.getByText("What's in today").click();
   await page.getByText('Include Stretch today').locator('..').locator('.track').click();
-  await page.getByRole('button', { name: 'Re-plan my day' }).click();
+  await page.getByRole('button', { name: 'Re-route from here' }).click();
   await page.getByRole('dialog', { name: 'Re-route from here' }).getByRole('button', { name: 'Use this plan' }).click();
   await expect(page).toHaveURL(/\/app(\?|$)/);
   await expect(page.locator('main')).not.toContainText('Stretch');
@@ -137,7 +137,7 @@ test('connect Google Calendar, leave one event out, and plan around the rest', a
   await expect(events.filter({ hasText: 'Dentist' })).toContainText("Left out of today's plan");
 
   await page.getByRole('button', { name: 'Plan my day around it' }).click();
-  await page.getByRole('button', { name: 'Re-plan my day' }).click();
+  await page.getByRole('button', { name: 'Re-route from here' }).click();
   await page.getByRole('dialog', { name: 'Re-route from here' }).getByRole('button', { name: 'Use this plan' }).click();
   await expect(page.locator('main')).toContainText('Team standup');
   await expect(page.locator('main')).not.toContainText('Dentist');
@@ -653,4 +653,50 @@ test('routine learning: Segue reads the calendar, suggests the weekly routine, t
     await page.getByRole('navigation', { name: 'Sections' }).getByRole('link', { name: 'Routines' }).click();
     await page.screenshot({ path: `${process.env.SHOTS}/rl-routines.png`, fullPage: true });
   }
+});
+
+test('how it works: Play runs the four steps on its own, the map follows, and any press hands control back', async ({ page }) => {
+  await page.clock.install();
+  await page.setViewportSize({ width: 1280, height: 860 });
+  await page.goto('/');
+  const story = page.locator('#how');
+  const play = story.getByRole('button', { name: 'Play the story' });
+  const map = story.locator('.lp-map svg');
+  await expect(map).toHaveAttribute('aria-label', /The route: home, then Park, then Class 3:30 PM/);
+  // Keyboard works: Enter on Play starts it.
+  await play.focus();
+  await page.keyboard.press('Enter');
+  await expect(story.getByRole('button', { name: 'Pause' })).toHaveAttribute('aria-pressed', 'true');
+  for (const [i, title] of STEP_TITLES.entries()) {
+    if (i === 0) continue;
+    await page.clock.runFor(5300);
+    await expect(story.locator('.lp-stage h3')).toHaveText(title);
+  }
+  // It stops at the end, the new route keeps Class where it was, and it can play again.
+  await expect(map).toHaveAttribute('aria-label', /then Class 3:30 PM, unchanged/);
+  await expect(story.getByRole('button', { name: 'Play again' })).toHaveAttribute('aria-pressed', 'false');
+  await page.clock.runFor(8000);
+  await expect(story.locator('.lp-stage h3')).toHaveText('You decide');
+  // Pressing a step while it plays stops it there.
+  await story.getByRole('button', { name: 'Play again' }).click();
+  await expect(story.locator('.lp-stage h3')).toHaveText(STEP_TITLES[0]!);
+  await story.getByRole('button', { name: 'Step 3: Segue finds alternatives' }).click();
+  await expect(story.getByRole('button', { name: 'Play the story' })).toHaveAttribute('aria-pressed', 'false');
+  await page.clock.runFor(8000);
+  await expect(story.locator('.lp-stage h3')).toHaveText(STEP_TITLES[2]!);
+  // The option looked at says why it works.
+  await expect(story.locator('.lp-sc-why')).toContainText(/Leaves \d+ min before Class/i);
+});
+
+test('re-route when nothing needs to change: one button, and the plan stays as it was', async ({ page }) => {
+  await onboard(page, ['Lunch 12:30', 'Call mom 20 min']);
+  await page.locator('.dock').getByRole('button', { name: 'Re-route from here' }).click();
+  const sheet = page.getByRole('dialog', { name: 'Re-route from here' });
+  await expect(sheet).toContainText('Nothing needed to change');
+  // "Use this plan" and "Keep my current plan" would end the same way here, so there is only one.
+  await expect(sheet.getByRole('button', { name: 'Use this plan' })).toHaveCount(0);
+  await expect(sheet.getByRole('button', { name: 'Keep my current plan' })).toHaveCount(0);
+  await sheet.getByRole('button', { name: 'Keep my plan' }).click();
+  await expect(sheet).toHaveCount(0);
+  await expect(page.locator('main')).toContainText('Lunch');
 });

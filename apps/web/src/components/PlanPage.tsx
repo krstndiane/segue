@@ -277,7 +277,7 @@ export function PlanPage(props: Props) {
           {tooMuch && count > 0 && <span className="block small">More than fits. Must-dos go first.</span>}
         </p>
         <button type="button" className="primary big" onClick={props.onPlan} disabled={props.busy || count === 0}>
-          {props.busy ? 'Planning…' : day.plan ? 'Re-plan my day' : 'Plan my day'}
+          {props.busy ? 'Planning…' : day.plan ? 'Re-route from here' : 'Plan my day'}
         </button>
       </div>
     </div>

@@ -72,6 +72,13 @@ body {
   font-optical-sizing: auto;
 }
 
+/* Plain links follow the page's ink instead of the browser's blue. */
+a {
+  color: inherit;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 3px;
+}
+
 button,
 input,
 select,
@@ -1661,6 +1668,9 @@ details.more[open] {
 }
 .page-head p {
   margin: 2px 0 0;
+}
+.routines-head {
+  margin-bottom: 18px;
 }
 .page-title {
   margin: 0;

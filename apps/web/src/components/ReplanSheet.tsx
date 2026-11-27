@@ -27,6 +27,8 @@ export function ReplanSheet({ busy, error, outcome, reason, onReason, onAccept, 
   const chosen = options[pick];
   const changes = outcome && pick === 0 ? outcome.changes.filter((c) => c.kind !== 'unchanged') : [];
   const hint = REASONS.find((r) => r.id === reason)?.hint;
+  // "Something came up" always adds a blocked hour, so it's never "nothing new".
+  const nothingNew = !!outcome && pick === 0 && changes.length === 0 && reason !== 'busy';
 
   return (
     <Sheet title="Re-route from here" onClose={onClose}>
@@ -104,15 +106,26 @@ export function ReplanSheet({ busy, error, outcome, reason, onReason, onAccept, 
             </ol>
             {chosen.unscheduled.length > 0 && <p className="muted small">Won't fit: {chosen.unscheduled.map((u) => u.title).join(', ')}</p>}
 
-            <button type="button" className="primary wide" onClick={() => onAccept(chosen)}>
-              Use this plan
-            </button>
-            <div className="row-actions center">
-              <button type="button" className="text-button" onClick={onClose}>
-                Keep my current plan
+            {nothingNew ? (
+              // Nothing changed, so "use this plan" and "keep my plan" would end the same way: one button.
+              <button type="button" className="primary wide" onClick={onClose}>
+                Keep my plan
               </button>
+            ) : (
+              <>
+                <button type="button" className="primary wide" onClick={() => onAccept(chosen)}>
+                  Use this plan
+                </button>
+                <div className="row-actions center">
+                  <button type="button" className="text-button" onClick={onClose}>
+                    Keep my current plan
+                  </button>
+                </div>
+              </>
+            )}
+            <div className="row-actions center">
               <button type="button" className="text-button" onClick={onOptions}>
-                End time and travel settings
+                Day settings
               </button>
             </div>
           </>

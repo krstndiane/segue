@@ -29,7 +29,7 @@ Branch `reroute-intelligence`, built on `audit` (which keeps the fix that stops 
 - The server searches near where you'll be just before the item (the previous stop), not only where you are now.
 
 **In the app** (smallest additions, existing components and tokens)
-- Item details: *Closed, raining or short on time? See other options* (flexible items). The rain nudge: *See options*.
+- Item details: a **See other options** button under *Closed, raining or short on time?* (flexible items). The rain nudge: *See options*.
 - The options sheet: time, trip, listed hours, room before the next commitment, unknowns, trade-offs, *Not this place*, *How much time do you have?*, *Keep my plan*. *Use this* changes only that item, pins it, and can be undone. Offline it runs on the phone with saved places.
 - Quick add and smart add: work and study are *Anywhere* unless a café, library, Wi-Fi, outlets or quiet is mentioned (enforced in code after the model, too).
 
