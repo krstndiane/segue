@@ -52,7 +52,7 @@ test('the landing page: a route-aware planner, one main action, and the story to
   await page.clock.setFixedTime(MORNING);
   await page.goto('/');
   // Above the fold: what it is, what it does, and one obvious way in.
-  await expect(page.getByRole('heading', { level: 1 })).toHaveText('Your day has a route. Segue helps you find your way.');
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText('Plan didn’t go your way? Let’s Segue!');
   await expect(page.locator('.lp-kicker')).toHaveText('Your route-aware daily planner');
   await expect(page.locator('.lp-sub')).toContainText('Plan your stops and commitments in one place.');
   const hero = page.locator('.lp-hero');

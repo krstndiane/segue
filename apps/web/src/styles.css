@@ -4223,3 +4223,37 @@ details.more[open] {
     translate: 0 -8px;
   }
 }
+
+/* ---------- Glass: the layers that float over the plan (navigation, notices, sheets) ---------- */
+.bottom-nav {
+  background: color-mix(in srgb, var(--fog) 72%, transparent);
+  backdrop-filter: blur(20px) saturate(160%);
+  -webkit-backdrop-filter: blur(20px) saturate(160%);
+  border-top-color: color-mix(in srgb, var(--line) 70%, transparent);
+  box-shadow: 0 -12px 30px -24px rgb(14 20 49 / 0.35);
+}
+.toast {
+  background: rgb(19 25 51 / 0.82);
+  color: #f4f1ea;
+  border: 1px solid rgb(255 255 255 / 0.14);
+  backdrop-filter: blur(16px) saturate(150%);
+  -webkit-backdrop-filter: blur(16px) saturate(150%);
+}
+.sheet-backdrop {
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+}
+.dock {
+  background: linear-gradient(to top, color-mix(in srgb, var(--fog) 85%, transparent) 55%, transparent);
+}
+.reroute {
+  box-shadow: 0 14px 30px -16px rgb(167 125 44 / 0.75), inset 0 1px 0 rgb(255 255 255 / 0.45);
+}
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .bottom-nav {
+    background: color-mix(in srgb, var(--fog) 96%, transparent);
+  }
+  .toast {
+    background: rgb(19 25 51 / 0.96);
+  }
+}
