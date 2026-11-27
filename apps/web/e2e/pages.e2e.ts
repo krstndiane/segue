@@ -667,9 +667,11 @@ test('how it works: Play runs the four steps on its own, the map follows, and an
   await play.focus();
   await page.keyboard.press('Enter');
   await expect(story.getByRole('button', { name: 'Pause' })).toHaveAttribute('aria-pressed', 'true');
+  // The engine revs for a moment, then it rides at once; after that a step every 4.2 s.
+  await expect(story.locator('.lp-smoke.on')).toHaveCount(1);
   for (const [i, title] of STEP_TITLES.entries()) {
     if (i === 0) continue;
-    await page.clock.runFor(5300);
+    await page.clock.runFor(i === 1 ? 900 : 4300);
     await expect(story.locator('.lp-stage h3')).toHaveText(title);
   }
   // It stops at the end, the new route keeps Class where it was, and it can play again.

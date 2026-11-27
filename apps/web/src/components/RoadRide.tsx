@@ -51,7 +51,7 @@ const ease = (u: number) => (u < 0.5 ? 4 * u * u * u : 1 - Math.pow(-2 * u + 2, 
 const PARK = 34;
 const TRAIL = 70;
 
-export function RoadRide({ wrap, step }: { wrap: RefObject<HTMLDivElement | null>; step: number }) {
+export function RoadRide({ wrap, step, engine = false }: { wrap: RefObject<HTMLDivElement | null>; step: number; /** the story is playing: the engine is running, smoke from the exhaust */ engine?: boolean }) {
   const [geo, setGeo] = useState<Geometry | null>(null);
   const measure = useRef<SVGPathElement>(null);
   const road = useRef<SVGPathElement>(null);
@@ -224,6 +224,13 @@ export function RoadRide({ wrap, step }: { wrap: RefObject<HTMLDivElement | null
             <path className="lp-road-lane" d={geo.d} />
             <path ref={trail} className="lp-road-trail" d={geo.d} filter="url(#lp-road-glow)" />
             <g ref={bike} className="lp-bike" data-at="">
+              {/* exhaust puffs behind the bike while the engine runs (the story is playing) */}
+              <g className={engine ? 'lp-smoke on' : 'lp-smoke'}>
+                <circle cx="-20" cy="1.5" r="3.6" />
+                <circle cx="-20" cy="1.5" r="3.6" />
+                <circle cx="-20" cy="1.5" r="3.6" />
+                <circle cx="-20" cy="1.5" r="3.6" />
+              </g>
               {/* the headlight, on the road ahead */}
               <path className="lp-bike-beam" d="M 18 0 L 62 -15 Q 70 0 62 15 Z" fill="url(#lp-headlight)" />
               {/* a small motorcycle seen from above, pointing along the road */}
