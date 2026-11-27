@@ -22,7 +22,7 @@ This follows the 3 November master plan, section 4 ("one path, clear labels; tel
 | | |
 | --- | --- |
 | Category label | **Your route-aware daily planner** |
-| Headline | **Your day has a route. Segue helps you find your way.** |
+| Headline | **Plan didn’t go your way? Let’s Segue!** (second line in road yellow; changed 28 Nov 2026, was “Your day has a route. Segue helps you find your way.”) |
 | Supporting line | "Plan your stops, routines, and commitments in one place. When something changes, Segue helps you find a practical way forward." |
 | Primary action | **Try Segue**, road yellow. It opens the app without a page load. A returning visitor sees **Open Segue** |
 | Secondary | **How it works ↓**, outlined. It scrolls to the one explanation (`#how`) |

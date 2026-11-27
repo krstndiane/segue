@@ -336,7 +336,10 @@ export function Landing() {
         <div className="lp-hero-inner">
           <div className="lp-copy">
             <p className="lp-kicker">Your route-aware daily planner</p>
-            <h1>Your day has a route. Segue helps you find your way.</h1>
+            <h1>
+              <span className="lp-h1-line">Plan didn’t go your way?</span>{' '}
+              <span className="lp-h1-line lp-h1-accent">Let’s Segue!</span>
+            </h1>
             <p className="lp-sub">Plan your stops and commitments in one place. When something changes, Segue suggests another way, and you decide.</p>
             <div className="lp-ctas">
               <MainAction returning={returning} />

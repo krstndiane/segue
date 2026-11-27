@@ -2067,3 +2067,171 @@
     animation: none;
   }
 }
+
+/* ---------- Headline: the question in white, the answer in road yellow ---------- */
+.lp-h1-line {
+  display: block;
+}
+.lp-copy {
+  container-type: inline-size;
+}
+/* the question: one straight line, sized to the column so it never wraps */
+.lp-h1-line {
+  white-space: nowrap;
+  font-size: min(3rem, 7.8cqi);
+  line-height: 1.15;
+  letter-spacing: -0.015em;
+}
+/* the answer: a heavy, wide display face in all caps, yellow, with soft shadows
+   all around it (no direction) so it floats above the sky */
+.lp-h1-accent {
+  margin-top: 0.14em;
+  font-family: 'Montserrat', var(--font);
+  font-size: min(3.9rem, 10.6cqi);
+  font-weight: 900;
+  line-height: 1;
+  letter-spacing: 0.005em;
+  text-transform: uppercase;
+  color: var(--lp-road);
+  text-shadow: none;
+}
+@supports ((-webkit-background-clip: text) or (background-clip: text)) {
+  .lp-h1-accent {
+    width: fit-content;
+    padding: 0.04em 0.06em 0.06em 0;
+    background: linear-gradient(180deg, #ffe48a 0%, #ffd34f 55%, #ffc22e 100%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+    filter: drop-shadow(0 0 0.06em rgb(6 12 36 / 0.55)) drop-shadow(0 0 0.24em rgb(6 12 36 / 0.55)) drop-shadow(0 0 0.55em rgb(6 12 36 / 0.45));
+  }
+}
+/* the top bar, a frosted pill over the sky */
+.lp-nav {
+  margin-top: calc(env(safe-area-inset-top) + 14px);
+  padding: 10px 12px 10px 20px;
+  border: 1px solid var(--glass-edge);
+  border-radius: 999px;
+  background: var(--glass-dark);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  box-shadow: 0 10px 30px -18px rgb(5 10 30 / 0.6), inset 0 1px 0 rgb(255 255 255 / 0.18);
+}
+.lp-nav .lp-logo img {
+  height: 34px;
+}
+/* the secondary hero button, frosted so the yellow one stays the main action */
+.lp-secondary {
+  background: rgb(255 255 255 / 0.14);
+  border-color: rgb(255 255 255 / 0.55);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+}
+.lp-hero-phone .lp-ribbon {
+  border: 1px solid var(--glass-edge);
+  background: var(--glass-dark);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.16);
+}
+/* light sections: soft colour behind, so the glass cards read as glass */
+#tour,
+#privacy {
+  position: relative;
+  isolation: isolate;
+}
+#tour::before,
+#privacy::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background:
+    radial-gradient(40% 50% at 12% 20%, rgb(255 211 110 / 0.28), transparent 70%),
+    radial-gradient(45% 55% at 88% 80%, rgb(120 160 235 / 0.25), transparent 70%);
+  pointer-events: none;
+}
+.lp-tour {
+  gap: 16px;
+}
+.lp-tour > li {
+  padding: 20px;
+  border: 1px solid rgb(255 255 255 / 0.7);
+  border-radius: 20px;
+  background: var(--glass-light);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  box-shadow: 0 18px 40px -28px rgb(27 34 64 / 0.45), inset 0 1px 0 rgb(255 255 255 / 0.8);
+}
+.lp-checks {
+  display: grid;
+  gap: 12px;
+}
+.lp-checks li {
+  padding: 14px 16px 14px 50px;
+  border-radius: 16px;
+  border: 1px solid rgb(255 255 255 / 0.6);
+  background: var(--glass-light);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+}
+.lp-checks li::before {
+  left: 16px;
+  top: 16px;
+}
+.lp-checks li::after {
+  left: 23px;
+  top: 21px;
+}
+.lp-navy .lp-checks li {
+  border-color: rgb(255 255 255 / 0.16);
+  background: rgb(255 255 255 / 0.07);
+}
+/* the closing call to action, on a frosted card */
+.lp-final {
+  position: relative;
+  isolation: isolate;
+}
+.lp-final > * {
+  position: relative;
+}
+.lp-final::before {
+  content: '';
+  position: absolute;
+  z-index: -1;
+  inset: 32px max(var(--lp-gutter), calc(50% - 360px));
+  border: 1px solid rgb(255 255 255 / 0.7);
+  border-radius: 32px;
+  background: var(--glass-light);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  box-shadow: 0 30px 60px -36px rgb(27 34 64 / 0.5);
+}
+.lp-map svg {
+  border-radius: 14px;
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+}
+@media (prefers-color-scheme: dark) {
+  .landing {
+    --glass-light: rgb(30 38 72 / 0.5);
+  }
+  .lp-tour > li,
+  .lp-checks li,
+  .lp-final::before {
+    border-color: rgb(255 255 255 / 0.12);
+    box-shadow: 0 18px 40px -28px rgb(0 0 0 / 0.7), inset 0 1px 0 rgb(255 255 255 / 0.08);
+  }
+}
+/* without backdrop-filter, the same cards with a solid fill */
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .lp-nav,
+  .lp-hero-phone .lp-ribbon {
+    background: rgb(14 20 49 / 0.75);
+  }
+  .lp-tour > li,
+  .lp-checks li,
+  .lp-final::before {
+    background: var(--surface);
+  }
+}
