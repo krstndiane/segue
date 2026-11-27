@@ -21,13 +21,13 @@ import { Timeline } from './Timeline';
 
 type SceneId = 'day' | 'rain' | 'tapOptions' | 'checking' | 'options' | 'tapUse' | 'done';
 const SCENES: { id: SceneId; ms: number; caption: string }[] = [
-  { id: 'day', ms: 3400, caption: 'Your day, planned' },
-  { id: 'rain', ms: 3200, caption: 'Rain on the outdoor workout' },
-  { id: 'tapOptions', ms: 1200, caption: 'See options' },
-  { id: 'checking', ms: 1800, caption: 'Checking what’s open' },
-  { id: 'options', ms: 4000, caption: 'Options that still make Class' },
-  { id: 'tapUse', ms: 1200, caption: 'You pick one' },
-  { id: 'done', ms: 4800, caption: 'Updated. Class didn’t move' },
+  { id: 'day', ms: 1600, caption: 'Your day, planned' },
+  { id: 'rain', ms: 1900, caption: 'Rain on the outdoor workout' },
+  { id: 'tapOptions', ms: 900, caption: 'See options' },
+  { id: 'checking', ms: 1000, caption: 'Checking what’s open' },
+  { id: 'options', ms: 2600, caption: 'Options that still make Class' },
+  { id: 'tapUse', ms: 900, caption: 'You pick one' },
+  { id: 'done', ms: 2800, caption: 'Updated. Class didn’t move' },
 ];
 /** The still frame: the moment that sets up the whole story. */
 const STILL = 1;
