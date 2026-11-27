@@ -42,8 +42,8 @@ const STEPS = ['The plan', 'Something changes', 'Segue finds alternatives', 'You
 
 /** How long each step stays on screen while the story plays on its own. */
 const PLAY_MS = 4200;
-/** The engine starting before the first ride, after Play. */
-const REV_MS = 700;
+/** The engine running (smoke) before the first ride, once the story is on screen. */
+const REV_MS = 1200;
 
 /**
  * How it works, told once: the sample day on Segue's real planner and
@@ -55,44 +55,60 @@ const REV_MS = 700;
 function RouteStory() {
   const [step, setStepState] = useState(0);
   const [visited, setVisited] = useState<number[]>([0]);
-  const [playing, setPlaying] = useState(false);
+  /** You took over (pressed a step or an option): it stops riding on its own until you scroll away and back. */
+  const [tookOver, setTookOver] = useState(false);
+  /** The story is on screen, so it rides on its own. */
+  const [inView, setInView] = useState(false);
+  const [still] = useState(() => typeof window !== 'undefined' && !!window.matchMedia?.('(prefers-reduced-motion: reduce)').matches);
+  const playing = inView && !tookOver && !still;
+  /** The engine revs a moment before the first ride, so it's clear something is starting. */
+  const [revving, setRevving] = useState(true);
+  const section = useRef<HTMLDivElement>(null);
   const go = (i: number) => {
     setStepState(i);
     setVisited((v) => (v.includes(i) ? v : [...v, i]));
   };
   /** Choose a step (a milestone, or a button in the panel): the motorcycle rides there and the panel follows. */
   const setStep = (i: number) => {
-    setPlaying(false);
-    setRevving(false);
+    setTookOver(true);
     go(i);
   };
-  /** Pressing Play revs the engine briefly, then rides at once: nobody waits a whole step to see something happen. */
-  const [revving, setRevving] = useState(false);
+  useEffect(() => {
+    const el = section.current;
+    if (!el || typeof IntersectionObserver === 'undefined') return;
+    const io = new IntersectionObserver(
+      ([e]) => {
+        const on = !!e?.isIntersecting;
+        setInView(on);
+        if (!on) {
+          // Scrolled away: next time it's back, it rides on its own again, engine first.
+          setTookOver(false);
+          setRevving(true);
+        }
+      },
+      { threshold: 0.45 },
+    );
+    io.observe(el);
+    return () => io.disconnect();
+  }, []);
+  // On screen, it rides through the four steps, holds on the last, then starts the day again.
   useEffect(() => {
     if (!playing) return;
-    if (step >= STEPS.length - 1) {
-      setPlaying(false);
-      return;
-    }
-    const t = window.setTimeout(() => {
-      setRevving(false);
-      go(step + 1);
-    }, revving ? REV_MS : PLAY_MS);
+    const last = step >= STEPS.length - 1;
+    const t = window.setTimeout(
+      () => {
+        setRevving(false);
+        if (last) {
+          setPick(0);
+          setVisited([0]);
+          setStepState(0);
+          setRevving(true);
+        } else go(step + 1);
+      },
+      revving ? REV_MS : PLAY_MS,
+    );
     return () => window.clearTimeout(t);
   }, [playing, step, revving]);
-  const play = () => {
-    if (playing) {
-      setRevving(false);
-      return setPlaying(false);
-    }
-    if (step >= STEPS.length - 1) {
-      setPick(0);
-      setVisited([0]);
-      setStepState(0);
-    }
-    setRevving(true);
-    setPlaying(true);
-  };
   const [pick, setPick] = useState(0);
   const roadWrap = useRef<HTMLDivElement>(null);
   const base = useMemo(() => demoStart(), []);
@@ -134,7 +150,7 @@ function RouteStory() {
   );
 
   return (
-    <div className="lp-story">
+    <div className="lp-story" ref={section}>
       <div className="lp-steps-wrap" ref={roadWrap}>
         <RoadRide wrap={roadWrap} step={step} engine={playing} />
         <ol className="lp-steps">
@@ -152,15 +168,9 @@ function RouteStory() {
       </div>
 
       <div className="lp-play-row">
-        <button type="button" className="lp-play" aria-pressed={playing} onClick={play}>
-          <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
-            {playing ? <path d="M4 3h3v10H4zM9 3h3v10H9z" fill="currentColor" /> : <path d="M4.5 2.8v10.4L13 8z" fill="currentColor" />}
-          </svg>
-          {playing ? 'Pause' : step === STEPS.length - 1 ? 'Play again' : 'Play the story'}
-        </button>
         <span className="lp-play-count">
           Step {step + 1} of {STEPS.length}
-          {/* while playing: how long until the bike rides on */}
+          {/* while it rides on its own: how long until the next ride */}
           {playing && (
             <span className="lp-play-bar" aria-hidden="true">
               <i key={`${step}-${revving}`} style={{ animationDuration: `${revving ? REV_MS : PLAY_MS}ms` }} />
@@ -209,7 +219,7 @@ function RouteStory() {
             <div className="lp-sc-pick" role="radiogroup" aria-label="Options Segue found">
               {options.map((x, i) => (
                 <button key={x.id} type="button" role="radio" aria-checked={i === pick} className={i === pick ? 'on' : ''} onClick={() => {
-                    setPlaying(false);
+                    setTookOver(true);
                     setPick(i);
                   }}>
                   <span className="lp-sc-n" aria-hidden="true">
@@ -362,7 +372,7 @@ export function Landing() {
             <div className="lp-in">
               <p className="lp-eyebrow">How it works</p>
               <h2 id="how-title">One day, four steps</h2>
-              <p className="lp-lead">Press play, or go one step at a time.</p>
+              <p className="lp-lead">It rides on its own. Tap any step to take over.</p>
             </div>
             <RouteStory />
           </div>
