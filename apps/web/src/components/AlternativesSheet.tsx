@@ -25,11 +25,19 @@ function FactLine({ fact }: { fact: Fact }) {
 }
 
 /** Realistic options for one item, each checked against the rest of the day. Nothing changes until "Use this". */
-export function AlternativesSheet({ title, busy, error, outcome, onUse, onNotThis, onMaxMinutes, onClose }: Props) {
+export function AlternativesSheet(props: Props) {
+  return (
+    <Sheet title={`Other options for ${props.title}`} onClose={props.onClose}>
+      <AlternativesBody {...props} />
+    </Sheet>
+  );
+}
+
+/** The sheet's contents, also drawn (not interactive) in the landing page's phone. */
+export function AlternativesBody({ busy, error, outcome, onUse, onNotThis, onMaxMinutes, onClose }: Omit<Props, 'title'>) {
   const r = outcome?.result;
   const limit = outcome?.request.maxMinutes;
   return (
-    <Sheet title={`Other options for ${title}`} onClose={onClose}>
       <div className="proposal alternatives" aria-busy={busy}>
         {busy && <RideLoader label="Checking what's open and what fits…" />}
         {error && (
@@ -128,6 +136,5 @@ export function AlternativesSheet({ title, busy, error, outcome, onUse, onNotThi
           </>
         )}
       </div>
-    </Sheet>
   );
 }

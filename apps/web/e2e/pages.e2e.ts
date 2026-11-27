@@ -54,7 +54,7 @@ test('the landing page: a route-aware planner, one main action, and the story to
   // Above the fold: what it is, what it does, and one obvious way in.
   await expect(page.getByRole('heading', { level: 1 })).toHaveText('Your day has a route. Segue helps you find your way.');
   await expect(page.locator('.lp-kicker')).toHaveText('Your route-aware daily planner');
-  await expect(page.locator('.lp-sub')).toContainText('Plan your stops, routines, and commitments in one place.');
+  await expect(page.locator('.lp-sub')).toContainText('Plan your stops and commitments in one place.');
   const hero = page.locator('.lp-hero');
   for (const name of ['Try Segue', 'How it works']) {
     const box = (await hero.locator('.lp-copy').getByRole('link', { name }).boundingBox())!;
@@ -67,7 +67,7 @@ test('the landing page: a route-aware planner, one main action, and the story to
   await expect(page.locator('.lp-ribbon')).toContainText('Ayala Triangle Gardens');
   await expect(page.locator('.lp-ribbon')).toContainText('3:30 PM · fixed');
   await expect(page.locator('.lp-preview')).toContainText('Outdoor workout');
-  await expect(page.locator('.lp-preview figcaption')).toHaveText('Segue’s Today screen, on a sample day');
+  await expect(page.locator('.lp-hero-phone figcaption')).toContainText('Segue’s Today screen on a sample day');
   // The five tabs, by the names the app uses.
   for (const name of ['Today', 'Plan', 'Calendar', 'Routines', 'Together']) await expect(page.locator('.lp-tour h3', { hasText: new RegExp(`^${name}$`) })).toBeVisible();
 
@@ -92,7 +92,7 @@ test('the landing page: a route-aware planner, one main action, and the story to
   await story.getByRole('button', { name: 'Use this' }).click();
   await expect(story.locator('.lp-stage h3')).toHaveText('You decide');
   await expect(story).toContainText('Class stays at 3:30 PM');
-  await expect(story).toContainText('sample weather and real places from an OpenStreetMap snapshot');
+  await expect(story).toContainText('Sample weather, real places from OpenStreetMap');
   // Start over goes back to the plan.
   await story.getByRole('button', { name: 'Start over' }).click();
   await expect(story.locator('.lp-steps [aria-current="step"]')).toContainText('The plan');
@@ -699,4 +699,46 @@ test('re-route when nothing needs to change: one button, and the plan stays as i
   await sheet.getByRole('button', { name: 'Keep my plan' }).click();
   await expect(sheet).toHaveCount(0);
   await expect(page.locator('main')).toContainText('Lunch');
+});
+
+test('the hero phone plays the story on Segue’s own screens, pauses, and the main action stays clear', async ({ page }) => {
+  test.setTimeout(60_000);
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await page.goto('/');
+  const phone = page.locator('.lp-hero-phone');
+  const step = phone.locator('.lp-phone-step');
+  await expect(step).toContainText('1/7');
+  await expect(phone.locator('.lp-phone .next')).toContainText('Outdoor workout');
+  // Rain and the notice, then the real alternatives sheet, then the updated day; real time, about 20 s a loop.
+  await expect(step).toContainText('Rain on the outdoor workout', { timeout: 6000 });
+  await expect(phone.locator('.nudge')).toContainText("It's raining, and Outdoor workout is outdoors");
+  await expect(phone.locator('.lp-phone-sheet.open .alt-option').first()).toContainText(/Leaves \d+ min before Class at 3:30 PM/, { timeout: 9000 });
+  await expect(step).toContainText('Class didn’t move', { timeout: 9000 });
+  await expect(phone.locator('.lp-phone .next')).toContainText('Indoor walk');
+  await expect(phone.locator('.lp-ribbon')).toContainText('3:30 PM · fixed');
+  // It loops back to the planned day.
+  await expect(step).toContainText('1/7', { timeout: 7000 });
+  // Pause is a real, labelled button that works from the keyboard.
+  await phone.getByRole('button', { name: 'Pause the phone animation' }).focus();
+  await page.keyboard.press('Enter');
+  await expect(phone.getByRole('button', { name: 'Play the phone animation' })).toHaveAttribute('aria-pressed', 'false');
+  const held = await step.textContent();
+  await page.waitForTimeout(4000);
+  expect(await step.textContent()).toBe(held);
+  await expect(page.locator('.lp-hero .lp-copy').getByRole('link', { name: 'Try Segue' })).toBeVisible();
+  // Nothing on the phone itself can be pressed or focused.
+  await expect(phone.locator('.lp-phone')).toHaveAttribute('inert', '');
+});
+
+test('the hero phone with reduced motion: a still frame of the rain, and Play steps through without moving', async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await page.clock.install();
+  await page.goto('/');
+  const phone = page.locator('.lp-hero-phone');
+  await expect(phone.locator('.lp-phone-step')).toContainText('2/7');
+  await page.clock.runFor(10_000);
+  await expect(phone.locator('.lp-phone-step')).toContainText('2/7');
+  await phone.getByRole('button', { name: 'Play the phone animation' }).click();
+  await page.clock.runFor(3300);
+  await expect(phone.locator('.lp-phone-step')).toContainText('3/7');
 });

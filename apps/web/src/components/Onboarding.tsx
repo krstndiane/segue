@@ -152,7 +152,7 @@ export function Onboarding(props: Props) {
             </button>
           </div>
           <p className="muted small center">
-            Want to see Segue handle a busy day first? <a href="/demo">Watch a sample day</a> (it doesn&apos;t touch your plans).
+            Not ready? <a href="/demo">Watch a sample day</a>. It won&apos;t touch your plans.
           </p>
         </section>
       )}
