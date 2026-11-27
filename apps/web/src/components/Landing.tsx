@@ -41,7 +41,7 @@ const PRIVACY = [
 const STEPS = ['The plan', 'Something changes', 'Segue finds alternatives', 'You decide'] as const;
 
 /** How long each step stays on screen while the story plays on its own. */
-const PLAY_MS = 5200;
+const PLAY_MS = 4200;
 
 /**
  * How it works, told once: the sample day on Segue's real planner and
@@ -262,29 +262,6 @@ function MainAction({ returning, className = 'lp-primary' }: { returning: boolea
 }
 
 /** Problems come in one at a time as they scroll into view (all at once with reduced motion). */
-function useReveal() {
-  useEffect(() => {
-    const els = document.querySelectorAll('.lp-reveal');
-    if (!('IntersectionObserver' in window)) {
-      els.forEach((el) => el.classList.add('in'));
-      return;
-    }
-    const io = new IntersectionObserver(
-      (entries) => {
-        for (const e of entries) {
-          if (e.isIntersecting) {
-            e.target.classList.add('in');
-            io.unobserve(e.target);
-          }
-        }
-      },
-      { threshold: 0.25 },
-    );
-    els.forEach((el) => io.observe(el));
-    return () => io.disconnect();
-  }, []);
-}
-
 const CONTACT_EMAIL = 'pdyntechnology@gmail.com';
 
 /** PDYN Technologies: the studio behind Segue. The tile takes the text colour, so it works on light and dark. */
@@ -305,7 +282,6 @@ function PdynLockup() {
 
 export function Landing() {
   const [returning, setReturning] = useState(false);
-  useReveal();
 
   useEffect(() => {
     void loadAccount().then((a) => setReturning((r) => r || !!a));
@@ -349,11 +325,13 @@ export function Landing() {
       <main>
         <section className="lp-band lp-cream">
           <div className="lp-section lp-problem" aria-labelledby="problem-title">
-            <p className="lp-eyebrow">The problem</p>
-            <h2 id="problem-title">You planned your day. Then the day happened.</h2>
+            <div className="lp-in">
+              <p className="lp-eyebrow">The problem</p>
+              <h2 id="problem-title">You planned your day. Then the day happened.</h2>
+            </div>
             <ul className="lp-problems">
               {PROBLEMS.map(([a, b], i) => (
-                <li key={a} className="lp-reveal" style={{ transitionDelay: `${i * 140}ms` }}>
+                <li key={a} className={i ? 'lp-in lp-in-late' : 'lp-in'}>
                   <strong>{a}</strong> {b}
                 </li>
               ))}
@@ -363,20 +341,24 @@ export function Landing() {
 
         <section id="how" className="lp-band lp-howband" aria-labelledby="how-title">
           <div className="lp-section">
-            <p className="lp-eyebrow">How it works</p>
-            <h2 id="how-title">One day, four steps</h2>
-            <p className="lp-lead">Press play, or go one step at a time.</p>
+            <div className="lp-in">
+              <p className="lp-eyebrow">How it works</p>
+              <h2 id="how-title">One day, four steps</h2>
+              <p className="lp-lead">Press play, or go one step at a time.</p>
+            </div>
             <RouteStory />
           </div>
         </section>
 
         <section id="tour" className="lp-band" aria-labelledby="tour-title">
           <div className="lp-section">
-            <p className="lp-eyebrow">Inside Segue</p>
-            <h2 id="tour-title">Five places, one day</h2>
+            <div className="lp-in">
+              <p className="lp-eyebrow">Inside Segue</p>
+              <h2 id="tour-title">Five places, one day</h2>
+            </div>
             <ul className="lp-tour">
-              {TOUR.map((t) => (
-                <li key={t.tab}>
+              {TOUR.map((t, i) => (
+                <li key={t.tab} className={i % 3 ? 'lp-in lp-in-late' : 'lp-in'}>
                   <span className="lp-tour-icon" aria-hidden="true">
                     <svg viewBox="0 0 24 24" width="24" height="24">
                       {NAV_ICONS[t.tab]}
@@ -394,11 +376,11 @@ export function Landing() {
 
         <section id="together" className="lp-band lp-navy" aria-labelledby="together-title">
           <div className="lp-section lp-split">
-            <div>
+            <div className="lp-in">
               <p className="lp-eyebrow">Plan together</p>
               <h2 id="together-title">Make time for the people and places that matter</h2>
             </div>
-            <ul className="lp-checks">
+            <ul className="lp-checks lp-in lp-in-late">
               {TOGETHER_POINTS.map((p) => (
                 <li key={p}>{p}</li>
               ))}
@@ -408,11 +390,11 @@ export function Landing() {
 
         <section id="privacy" className="lp-band" aria-labelledby="privacy-title">
           <div className="lp-section lp-split">
-            <div>
+            <div className="lp-in">
               <p className="lp-eyebrow">Privacy</p>
               <h2 id="privacy-title">Your day stays yours</h2>
             </div>
-            <ul className="lp-checks">
+            <ul className="lp-checks lp-in lp-in-late">
               {PRIVACY.map((p) => (
                 <li key={p}>{p}</li>
               ))}
@@ -423,7 +405,7 @@ export function Landing() {
           </div>
         </section>
 
-        <section className="lp-final" aria-labelledby="final-title">
+        <section className="lp-final lp-in" aria-labelledby="final-title">
           <img src="/icon.svg" alt="" width="88" height="88" />
           <h2 id="final-title">Start planning your day</h2>
           <div className="lp-ctas">

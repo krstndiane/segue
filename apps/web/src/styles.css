@@ -10,6 +10,16 @@
   --brass-ink: #1b2240;
   --brass-soft: #f4e6c4;
   --patina: #2f6f6a;
+  /* Motion language, shared by the app and the landing page.
+     fast: presses and toggles · base: state changes · slow: things arriving.
+     out: arrivals; inout: things moving from one place to another. */
+  --m-fast: 140ms;
+  --m-base: 260ms;
+  --m-slow: 480ms;
+  --m-ease-out: cubic-bezier(0.2, 0.7, 0.2, 1);
+  --m-ease-inout: cubic-bezier(0.4, 0, 0.2, 1);
+  --m-rise: 12px;
+  --m-stagger: 90ms;
   --warn: #9a5b12;
   --danger: #a33a3a;
   --focus: #3b5bdb;
@@ -4172,4 +4182,44 @@ details.more[open] {
 .auth-or {
   text-align: center;
   margin: 4px 0 0;
+}
+
+
+/* ---------- Motion: one language for presses, arrivals and changes ---------- */
+@media (prefers-reduced-motion: no-preference) {
+  /* A tab change: the new section rises in, quickly, the same way every time. */
+  .route-view {
+    animation: m-rise var(--m-base) var(--m-ease-out) both;
+  }
+  /* Presses: a small give under the finger, so a tap is felt even before anything else changes. */
+  button:not(:disabled),
+  a.primary,
+  a.ghost {
+    transition: transform var(--m-fast) var(--m-ease-out), background-color var(--m-base) var(--m-ease-inout), color var(--m-base) var(--m-ease-inout), box-shadow var(--m-base) var(--m-ease-inout);
+  }
+  button:not(:disabled):active,
+  a.primary:active,
+  a.ghost:active {
+    transform: scale(0.97);
+  }
+  /* Feedback that something happened: the toast and the sheets arrive on the same curve. */
+  .toast {
+    animation: m-pop var(--m-base) var(--m-ease-out) both;
+  }
+  .sheet {
+    animation-duration: var(--m-base);
+    animation-timing-function: var(--m-ease-out);
+  }
+}
+@keyframes m-rise {
+  from {
+    opacity: 0;
+    transform: translateY(var(--m-rise));
+  }
+}
+@keyframes m-pop {
+  from {
+    opacity: 0;
+    translate: 0 -8px;
+  }
 }

@@ -707,9 +707,9 @@ test('the hero phone plays the story on Segue’s own screens, pauses, and the m
   await page.goto('/');
   const phone = page.locator('.lp-hero-phone');
   const step = phone.locator('.lp-phone-step');
-  await expect(step).toContainText('1/7');
+  // It starts right away, on the planned day.
   await expect(phone.locator('.lp-phone .next')).toContainText('Outdoor workout');
-  // Rain and the notice, then the real alternatives sheet, then the updated day; real time, about 20 s a loop.
+  // Rain and the notice, then the real alternatives sheet, then the updated day; real time, about 12 s a loop.
   await expect(step).toContainText('Rain on the outdoor workout', { timeout: 6000 });
   await expect(phone.locator('.nudge')).toContainText("It's raining, and Outdoor workout is outdoors");
   await expect(phone.locator('.lp-phone-sheet.open .alt-option').first()).toContainText(/Leaves \d+ min before Class at 3:30 PM/, { timeout: 9000 });
@@ -739,6 +739,6 @@ test('the hero phone with reduced motion: a still frame of the rain, and Play st
   await page.clock.runFor(10_000);
   await expect(phone.locator('.lp-phone-step')).toContainText('2/7');
   await phone.getByRole('button', { name: 'Play the phone animation' }).click();
-  await page.clock.runFor(3300);
+  await page.clock.runFor(2100);
   await expect(phone.locator('.lp-phone-step')).toContainText('3/7');
 });

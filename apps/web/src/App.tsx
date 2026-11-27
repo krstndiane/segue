@@ -961,7 +961,8 @@ export function App() {
       {header}
       <div className="app">
         <LocationBanner banner={banner} />
-        <main>
+        {/* Keyed by route: each section arrives with the same short rise, so a tab change reads as a move. */}
+        <main key={route} className="route-view">
           {route === 'today' && me.state === 'ready' && (
             <TogetherCard
               together={together}
