@@ -125,7 +125,7 @@ test.describe('where the sky is', () => {
     await page.clock.setFixedTime(new Date('2026-10-20T10:00:00+08:00'));
     await page.goto('/app?sky=clear');
     // first-run setup says why, and the browser asks without a tap
-    await expect(page.locator('.ob-card')).toContainText('Segue uses where you are to match the sky and plan your day.');
+    await expect(page.locator('.ob-card')).toContainText('Used to match the sky and plan your day.');
     await expect(page.locator('.ob-card')).toContainText("Allow location to match your sky. Open your browser's site settings, then reload.");
     expect(await page.evaluate(() => (window as unknown as { __asked: number }).__asked)).toBeGreaterThan(0);
     await page.getByRole('button', { name: /^Next/ }).click();

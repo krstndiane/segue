@@ -23,7 +23,7 @@ export interface LocationBannerCopy {
 
 /** Shown just before the browser asks, and in first-run setup. */
 export const LOCATION_WHY =
-  'Segue uses where you are to match the sky and plan your day. Your exact position stays on this phone. Only a rough area, about 1 km, is used to look up the weather.';
+  'Used to match the sky and plan your day. Your exact position stays on this phone; only a rough area (about 1 km) is used for the weather.';
 export const LOCATION_BLOCKED = "Allow location to match your sky. Open your browser's site settings, then reload.";
 export const LOCATION_UNSUPPORTED = "This browser can't share your location, so the sky follows your time zone.";
 export const LOCATION_UNAVAILABLE = "Can't find you right now. Segue will keep trying.";

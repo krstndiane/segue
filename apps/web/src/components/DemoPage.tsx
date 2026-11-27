@@ -273,16 +273,15 @@ function Guide(p: GuideProps) {
       <section className="demo-card">
         <p className="demo-eyebrow">Sample day · it's {clock(state.now.toISOString())}</p>
         <h1>This is a planned day in Segue</h1>
-        <p>Two things are done. Next is an outdoor workout at 2:00 PM, then Class at 3:30 PM.</p>
+        <p>Next: an outdoor workout at 2:00 PM, then Class at 3:30 PM.</p>
         <ul className="demo-legend">
           <li>
-            <span className="tag">Calendar</span> <span className="tag">Set time</span> Commitments. Segue plans around them and never moves them.
+            <span className="tag">Calendar</span> <span className="tag">Set time</span> Commitments. They never move.
           </li>
           <li>
-            <span className="demo-flex">Flexible</span> Everything else. Segue can suggest a better time or place when things change.
+            <span className="demo-flex">Flexible</span> Everything else. Segue can suggest another time or place.
           </li>
         </ul>
-        <p className="muted small">The timeline is Segue’s real Today screen. Try ✓ to mark something done, or Skip on the next item.</p>
         <div className="row-actions">
           <button type="button" className="primary" onClick={p.onRain} disabled={state.raining}>
             {state.raining ? 'It’s already raining' : 'Make it rain'}
@@ -293,7 +292,7 @@ function Guide(p: GuideProps) {
             </button>
           )}
         </div>
-        <p className="muted small">Starts a sample rain scenario. Real Segue uses your live forecast.</p>
+        <p className="muted small">Sample weather. In the app, Segue uses your live forecast.</p>
       </section>
     );
   }

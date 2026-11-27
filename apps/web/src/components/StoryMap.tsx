@@ -138,7 +138,7 @@ export function StoryMap({ step, home, planned, fixed, options, chosen, chosenAt
           </text>
         </g>
       </svg>
-      <figcaption>To scale. Straight lines between stops, not streets.</figcaption>
+      <figcaption>To scale · straight lines, not streets</figcaption>
     </figure>
   );
 }
