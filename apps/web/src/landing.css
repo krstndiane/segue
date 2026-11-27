@@ -2082,20 +2082,28 @@
   line-height: 1.15;
   letter-spacing: -0.015em;
 }
-/* the answer: bigger, road yellow, lifted off the sky */
+/* the answer: all caps, a warm gold fill with a light top edge, a crisp navy
+   offset shadow and a soft lift underneath, like a display title */
 .lp-h1-accent {
-  margin-top: 0.08em;
-  font-size: min(4.4rem, 12.5cqi);
-  line-height: 1.05;
-  letter-spacing: -0.02em;
+  margin-top: 0.12em;
+  font-size: min(4.6rem, 12cqi);
+  font-weight: 800;
+  line-height: 1;
+  letter-spacing: 0.01em;
+  text-transform: uppercase;
   color: var(--lp-road);
-  text-shadow:
-    0 1px 0 #e9b84f,
-    0 2px 0 #d9a53c,
-    0 3px 0 #c4912f,
-    0 6px 8px rgb(8 14 40 / 0.35),
-    0 14px 28px rgb(8 14 40 / 0.45),
-    0 0 40px rgb(255 211 110 / 0.3);
+  text-shadow: none;
+}
+@supports ((-webkit-background-clip: text) or (background-clip: text)) {
+  .lp-h1-accent {
+    width: fit-content;
+    padding: 0 0.08em 0.06em 0;
+    background: linear-gradient(180deg, #fff6d2 0%, #ffe08a 30%, #ffcc4d 62%, #f2a93b 100%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+    filter: drop-shadow(0.045em 0.05em 0 #0e1431) drop-shadow(0 0.14em 0.2em rgb(5 10 30 / 0.45));
+  }
 }
 
 /* ---------- Glass: frosted surfaces where something floats over the sky or a colour field ---------- */
