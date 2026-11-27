@@ -2082,14 +2082,15 @@
   line-height: 1.15;
   letter-spacing: -0.015em;
 }
-/* the answer: all caps, a warm gold fill with a light top edge, a crisp navy
-   offset shadow and a soft lift underneath, like a display title */
+/* the answer: a heavy, wide display face in all caps, yellow, with soft shadows
+   all around it (no direction) so it floats above the sky */
 .lp-h1-accent {
-  margin-top: 0.12em;
-  font-size: min(4.6rem, 12cqi);
-  font-weight: 800;
+  margin-top: 0.14em;
+  font-family: 'Montserrat', var(--font);
+  font-size: min(3.9rem, 10.6cqi);
+  font-weight: 900;
   line-height: 1;
-  letter-spacing: 0.01em;
+  letter-spacing: 0.005em;
   text-transform: uppercase;
   color: var(--lp-road);
   text-shadow: none;
@@ -2097,21 +2098,13 @@
 @supports ((-webkit-background-clip: text) or (background-clip: text)) {
   .lp-h1-accent {
     width: fit-content;
-    padding: 0 0.08em 0.06em 0;
-    background: linear-gradient(180deg, #fff6d2 0%, #ffe08a 30%, #ffcc4d 62%, #f2a93b 100%);
+    padding: 0.04em 0.06em 0.06em 0;
+    background: linear-gradient(180deg, #ffe48a 0%, #ffd34f 55%, #ffc22e 100%);
     -webkit-background-clip: text;
     background-clip: text;
     color: transparent;
-    filter: drop-shadow(0.045em 0.05em 0 #0e1431) drop-shadow(0 0.14em 0.2em rgb(5 10 30 / 0.45));
+    filter: drop-shadow(0 0 0.06em rgb(6 12 36 / 0.55)) drop-shadow(0 0 0.24em rgb(6 12 36 / 0.55)) drop-shadow(0 0 0.55em rgb(6 12 36 / 0.45));
   }
-}
-
-/* ---------- Glass: frosted surfaces where something floats over the sky or a colour field ---------- */
-.landing {
-  --glass-dark: rgb(14 20 49 / 0.32);
-  --glass-light: rgb(255 255 255 / 0.55);
-  --glass-edge: rgb(255 255 255 / 0.28);
-  --glass-blur: blur(18px) saturate(150%);
 }
 /* the top bar, a frosted pill over the sky */
 .lp-nav {
