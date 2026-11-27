@@ -1990,3 +1990,80 @@
   background: rgb(255 255 255 / 0.75);
   pointer-events: none;
 }
+
+/* ---------- The engine: Play starts it, and you can see it ---------- */
+.lp-smoke circle {
+  fill: #eef2fb;
+  opacity: 0;
+  transform-box: fill-box;
+  transform-origin: center;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .lp-smoke.on circle {
+    animation: lp-puff 0.9s ease-out infinite;
+  }
+  .lp-smoke.on circle:nth-child(2) {
+    animation-delay: 0.22s;
+  }
+  .lp-smoke.on circle:nth-child(3) {
+    animation-delay: 0.45s;
+  }
+  .lp-smoke.on circle:nth-child(4) {
+    animation-delay: 0.67s;
+  }
+  /* a little shake while it idles, like an engine running */
+  .lp-steps-wrap:has(.lp-smoke.on):not(.riding) .lp-bike > g:not(.lp-smoke),
+  .lp-steps-wrap:has(.lp-smoke.on):not(.riding) .lp-bike > ellipse,
+  .lp-steps-wrap:has(.lp-smoke.on):not(.riding) .lp-bike > circle {
+    animation: lp-idle 0.12s linear infinite alternate;
+  }
+}
+@keyframes lp-puff {
+  0% {
+    opacity: 0.95;
+    transform: translate(0, 0) scale(0.7);
+  }
+  60% {
+    opacity: 0.55;
+  }
+  100% {
+    opacity: 0;
+    transform: translate(-26px, 4px) scale(3);
+  }
+}
+@keyframes lp-idle {
+  to {
+    transform: translateY(0.45px);
+  }
+}
+/* how long until the next ride, under "Step 2 of 4" */
+.lp-play-count {
+  display: inline-flex;
+  flex-direction: column;
+  gap: 5px;
+}
+.lp-play-bar {
+  display: block;
+  width: 84px;
+  height: 3px;
+  border-radius: 3px;
+  overflow: hidden;
+  background: rgb(255 255 255 / 0.18);
+}
+.lp-play-bar i {
+  display: block;
+  height: 100%;
+  background: var(--lp-road);
+  transform-origin: left center;
+  animation: lp-fill linear both;
+}
+@keyframes lp-fill {
+  from {
+    transform: scaleX(0);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .lp-play-bar i {
+    animation: none;
+  }
+}

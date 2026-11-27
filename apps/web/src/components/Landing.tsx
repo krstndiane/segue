@@ -42,6 +42,8 @@ const STEPS = ['The plan', 'Something changes', 'Segue finds alternatives', 'You
 
 /** How long each step stays on screen while the story plays on its own. */
 const PLAY_MS = 4200;
+/** The engine starting before the first ride, after Play. */
+const REV_MS = 700;
 
 /**
  * How it works, told once: the sample day on Segue's real planner and
@@ -61,24 +63,34 @@ function RouteStory() {
   /** Choose a step (a milestone, or a button in the panel): the motorcycle rides there and the panel follows. */
   const setStep = (i: number) => {
     setPlaying(false);
+    setRevving(false);
     go(i);
   };
+  /** Pressing Play revs the engine briefly, then rides at once: nobody waits a whole step to see something happen. */
+  const [revving, setRevving] = useState(false);
   useEffect(() => {
     if (!playing) return;
     if (step >= STEPS.length - 1) {
       setPlaying(false);
       return;
     }
-    const t = window.setTimeout(() => go(step + 1), PLAY_MS);
+    const t = window.setTimeout(() => {
+      setRevving(false);
+      go(step + 1);
+    }, revving ? REV_MS : PLAY_MS);
     return () => window.clearTimeout(t);
-  }, [playing, step]);
+  }, [playing, step, revving]);
   const play = () => {
-    if (playing) return setPlaying(false);
+    if (playing) {
+      setRevving(false);
+      return setPlaying(false);
+    }
     if (step >= STEPS.length - 1) {
       setPick(0);
       setVisited([0]);
       setStepState(0);
     }
+    setRevving(true);
     setPlaying(true);
   };
   const [pick, setPick] = useState(0);
@@ -124,7 +136,7 @@ function RouteStory() {
   return (
     <div className="lp-story">
       <div className="lp-steps-wrap" ref={roadWrap}>
-        <RoadRide wrap={roadWrap} step={step} />
+        <RoadRide wrap={roadWrap} step={step} engine={playing} />
         <ol className="lp-steps">
           {STEPS.map((label, i) => (
             <li key={label} aria-current={i === step ? 'step' : undefined} className={i === step ? 'on' : visited.includes(i) ? 'visited' : ''}>
@@ -148,6 +160,12 @@ function RouteStory() {
         </button>
         <span className="lp-play-count">
           Step {step + 1} of {STEPS.length}
+          {/* while playing: how long until the bike rides on */}
+          {playing && (
+            <span className="lp-play-bar" aria-hidden="true">
+              <i key={`${step}-${revving}`} style={{ animationDuration: `${revving ? REV_MS : PLAY_MS}ms` }} />
+            </span>
+          )}
         </span>
       </div>
 
