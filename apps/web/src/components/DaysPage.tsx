@@ -382,7 +382,7 @@ export function DaysPage(props: Props) {
                 Open today
               </button>
               <button type="button" className="ghost" onClick={props.onPlanToday}>
-                {day.plan ? 'Re-plan my day' : 'Plan my day'}
+                {day.plan ? 'Open in Plan' : 'Plan my day'}
               </button>
             </div>
           </>

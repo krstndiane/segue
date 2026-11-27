@@ -67,7 +67,7 @@ test('something came up keeps the next hour free', async ({ page }) => {
   await onboard(page, ['Call mom 20 min', 'Lunch 12:30']);
   await page.getByRole('button', { name: 'Re-route from here' }).click();
   const sheet = page.getByRole('dialog', { name: 'Re-route from here' });
-  await expect(sheet.getByRole('button', { name: 'Use this plan' })).toBeVisible();
+  await expect(sheet.locator('.preview')).toBeVisible();
   await sheet.getByRole('button', { name: 'Something came up' }).click();
   await expect(sheet.locator('.preview')).toContainText('Something came up');
   await sheet.getByRole('button', { name: 'Use this plan' }).click();
@@ -78,7 +78,7 @@ test('moving an item pins it at the new time', async ({ page }) => {
   await onboard(page, ['Lunch 12:30', 'Read 30 min after 2pm']);
   await page.locator('.tl-card', { hasText: 'Read' }).click();
   const sheet = page.getByRole('dialog', { name: 'Read' });
-  await expect(sheet.getByText('Why this?')).toBeVisible();
+  await expect(sheet.locator('#move-time')).toBeVisible();
   await sheet.locator('#move-time').fill('16:00');
   await sheet.getByRole('button', { name: 'Move here' }).click();
   const row = page.locator('.tl-card', { hasText: 'Read' });

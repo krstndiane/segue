@@ -66,6 +66,7 @@ export function ItemSheet(props: Props) {
   const [time, setTime] = useState(hhmm(item.start));
   const directions = directionsUrl(item);
   const movable = !item.fixed && !isCalendarBlock(item.blockId);
+  const why = reasons(item, block, locked, mode);
 
   return (
     <Sheet title={item.title} onClose={props.onClose}>
@@ -74,18 +75,30 @@ export function ItemSheet(props: Props) {
           {clock(item.start)}–{clock(item.end)} · {duration(minutesBetween(item.start, item.end))}
         </p>
         <p className="item-where">
-          {item.place?.name ?? event?.location ?? (item.explanation && !item.place ? item.explanation : 'Anywhere')}
+          {/* Without a place, the reason goes under "Why this?" only, so it isn't said twice. */}
+          {item.place?.name ?? event?.location ?? 'Anywhere'}
           {item.place?.address && <span className="muted"> · {item.place.address}</span>}
         </p>
 
-        <section>
-          <h3 className="section-title">Why this?</h3>
-          <ul className="why-list">
-            {reasons(item, block, locked, mode).map((r) => (
-              <li key={r}>{r}</li>
-            ))}
-          </ul>
-        </section>
+        {why.length > 0 && (
+          <section>
+            <h3 className="section-title">Why this?</h3>
+            <ul className="why-list">
+              {why.map((r) => (
+                <li key={r}>{r}</li>
+              ))}
+            </ul>
+          </section>
+        )}
+
+        {movable && props.onOptions && (
+          <section className="item-options">
+            <h3 className="section-title">Closed, raining or short on time?</h3>
+            <button type="button" className="ghost tall" onClick={props.onOptions}>
+              See other options
+            </button>
+          </section>
+        )}
 
         {movable && (
           <section>
@@ -117,14 +130,6 @@ export function ItemSheet(props: Props) {
               ))}
             </ul>
           </section>
-        )}
-
-        {movable && props.onOptions && (
-          <p className="item-options">
-            <button type="button" className="text-button" onClick={props.onOptions}>
-              Closed, raining or short on time? See other options
-            </button>
-          </p>
         )}
 
         <div className="row-actions">

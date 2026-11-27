@@ -57,7 +57,12 @@ export function RoutinesView({
   const routines = blocks.filter((b) => !b.date);
   return (
     <>
-      <p className="muted intro">Routines repeat on the days you choose. Switch one off to pause it; switch it back on to resume. Segue finds the time and place each day.</p>
+      <header className="page-head plain routines-head">
+        <div>
+          <h2 className="page-title">Routines</h2>
+          <p className="muted">Things you do on certain days. Segue finds the time and place each day. Switch one off to pause it.</p>
+        </div>
+      </header>
       {learning}
       {oneOffs.length > 0 && (
         <section aria-label="Today only">

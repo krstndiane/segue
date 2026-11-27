@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useRef, useState, type MouseEvent } from 'react';
 import { loadAccount } from '../lib/account';
 import { getSession } from '../lib/auth';
-import { DEMO_IDS, demoOptions, demoStart } from '../lib/demo';
+import { DEMO_HOME, DEMO_IDS, demoOptions, demoStart } from '../lib/demo';
 import { clock } from '../lib/format';
 import { enterApp } from '../lib/router';
 import { NAV_ICONS, NAV_LABELS, type NavTab } from './BottomNav';
 import { RoadRide } from './RoadRide';
+import { StoryMap, type StoryOption } from './StoryMap';
 import { Sky, sceneFor } from './Sky';
 import { Timeline } from './Timeline';
 import '../landing.css';
@@ -100,30 +101,61 @@ function TodayPreview() {
 
 const STEPS = ['The plan', 'Something changes', 'Segue finds alternatives', 'You decide'] as const;
 
+/** How long each step stays on screen while the story plays on its own. */
+const PLAY_MS = 5200;
+
 /**
  * How it works, told once: the sample day on Segue's real planner and
  * alternatives engine, one step and one action at a time. Any of the four
  * steps can be chosen, in any order; the motorcycle rides to the one chosen.
+ * Play runs the same four steps on its own; any press of a step or an action
+ * hands control back.
  */
 function RouteStory() {
   const [step, setStepState] = useState(0);
   const [visited, setVisited] = useState<number[]>([0]);
-  /** Choose a step (a milestone, or a button in the panel): the motorcycle rides there and the panel follows. */
-  const setStep = (i: number) => {
+  const [playing, setPlaying] = useState(false);
+  const go = (i: number) => {
     setStepState(i);
     setVisited((v) => (v.includes(i) ? v : [...v, i]));
+  };
+  /** Choose a step (a milestone, or a button in the panel): the motorcycle rides there and the panel follows. */
+  const setStep = (i: number) => {
+    setPlaying(false);
+    go(i);
+  };
+  useEffect(() => {
+    if (!playing) return;
+    if (step >= STEPS.length - 1) {
+      setPlaying(false);
+      return;
+    }
+    const t = window.setTimeout(() => go(step + 1), PLAY_MS);
+    return () => window.clearTimeout(t);
+  }, [playing, step]);
+  const play = () => {
+    if (playing) return setPlaying(false);
+    if (step >= STEPS.length - 1) {
+      setPick(0);
+      setVisited([0]);
+      setStepState(0);
+    }
+    setPlaying(true);
   };
   const [pick, setPick] = useState(0);
   const roadWrap = useRef<HTMLDivElement>(null);
   const base = useMemo(() => demoStart(), []);
-  const result = useMemo(() => (step >= 1 ? demoOptions({ ...base, raining: true }) : null), [step >= 1, base]); // eslint-disable-line react-hooks/exhaustive-deps
-  const options = result?.options.filter((o) => o.kind !== 'later').slice(0, 3) ?? [];
+  // Worked out once, so the map can fit every stop from the first step and never jumps.
+  const result = useMemo(() => demoOptions({ ...base, raining: true }), [base]);
+  const options = result.options.filter((o) => o.kind !== 'later').slice(0, 3);
   const o = options[Math.min(pick, options.length - 1)];
   const items = base.day.plan!.items;
   const workout = items.find((i) => i.blockId === DEMO_IDS.workout)!;
   const cls = items.find((i) => i.blockId === DEMO_IDS.class)!;
   const later = items.find((i) => i.blockId === DEMO_IDS.personal)!;
   const short = (label: string) => label.replace(/ instead$/, '');
+  const mapOptions: StoryOption[] = options.flatMap((x, i) => (x.place ? [{ id: x.id, n: i + 1, label: x.place.name, at: x.place.location }] : []));
+  const classAt = base.blocks.find((b) => b.id === DEMO_IDS.class)?.fixed?.location ?? DEMO_HOME;
 
   const route = (changed: boolean) => (
     <ol className="lp-sc-list">
@@ -168,11 +200,33 @@ function RouteStory() {
         </ol>
       </div>
 
+      <div className="lp-play-row">
+        <button type="button" className="lp-play" aria-pressed={playing} onClick={play}>
+          <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
+            {playing ? <path d="M4 3h3v10H4zM9 3h3v10H9z" fill="currentColor" /> : <path d="M4.5 2.8v10.4L13 8z" fill="currentColor" />}
+          </svg>
+          {playing ? 'Pause' : step === STEPS.length - 1 ? 'Play again' : 'Play the story'}
+        </button>
+        <span className="lp-play-count">
+          Step {step + 1} of {STEPS.length}
+        </span>
+      </div>
+
+      <div className="lp-stage-wrap">
+      <StoryMap
+        step={step}
+        home={{ id: 'home', label: 'Home', at: DEMO_HOME }}
+        planned={{ id: 'park', label: 'Park', at: workout.place!.location }}
+        fixed={{ id: 'class', label: `Class ${clock(cls.start)}`, at: classAt }}
+        options={mapOptions}
+        chosen={mapOptions.find((m) => m.id === o?.id)}
+        chosenAtHome={!!o && !o.place}
+      />
       <div className="lp-stage" aria-live="polite">
         {step === 0 && (
           <>
             <h3>Here’s today’s route</h3>
-            <p>Two things are already done. Next: a workout outdoors at 2, then class at 3:30 from your Google Calendar, which Segue never moves.</p>
+            <p>Next: a workout outdoors at 2, then class at 3:30 from your calendar. Class has a set time, so Segue never moves it.</p>
             {route(false)}
             <button type="button" className="lp-action" onClick={() => setStep(1)}>
               Make it rain
@@ -199,14 +253,25 @@ function RouteStory() {
         {step === 2 && (
           <>
             <h3>Segue finds a practical way forward</h3>
-            <p>Real places from OpenStreetMap, open by their listed hours, with time to reach class.</p>
+            <p>Real places nearby, open by their listed hours, each with time to reach class.</p>
             <div className="lp-sc-pick" role="radiogroup" aria-label="Options Segue found">
               {options.map((x, i) => (
-                <button key={x.id} type="button" role="radio" aria-checked={i === pick} className={i === pick ? 'on' : ''} onClick={() => setPick(i)}>
+                <button key={x.id} type="button" role="radio" aria-checked={i === pick} className={i === pick ? 'on' : ''} onClick={() => {
+                    setPlaying(false);
+                    setPick(i);
+                  }}>
+                  <span className="lp-sc-n" aria-hidden="true">
+                    {i + 1}
+                  </span>
                   {short(x.label)}
                 </button>
               ))}
             </div>
+            {o && (
+              <p className="lp-sc-why">
+                <strong>Why this works:</strong> {o.why}.
+              </p>
+            )}
             {route(true)}
             <button type="button" className="lp-action" onClick={() => setStep(3)}>
               Use this
@@ -228,6 +293,7 @@ function RouteStory() {
                 onClick={() => {
                   setStep(0);
                   setVisited([0]);
+                  setPick(0);
                 }}
               >
                 Start over
@@ -235,6 +301,7 @@ function RouteStory() {
             </div>
           </>
         )}
+      </div>
       </div>
       <p className="lp-sc-foot">
         A sample day: sample weather and real places from an OpenStreetMap snapshot of Makati, run through Segue’s actual planner.{' '}
@@ -365,7 +432,7 @@ export function Landing() {
           <div className="lp-section">
             <p className="lp-eyebrow">How it works</p>
             <h2 id="how-title">One day, four steps</h2>
-            <p className="lp-lead">Press through a real day on Segue’s planner. One step at a time.</p>
+            <p className="lp-lead">A sample day on Segue’s real planner. Press play, or go one step at a time.</p>
             <RouteStory />
           </div>
         </section>
